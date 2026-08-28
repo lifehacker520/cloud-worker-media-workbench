@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f5f6f8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>销售内容雷达 · 自媒体矩阵工作台</title>
+    <title>云员工媒体工作台 · 自媒体矩阵工作台</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -14,7 +14,7 @@
         <a class="brand sidebar-brand" href="#overview" data-view="overview">
           <span class="brand-mark">↗</span>
           <span>
-            <strong>销售内容雷达</strong>
+            <strong>云员工媒体工作台</strong>
             <small>AIOS / MEDIA OPS</small>
           </span>
         </a>
@@ -27,7 +27,7 @@
 
         <nav class="main-nav" aria-label="工作台模块">
           <button class="nav-item is-active" type="button" data-view="overview"><span class="nav-icon">⌂</span><span>总览</span></button>
-          <button class="nav-item" type="button" data-view="accounts"><span class="nav-icon">◎</span><span>账号矩阵</span><span class="nav-badge" data-nav-badge="accounts">0</span></button>
+
           <button class="nav-item" type="button" data-view="monitor"><span class="nav-icon">◌</span><span>监控中心</span><span class="nav-badge nav-badge-alert" data-nav-badge="works">0</span></button>
           <div class="nav-divider"></div>
           <button class="nav-item" type="button" data-view="content"><span class="nav-icon">▧</span><span>内容中心</span><span class="nav-state">规划</span></button>
@@ -61,12 +61,112 @@
           <section id="view-overview" class="view-panel is-active" data-view-panel="overview">
             <section class="overview-hero"><div class="overview-hero-copy"><div class="eyebrow">MEDIA OPS WORKBENCH / P0</div><h2>把分散在平台里的内容，<em>变成可追踪的工作流。</em></h2><p>当前先聚合小红书和抖音公开账号的新作品。后续再接入内容生产、发布、数据和 AI 协作。</p><div class="intro-tags"><span>小红书</span><span>抖音 Beta</span><span>封面预览</span><span>账号可删除</span></div></div><div class="overview-hero-card"><span class="hero-card-icon">✦</span><div><strong>当前重点</strong><p>账号监控与作品归集</p></div><span class="phase-label">P0</span></div></section>
             <section id="stats" class="stats-grid" aria-label="监控统计"></section>
-            <section class="overview-grid"><article class="panel overview-focus"><div class="panel-heading"><div><div class="eyebrow">TODAY'S SIGNALS</div><h2>今天先看什么</h2></div><span class="phase-label">实时</span></div><div id="overview-highlights" class="overview-highlights"></div></article><article class="panel overview-map"><div class="panel-heading"><div><div class="eyebrow">WORKBENCH MAP</div><h2>中台模块地图</h2></div><span class="count-label">可持续扩展</span></div><div class="module-map-grid"><button class="module-map-item is-current" type="button" data-view="accounts"><span>◎</span><strong>账号矩阵</strong><small>平台与负责人</small></button><button class="module-map-item is-current" type="button" data-view="monitor"><span>◌</span><strong>监控中心</strong><small>新作与异常</small></button><button class="module-map-item" type="button" data-view="content"><span>▧</span><strong>内容中心</strong><small>选题与素材</small></button><button class="module-map-item" type="button" data-view="ai"><span>✦</span><strong>AI 工作区</strong><small>分析与生成</small></button></div></article></section>
+            <section class="overview-grid"><article class="panel overview-focus"><div class="panel-heading"><div><div class="eyebrow">TODAY'S SIGNALS</div><h2>今天先看什么</h2></div><span class="phase-label">实时</span></div><div id="overview-highlights" class="overview-highlights"></div></article><article class="panel overview-map"><div class="panel-heading"><div><div class="eyebrow">WORKBENCH MAP</div><h2>中台模块地图</h2></div><span class="count-label">可持续扩展</span></div><div class="module-map-grid"><button class="module-map-item is-current" type="button" data-view="monitor"><span>◎</span><strong>监控账号</strong><small>添加与管理</small></button><button class="module-map-item is-current" type="button" data-view="monitor"><span>◌</span><strong>监控中心</strong><small>新作与异常</small></button><button class="module-map-item" type="button" data-view="content"><span>▧</span><strong>内容中心</strong><small>选题与素材</small></button><button class="module-map-item" type="button" data-view="ai"><span>✦</span><strong>AI 工作区</strong><small>分析与生成</small></button></div></article></section>
           </section>
 
-          <section id="view-accounts" class="view-panel" data-view-panel="accounts"><div class="section-banner"><div><div class="eyebrow">ACCOUNT MATRIX</div><h2>账号矩阵</h2><p>统一管理需要观察的平台主页。链接会自动识别小红书或抖音。</p></div><span class="section-banner-mark">◎</span></div><section class="control-strip"><div class="control-main"><span class="control-label">自动刷新</span><select id="auto-refresh" class="select-control" aria-label="自动刷新频率"><option value="0">手动</option><option value="30">每 30 分钟</option><option value="60">每 60 分钟</option></select><span id="last-refresh" class="muted-text">尚未刷新</span></div><div class="control-note"><span class="signal-dot"></span>公开页面 · 定时轮询</div></section><section class="accounts-layout"><aside class="accounts-panel panel"><div class="panel-heading"><div><div class="eyebrow">MONITORED ACCOUNTS</div><h2>监控账号</h2></div><span id="account-count-label" class="count-label">0</span></div><form id="add-account-form" class="add-account-form"><label><span>账号名称</span><input id="account-name" name="name" type="text" placeholder="例如：销售负责人 A" required /></label><label><span>小红书或抖音主页 / 分享链接</span><input id="account-url" name="sourceUrl" type="url" placeholder="https://www.douyin.com/user/..." required /></label><div class="form-hint"><span>⌁</span>平台自动识别，保存时会去掉分享参数</div><button class="button button-dark button-full" type="submit"><span>＋</span>加入监控</button><p id="add-account-message" class="form-message"></p></form><div class="filter-row"><span class="muted-text">筛选账号</span><div class="filter-controls"><select id="platform-filter" class="select-control select-small" aria-label="平台筛选"><option value="all">全部平台</option><option value="xhs">小红书</option><option value="douyin">抖音</option></select><select id="account-filter" class="select-control select-small" aria-label="账号筛选"><option value="all">全部状态</option><option value="active">已连接</option><option value="error">需处理</option><option value="pending">待刷新</option></select></div></div><div id="accounts-list" class="accounts-list"></div></aside><article class="panel account-guide"><div class="guide-orbit">↗</div><div class="eyebrow">HOW IT WORKS</div><h3>先把账号放进台账</h3><p>添加后点击“刷新全部”，系统会记录公开主页中的作品、时间、封面和平台链接。</p><div class="guide-steps"><div><b>01</b><span>粘贴链接</span></div><div><b>02</b><span>自动识别平台</span></div><div><b>03</b><span>定时发现新作品</span></div></div><div class="guide-warning"><strong>删除说明</strong><span>删除账号会同时删除本地已抓取的该账号作品，操作前会二次确认。</span></div></article></section></section>
 
-          <section id="view-monitor" class="view-panel" data-view-panel="monitor"><div class="section-banner"><div><div class="eyebrow">MONITOR CENTER</div><h2>监控中心</h2><p>按平台查看新作品，封面和链接能打开时会一并展示。</p></div><span class="section-banner-mark">◌</span></div><section class="control-strip"><div class="control-main"><span class="control-label">作品筛选</span><select id="work-platform-filter" class="select-control" aria-label="作品平台筛选"><option value="all">全部平台</option><option value="xhs">小红书</option><option value="douyin">抖音</option></select><span id="feed-count-label" class="count-label">0 条</span></div><div class="control-note"><span class="signal-dot"></span>新作品会保留历史记录</div></section><section class="monitor-layout"><article class="panel monitor-summary"><div class="panel-heading"><div><div class="eyebrow">MONITOR STATUS</div><h2>监控概况</h2></div></div><div id="overview-account-health" class="health-list"></div><div class="monitor-summary-foot">首次刷新建立基线；之后的新作品会标记为“新发现”。</div></article><section class="feed-panel panel"><div class="panel-heading feed-heading"><div><div class="eyebrow">LATEST WORKS</div><h2>最新作品流</h2></div><span id="monitor-feed-label" class="count-label">公开作品</span></div><div class="feed-explainer"><span class="explainer-icon">i</span><span>采集失败会显示具体原因，不会把失败伪装成成功。</span></div><div id="works-feed" class="works-feed"></div></section></section></section>
+          <section id="view-monitor" class="view-panel" data-view-panel="monitor">
+            <div class="section-banner">
+              <div>
+                <div class="eyebrow">MONITOR CENTER</div>
+                <h2>监控中心</h2>
+                <p>把要观察的账号、最新作品和异常状态集中在一个工作流里。</p>
+              </div>
+              <span class="section-banner-mark">◌</span>
+            </div>
+
+            <section class="control-strip monitor-control-strip">
+              <div class="control-main monitor-platform-control">
+                <span class="control-label">作品平台</span>
+                <div id="work-platform-tabs" class="platform-tabs" role="tablist" aria-label="作品平台筛选">
+                  <button class="platform-tab is-active" type="button" role="tab" aria-selected="true" data-work-platform="all">全部</button>
+                  <button class="platform-tab" type="button" role="tab" aria-selected="false" data-work-platform="xhs"><i class="platform-tab-mark platform-xhs">红</i>小红书</button>
+                  <button class="platform-tab" type="button" role="tab" aria-selected="false" data-work-platform="douyin"><i class="platform-tab-mark platform-douyin">音</i>抖音</button>
+                </div>
+                <span id="feed-count-label" class="count-label">0 条</span>
+              </div>
+              <div class="control-main monitor-refresh-control">
+                <span class="control-label">自动刷新</span>
+                <select id="auto-refresh" class="select-control" aria-label="自动刷新频率">
+                  <option value="0">手动</option>
+                  <option value="30">每 30 分钟</option>
+                  <option value="60">每 60 分钟</option>
+                </select>
+                <span id="last-refresh" class="muted-text">尚未刷新</span>
+              </div>
+            </section>
+
+            <section class="monitor-add-panel panel">
+              <div class="monitor-add-copy">
+                <div class="eyebrow">ADD TO MONITOR</div>
+                <h3>加入新的监控账号</h3>
+                <p>输入工作台显示名和小红书/抖音主页或分享链接，系统会自动识别平台。</p>
+              </div>
+              <form id="add-account-form" class="add-account-form">
+                <label>
+                  <span>账号名称</span>
+                  <input id="account-name" name="name" type="text" placeholder="例如：销售负责人 A" required />
+                </label>
+                <label>
+                  <span>小红书或抖音主页 / 分享链接</span>
+                  <input id="account-url" name="sourceUrl" type="url" placeholder="https://www.douyin.com/user/..." required />
+                </label>
+                <div class="monitor-add-submit">
+                  <div class="form-hint"><span>⌁</span>平台自动识别，保存时会去掉分享参数</div>
+                  <button class="button button-dark" type="submit"><span>＋</span>加入监控</button>
+                  <p id="add-account-message" class="form-message"></p>
+                </div>
+              </form>
+            </section>
+
+            <section class="monitor-layout" id="monitor-layout">
+              <article class="panel monitor-summary" id="monitor-accounts-panel">
+                <div class="panel-heading">
+                  <div>
+                    <div class="eyebrow">MONITORED ACCOUNTS</div>
+                    <h2>监控账号</h2>
+                  </div>
+                  <span id="monitor-account-count" class="count-label">0 个</span>
+                </div>
+                <div class="filter-row monitor-filter-row">
+                  <span class="muted-text">筛选账号</span>
+                  <div class="filter-controls">
+                    <select id="platform-filter" class="select-control select-small" aria-label="平台筛选">
+                      <option value="all">全部平台</option>
+                      <option value="xhs">小红书</option>
+                      <option value="douyin">抖音</option>
+                    </select>
+                    <select id="account-filter" class="select-control select-small" aria-label="账号状态筛选">
+                      <option value="all">全部状态</option>
+                      <option value="active">已连接</option>
+                      <option value="error">需处理</option>
+                      <option value="pending">待刷新</option>
+                    </select>
+                  </div>
+                </div>
+                <div id="overview-account-health" class="health-list" aria-live="polite"></div>
+                <div class="monitor-summary-foot">点击账号查看它发布过的作品；出现红色提醒时，打开账号详情会自动标记该账号的新作品为已读。</div>
+              </article>
+
+              <div id="monitor-splitter" class="monitor-splitter" role="separator" aria-label="调整监控账号和作品流宽度" aria-orientation="vertical" tabindex="0"><span></span></div>
+
+              <section class="feed-panel panel">
+                <div class="panel-heading feed-heading">
+                  <div>
+                    <div class="eyebrow">LATEST WORKS</div>
+                    <h2>最新作品流</h2>
+                  </div>
+                  <div class="feed-heading-actions">
+                    <span id="monitor-feed-label" class="count-label">全部账号</span>
+                    <button id="monitor-clear-account" class="link-button is-hidden" type="button">查看全部</button>
+                  </div>
+                </div>
+                <p id="monitor-selection" class="monitor-selection is-hidden"></p>
+                <div class="feed-explainer"><span class="explainer-icon">i</span><span>最新发布在最上方；采集失败会显示具体原因，不会把失败伪装成成功。</span></div>
+                <div id="works-feed" class="works-feed"></div>
+              </section>
+            </section>
+          </section>
 
           <section id="view-content" class="view-panel" data-view-panel="content"><div class="section-banner"><div><div class="eyebrow">CONTENT CENTER</div><h2>内容中心</h2><p>把监控到的作品沉淀为选题、素材和可复用案例。</p></div><span class="section-banner-mark">▧</span></div><div class="roadmap-grid"><article class="roadmap-card is-ready"><span>01</span><div><strong>作品收藏与标签</strong><p>从监控流中保存值得研究的内容，建立行业和账号标签。</p></div><b>下一步</b></article><article class="roadmap-card"><span>02</span><div><strong>选题与素材库</strong><p>沉淀标题、脚本、图片、视频和复盘意见。</p></div><b>规划中</b></article><article class="roadmap-card"><span>03</span><div><strong>内容日历</strong><p>把内容想法、负责人和发布计划放在一张时间表里。</p></div><b>规划中</b></article></div><div class="empty-workspace panel"><div class="empty-orbit">▧</div><h3>内容工作区正在搭建</h3><p>当前先把作品监控跑通，后续会把优秀作品一键沉淀到这里。</p><button class="button button-secondary" type="button" data-view="monitor">先去看监控作品</button></div></section>
 
@@ -78,15 +178,15 @@
 
           <section id="view-collab" class="view-panel" data-view-panel="collab"><div class="section-banner"><div><div class="eyebrow">FEEDBACK LOOP</div><h2>反馈与协作</h2><p>客户使用后可以反馈问题、内容纠正和新增功能，你在这里持续收回来。</p></div><span class="section-banner-mark">⌁</span></div><section class="collab-grid"><section class="feedback-panel panel"><div class="panel-heading"><div><div class="eyebrow">CUSTOMER FEEDBACK</div><h2>提交反馈</h2></div><span class="phase-label">协作</span></div><p class="section-intro">反馈会记录在中央服务中，管理员可以查看并安排后续迭代。</p><form id="feedback-form" class="feedback-form"><label><span>反馈类型</span><select id="feedback-category" name="category" class="select-control"><option value="bug">遇到问题</option><option value="feature">希望增加功能</option><option value="content">内容或账号不准确</option><option value="other">其他建议</option></select></label><label><span>反馈内容</span><textarea id="feedback-text" name="message" rows="5" maxlength="2000" placeholder="例如：刷新后没有看到某个账号今天发布的作品……" required></textarea></label><div class="feedback-submit-row"><p id="feedback-message" class="form-message"></p><button class="button button-dark" type="submit">提交反馈</button></div></form></section><section id="admin-console" class="admin-panel panel is-hidden"><div class="panel-heading"><div><div class="eyebrow">OWNER CONSOLE</div><h2>管理员观察区</h2></div><span class="phase-label">ADMIN</span></div><div class="admin-columns"><div><h3>客户反馈</h3><div id="feedback-list" class="admin-list"></div></div><div><h3>使用活动</h3><div id="activity-list" class="admin-list"></div></div></div></section></section></section>
 
-          <section id="view-settings" class="view-panel" data-view-panel="settings"><div class="section-banner"><div><div class="eyebrow">SETTINGS & RELEASES</div><h2>设置与更新</h2><p>管理客户端版本、服务连接和当前平台接入边界。</p></div><span class="section-banner-mark">⚙</span></div><section class="settings-grid"><article class="panel settings-card"><div class="settings-card-heading"><div><div class="eyebrow">DESKTOP RELEASE</div><h3>客户端更新</h3></div><span class="settings-icon">⇩</span></div><p>客户端通过 GitHub Release 获取新版本。普通提交代码不会直接更新，发布新版本后再点击检查。</p><button id="settings-update" class="button button-secondary" type="button">检查客户端更新</button><small id="settings-update-note" class="settings-note">网页模式不执行安装；桌面客户端可下载并重启安装。</small></article><article class="panel settings-card"><div class="settings-card-heading"><div><div class="eyebrow">SERVICE CONNECTION</div><h3>服务连接</h3></div><span class="settings-icon">⌁</span></div><p id="settings-connection">当前连接状态读取中……</p><div class="settings-list"><div><span>数据位置</span><strong>服务端 data/</strong></div><div><span>监控方式</span><strong>公开主页定时轮询</strong></div><div><span>账号权限</span><strong>由管理员统一管理</strong></div></div></article><article class="panel settings-card"><div class="settings-card-heading"><div><div class="eyebrow">PLATFORM ADAPTERS</div><h3>平台接入</h3></div><span class="settings-icon">◎</span></div><div id="settings-platforms" class="settings-platform-list"></div></article></section></section>
+          <section id="view-settings" class="view-panel" data-view-panel="settings"><div class="section-banner"><div><div class="eyebrow">SETTINGS & RELEASES</div><h2>设置与更新</h2><p>管理客户端更新、服务连接和监控频率。</p></div><span class="section-banner-mark">⚙</span></div><section class="settings-grid"><article class="panel settings-card"><div class="settings-card-heading"><div><div class="eyebrow">DESKTOP RELEASE</div><h3>客户端更新</h3></div><span class="settings-icon">⇩</span></div><p>新版本发布到 GitHub Release 后，在这里检查、下载并重启安装。普通提交代码不会直接更新客户端。</p><button id="settings-update" class="button button-secondary" type="button">检查客户端更新</button><small id="settings-update-note" class="settings-note">网页模式不执行安装；桌面客户端可下载并重启安装。</small></article><article class="panel settings-card"><div class="settings-card-heading"><div><div class="eyebrow">SERVICE CONNECTION</div><h3>服务连接</h3></div><span class="settings-icon">⌁</span></div><p id="settings-connection">当前连接状态读取中……</p><div class="settings-list"><div><span>数据位置</span><strong>服务端 data/</strong></div><div><span>监控方式</span><strong>公开主页定时轮询</strong></div><div><span>账号权限</span><strong>由管理员统一管理</strong></div></div></article><article class="panel settings-card"><div class="settings-card-heading"><div><div class="eyebrow">MONITOR PREFERENCES</div><h3>监控偏好</h3></div><span class="settings-icon">◌</span></div><p>设置客户端自动检查公开账号的频率；手动刷新仍然可以随时使用。</p><label class="settings-field"><span>自动刷新</span><select id="settings-auto-refresh" class="select-control" aria-label="设置自动刷新频率"><option value="0">手动</option><option value="30">每 30 分钟</option><option value="60">每 60 分钟</option></select></label><small class="settings-note">频率只保存在当前客户端，不会改变服务端数据。</small></article></section></section>
         </main>
 
-        <footer class="footer"><span>销售内容雷达 · 自媒体矩阵运营工作台</span><span>当前阶段：公开账号监控 P0</span></footer>
+        <footer class="footer"><span>云员工媒体工作台 · 自媒体矩阵运营工作台</span><span>当前阶段：公开账号监控 P0</span></footer>
       </div>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <div id="login-screen" class="login-screen is-hidden"><div class="login-card"><div class="brand login-brand"><span class="brand-mark">↗</span><span><strong>销售内容雷达</strong><small>MEDIA OPS WORKBENCH</small></span></div><div class="eyebrow">SECURE WORKSPACE</div><h2>登录后开始使用</h2><p>客户使用成员账号，你使用管理员账号查看活动和反馈。</p><form id="login-form" class="login-form"><label><span>账号</span><input id="login-username" name="username" type="text" value="client" autocomplete="username" required /></label><label><span>密码</span><input id="login-password" name="password" type="password" autocomplete="current-password" required /></label><button class="button button-primary button-full" type="submit">登录工作台</button><p id="login-message" class="form-message is-error"></p></form></div></div>
+    <div id="login-screen" class="login-screen is-hidden"><div class="login-card"><div class="brand login-brand"><span class="brand-mark">↗</span><span><strong>云员工媒体工作台</strong><small>MEDIA OPS WORKBENCH</small></span></div><div class="eyebrow">SECURE WORKSPACE</div><h2>登录后开始使用</h2><p>客户使用成员账号，你使用管理员账号查看活动和反馈。</p><form id="login-form" class="login-form"><label><span>账号</span><input id="login-username" name="username" type="text" value="client" autocomplete="username" required /></label><label><span>密码</span><input id="login-password" name="password" type="password" autocomplete="current-password" required /></label><button class="button button-primary button-full" type="submit">登录工作台</button><p id="login-message" class="form-message is-error"></p></form></div></div>
 
     <script type="module" src="/app.js"></script>
   </body>

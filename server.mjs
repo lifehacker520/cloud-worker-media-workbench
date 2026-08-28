@@ -119,6 +119,7 @@ function normalizeAccount(seed) {
     userId: seed.userId || normalized.userId || normalized.secUid || null,
     canonicalUrl: seed.canonicalUrl || normalized.canonicalUrl || null,
     nickname: seed.nickname || null,
+    avatarUrl: seed.avatarUrl || null,
     state: seed.state || 'pending',
     lastCheckedAt: seed.lastCheckedAt || null,
     lastError: seed.lastError || null,
@@ -289,6 +290,7 @@ async function refreshOne(account) {
     account.platformLabel = adapter.label;
     account.canonicalUrl = fetched.canonicalUrl || account.canonicalUrl;
     account.nickname = parsed.nickname || account.nickname || account.name;
+    account.avatarUrl = parsed.avatarUrl || account.avatarUrl || null;
     account.state = 'active';
     account.lastCheckedAt = checkedAt;
     account.lastError = null;
@@ -495,7 +497,7 @@ async function handleRequest(request, response) {
   if (requestUrl.pathname === '/api/health' && request.method === 'GET') {
     return sendJson(response, {
       ok: true,
-      service: 'xhs-content-monitor-demo',
+      service: 'cloud-worker-media-workbench',
       time: nowIso(),
       refreshInProgress: appState.refreshInProgress,
       authRequired: authConfig().required,
@@ -561,6 +563,47 @@ async function handleRequest(request, response) {
     await persist();
     await recordActivity(user, 'account_added', '加入监控账号：' + name);
     return sendJson(response, { ok: true, account }, 201);
+  }
+
+  if (
+    requestUrl.pathname.startsWith('/api/accounts/') &&
+    requestUrl.pathname.endsWith('/seen') &&
+    request.method === 'POST'
+  ) {
+    const user = authorizedUser(request, response);
+    if (!user) {
+      return null;
+    }
+
+    const accountId = decodeURIComponent(
+      requestUrl.pathname.slice(
+        '/api/accounts/'.length,
+        -'/seen'.length,
+      ),
+    );
+    const account = appState.accounts.find((item) => item.id === accountId);
+    if (!account) {
+      return sendJson(response, { ok: false, error: '监控账号不存在' }, 404);
+    }
+
+    const accountWorks = appState.works.filter((work) => work.accountId === accountId);
+    const unreadWorks = accountWorks.filter((work) => !work.seen);
+    if (unreadWorks.length) {
+      unreadWorks.forEach((work) => {
+        work.seen = true;
+      });
+      await writeJson(WORKS_FILE, appState.works);
+      await recordActivity(
+        user,
+        'account_seen',
+        '查看账号并标记已读：' + account.name + '，共 ' + unreadWorks.length + ' 条作品',
+      );
+    }
+    return sendJson(response, {
+      ok: true,
+      accountId,
+      markedCount: unreadWorks.length,
+    });
   }
 
   if (requestUrl.pathname.startsWith('/api/accounts/') && request.method === 'DELETE') {
@@ -691,7 +734,7 @@ async function start() {
 
   server.listen(SERVER_PORT, SERVER_HOST, () => {
     console.log(
-      '销售内容雷达已启动：http://' + SERVER_HOST + ':' + SERVER_PORT,
+      '云员工媒体工作台已启动：http://' + SERVER_HOST + ':' + SERVER_PORT,
     );
     console.log('监控账号：' + appState.accounts.length + ' 个；首次刷新可能需要几十秒');
     if (SERVER_REFRESH_MINUTES > 0) {

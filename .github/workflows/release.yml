@@ -75,5 +75,5 @@ jobs:
           mapfile -t assets < <(find release -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print | sort)
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "销售内容雷达 $RELEASE_TAG" \
+            --title "云员工媒体工作台 $RELEASE_TAG" \
             --generate-notes

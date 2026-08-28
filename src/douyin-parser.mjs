@@ -287,6 +287,71 @@ function firstUrl(value) {
   return null;
 }
 
+function normalizeImageUrl(raw) {
+  if (!raw) {
+    return null;
+  }
+  let value = decodeJsonString(String(raw))
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&')
+    .trim();
+  if (value.startsWith('//')) {
+    value = 'https:' + value;
+  }
+  return /^https?:\/\//i.test(value) ? value : null;
+}
+
+function avatarUrlFromValue(value, depth = 0) {
+  if (!value || depth > 8) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = avatarUrlFromValue(item, depth + 1);
+      if (url) {
+        return url;
+      }
+    }
+    return null;
+  }
+  if (typeof value !== 'object') {
+    return null;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (/avatar/i.test(key)) {
+      const url = normalizeImageUrl(firstUrl(child));
+      if (url) {
+        return url;
+      }
+    }
+  }
+  for (const child of Object.values(value)) {
+    const url = avatarUrlFromValue(child, depth + 1);
+    if (url) {
+      return url;
+    }
+  }
+  return null;
+}
+
+function avatarUrlFromHtml(html) {
+  const patterns = [
+    /"(?:avatar|avatarUrl|avatar_url|avatarLarger|avatar_larger|avatarThumb|avatar_thumb|userAvatar|user_avatar)"\s*:\s*"((?:\\.|[^"\\])*)"/gi,
+    /"(?:avatar|avatarUrl|avatar_url|avatarLarger|avatar_larger|avatarThumb|avatar_thumb|userAvatar|user_avatar)"\s*:\s*\{[\s\S]{0,1000}?"(?:urlDefault|url_default|urlPre|url_pre|url|src)"\s*:\s*"((?:\\.|[^"\\])*)"/gi,
+    /(?:class|id)=["'][^"']*(?:avatar|user-avatar|avatar-image)[^"']*["'][^>]*(?:src|data-src)=["']([^"']+)["']/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of html.matchAll(pattern)) {
+      const url = normalizeImageUrl(match[1]);
+      if (url) {
+        return url;
+      }
+    }
+  }
+  return null;
+}
+
 function coverFromObject(object) {
   return firstUrl(
     object?.coverUrl ||
@@ -483,22 +548,29 @@ export function parseProfileHtml(html, canonicalUrl, secUid = extractSecUid(cano
     throw new Error('缺少抖音用户 ID');
   }
 
+  const scripts = parseJsonScripts(html);
+  const avatarUrl =
+    scripts.map((value) => avatarUrlFromValue(value)).find(Boolean) ||
+    avatarUrlFromHtml(html);
   const works = [];
   const seen = new Set();
-  for (const value of parseJsonScripts(html)) {
+  for (const value of scripts) {
     extractObjectWorks(value, canonicalUrl, secUid, works, seen);
   }
   extractRegexWorks(html, canonicalUrl, secUid).forEach((work) => works.push(work));
   const uniqueWorks = dedupeWorks(works);
 
   if (uniqueWorks.length === 0 && looksLikeSecurityChallenge(html)) {
-    throw new Error('抖音主页返回了安全校验页面，暂时无法读取公开作品');
+    throw new Error(
+      '抖音主页触发了安全校验，当前公开 HTML 采集器无法读取作品；请后续改用浏览器会话采集或官方授权接口',
+    );
   }
 
   return {
     userId: secUid,
     secUid,
     nickname: profileNameFromHtml(html),
+    avatarUrl,
     works: uniqueWorks,
     extraction:
       uniqueWorks.length > 0

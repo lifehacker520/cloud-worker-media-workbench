@@ -15,7 +15,12 @@ const fixture = [
   '<title>星枢AI的抖音 - 抖音</title>',
   '<script type="application/json">',
   JSON.stringify({
-    user: { nickname: '星枢AI' },
+    user: {
+      nickname: '星枢AI',
+      avatar_larger: {
+        url_list: ['https://img.example.com/douyin-avatar.jpg'],
+      },
+    },
     aweme_list: [
       {
         aweme_id: '7550000000000000001',
@@ -64,6 +69,7 @@ test('resolveReference follows a share link to a Douyin profile', async () => {
 test('parseProfileHtml extracts Douyin works, metrics and covers', () => {
   const result = parseProfileHtml(fixture, canonicalUrl, secUid);
   assert.equal(result.nickname, '星枢AI');
+  assert.equal(result.avatarUrl, 'https://img.example.com/douyin-avatar.jpg');
   assert.equal(result.works.length, 1);
   assert.equal(result.works[0].title, 'AI 员工系统，让运营更轻松');
   assert.equal(result.works[0].contentId, '7550000000000000001');
@@ -83,6 +89,6 @@ test('parseProfileHtml reports a platform security challenge instead of false su
         canonicalUrl,
         secUid,
       ),
-    /安全校验页面/,
+    /安全校验/,
   );
 });

@@ -1,4 +1,4 @@
-# 销售内容雷达｜给客户使用的最短部署路径
+# 云员工媒体工作台｜给客户使用的最短部署路径
 
 这份 Demo 现在适合“单客户私有试用”：一个共享工作区、一个客户成员账号、一个管理员账号。客户可以加入监控账号、查看作品、提交反馈；管理员可以查看账号加入记录、刷新结果、已读动作和反馈。
 
@@ -31,7 +31,7 @@
 这是建议的最短正式路径：
 
 1. 准备一台可以长期运行的 VPS/云服务器，安装 Docker、Docker Compose 和 Caddy。
-2. 把整个 xhs-content-monitor-demo/ 目录复制到服务器。
+2. 把整个 cloud-worker-media-workbench/ 目录复制到服务器。
 3. 在服务器执行：
 
        cp .env.example .env
@@ -73,8 +73,8 @@
 
    客户端发布命令：
 
-       git tag v0.1.1
-       git push origin v0.1.1
+       git tag v0.1.3
+       git push origin v0.1.3
 
    GitHub Actions 会构建 macOS/Windows 安装包并更新 Release。客户打开客户端的“检查更新”即可获取新版本。
 

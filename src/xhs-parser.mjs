@@ -257,6 +257,37 @@ function profileNameFromTitle(html) {
   return title && title !== '小红书' ? title : null;
 }
 
+function normalizeImageUrl(raw) {
+  if (!raw) {
+    return null;
+  }
+  let value = decodeJsonString(String(raw))
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&')
+    .trim();
+  if (value.startsWith('//')) {
+    value = 'https:' + value;
+  }
+  return /^https?:\/\//i.test(value) ? value : null;
+}
+
+function avatarUrlFromHtml(html) {
+  const patterns = [
+    /"(?:avatar|avatarUrl|avatar_url|avatarLarger|avatar_larger|avatarThumb|avatar_thumb|userAvatar|user_avatar)"\s*:\s*"((?:\\.|[^"\\])*)"/gi,
+    /"(?:avatar|avatarUrl|avatar_url|avatarLarger|avatar_larger|avatarThumb|avatar_thumb|userAvatar|user_avatar)"\s*:\s*\{[\s\S]{0,1000}?"(?:urlDefault|url_default|urlPre|url_pre|url|src)"\s*:\s*"((?:\\.|[^"\\])*)"/gi,
+    /(?:class|id)=["'][^"']*(?:avatar|user-avatar|avatar-image)[^"']*["'][^>]*(?:src|data-src)=["']([^"']+)["']/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of html.matchAll(pattern)) {
+      const url = normalizeImageUrl(match[1]);
+      if (url) {
+        return url;
+      }
+    }
+  }
+  return null;
+}
+
 function extractEmbeddedWorks(html, canonicalUrl, userId) {
   const titleRegex = /"displayTitle":"((?:\\.|[^"\\])*)"/g;
   const titleMatches = [...html.matchAll(titleRegex)];
@@ -368,6 +399,7 @@ export function parseProfileHtml(html, canonicalUrl, userId) {
   return {
     userId: safeUserId,
     nickname: profileNameFromTitle(html),
+    avatarUrl: avatarUrlFromHtml(html),
     works,
     extraction:
       embeddedWorks.length > 0

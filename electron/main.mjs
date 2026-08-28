@@ -9,6 +9,7 @@ const { autoUpdater } = electronUpdater;
 
 let mainWindow = null;
 let baseUrl = null;
+let updaterCheckPromise = null;
 
 const APP_PORT = Number(process.env.XHS_DESKTOP_PORT || 43188);
 
@@ -105,8 +106,28 @@ function configureUpdater() {
     if (!app.isPackaged) {
       return { status: 'dev', version: app.getVersion() };
     }
+    if (updaterCheckPromise) {
+      return { status: 'checking', version: app.getVersion() };
+    }
     try {
-      await autoUpdater.checkForUpdates();
+      const checkPromise = autoUpdater.checkForUpdates();
+      updaterCheckPromise = Promise.race([
+        checkPromise,
+        wait(20000).then(() => {
+          throw new Error('检查更新超时，请稍后重试');
+        }),
+      ]);
+      const result = await updaterCheckPromise;
+      if (result?.isUpdateAvailable) {
+        const version = result.updateInfo?.version;
+        sendUpdaterStatus({ status: 'available', version });
+        return { status: 'available', version };
+      }
+      if (result?.isUpdateAvailable === false) {
+        const version = result.updateInfo?.version || app.getVersion();
+        sendUpdaterStatus({ status: 'not-available', version });
+        return { status: 'not-available', version };
+      }
       return { status: 'checking', version: app.getVersion() };
     } catch (error) {
       const result = {
@@ -115,6 +136,8 @@ function configureUpdater() {
       };
       sendUpdaterStatus(result);
       return result;
+    } finally {
+      updaterCheckPromise = null;
     }
   });
 

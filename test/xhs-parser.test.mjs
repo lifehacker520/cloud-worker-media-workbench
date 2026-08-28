@@ -14,6 +14,7 @@ const canonicalUrl = canonicalProfileUrl(userId);
 const fixture = [
   '<title>今天也在上班 - 小红书</title>',
   '<script>',
+  '{"avatar":"https://img.example.com/xhs-avatar.jpg"},',
   '{"displayTitle":"第二篇内容","time":1777000000000,"noteId":"","likedCount":"18"},',
   '{"displayTitle":"第一篇内容","time":1776000000000,"noteId":"65abcdef12345678","likedCount":"9"}',
   '</script>',
@@ -53,6 +54,7 @@ test('resolveReference reads the user id from a followed short link', async () =
 test('parseProfileHtml extracts recent titles, times, likes and stable links', () => {
   const result = parseProfileHtml(fixture, canonicalUrl, userId);
   assert.equal(result.nickname, '今天也在上班');
+  assert.equal(result.avatarUrl, 'https://img.example.com/xhs-avatar.jpg');
   assert.equal(result.extraction, 'embedded-profile-state');
   assert.equal(result.works.length, 2);
   assert.equal(result.works[0].title, '第二篇内容');

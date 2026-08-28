@@ -19,15 +19,10 @@ const VIEW_META = {
     title: '总览',
     description: '先看今天的监控动态和需要处理的账号。',
   },
-  accounts: {
-    eyebrow: 'ACCOUNT MATRIX',
-    title: '账号矩阵',
-    description: '统一管理需要观察的平台主页。',
-  },
   monitor: {
     eyebrow: 'MONITOR CENTER',
     title: '监控中心',
-    description: '按平台查看新作品、封面和采集状态。',
+    description: '按平台查看监控账号、最新作品和采集状态。',
   },
   content: {
     eyebrow: 'CONTENT CENTER',
@@ -57,7 +52,7 @@ const VIEW_META = {
   settings: {
     eyebrow: 'SETTINGS & RELEASES',
     title: '设置与更新',
-    description: '管理客户端版本、服务连接和平台接入边界。',
+    description: '管理客户端更新、服务连接和监控频率。',
   },
 };
 
@@ -91,6 +86,7 @@ const PLATFORM_META = {
 let accountFilter = 'all';
 let platformFilter = 'all';
 let workPlatformFilter = 'all';
+let selectedAccountId = null;
 let currentView = 'overview';
 let autoRefreshTimer = null;
 let statePollTimer = null;
@@ -98,12 +94,14 @@ let isRefreshing = false;
 let isAuthenticated = false;
 let authRequired = false;
 let updaterPhase = 'idle';
+let updaterCheckTimer = null;
+let updaterVersion = '';
 
 const elements = {
   stats: document.querySelector('#stats'),
-  accounts: document.querySelector('#accounts-list'),
+  accounts: document.querySelector('#overview-account-health'),
   works: document.querySelector('#works-feed'),
-  accountCount: document.querySelector('#account-count-label'),
+  accountCount: document.querySelector('#monitor-account-count'),
   feedCount: document.querySelector('#feed-count-label'),
   lastRefresh: document.querySelector('#last-refresh'),
   runtimeStatus: document.querySelector('#runtime-status'),
@@ -112,13 +110,12 @@ const elements = {
   settingsUpdateButton: document.querySelector('#settings-update'),
   settingsUpdateNote: document.querySelector('#settings-update-note'),
   settingsConnection: document.querySelector('#settings-connection'),
-  settingsPlatforms: document.querySelector('#settings-platforms'),
+  settingsAutoRefresh: document.querySelector('#settings-auto-refresh'),
   refreshButton: document.querySelector('#refresh-all'),
   addForm: document.querySelector('#add-account-form'),
   addMessage: document.querySelector('#add-account-message'),
   filter: document.querySelector('#account-filter'),
   platformFilter: document.querySelector('#platform-filter'),
-  workPlatformFilter: document.querySelector('#work-platform-filter'),
   autoRefresh: document.querySelector('#auto-refresh'),
   toast: document.querySelector('#toast'),
   authArea: document.querySelector('#auth-area'),
@@ -137,7 +134,13 @@ const elements = {
   currentViewDescription: document.querySelector('#current-view-description'),
   overviewHighlights: document.querySelector('#overview-highlights'),
   accountHealth: document.querySelector('#overview-account-health'),
+  monitorAccountCount: document.querySelector('#monitor-account-count'),
   monitorFeedLabel: document.querySelector('#monitor-feed-label'),
+  monitorSelection: document.querySelector('#monitor-selection'),
+  monitorClearAccount: document.querySelector('#monitor-clear-account'),
+  monitorSplitter: document.querySelector('#monitor-splitter'),
+  monitorLayout: document.querySelector('#monitor-layout'),
+  workPlatformTabs: document.querySelector('#work-platform-tabs'),
   viewPanels: [...document.querySelectorAll('[data-view-panel]')],
   navItems: [...document.querySelectorAll('.nav-item[data-view]')],
   navBadges: [...document.querySelectorAll('[data-nav-badge]')],
@@ -188,6 +191,67 @@ function platformFor(platform) {
 
 function platformLabel(platform) {
   return platformFor(platform).label;
+}
+
+function accountInitial(account) {
+  const source = String(account?.name || account?.nickname || '').trim();
+  const first = [...source.replace(/\s+/g, '')][0];
+  return first || platformFor(account?.platform).symbol;
+}
+
+function accountAvatarMarkup(account, className = 'account-avatar') {
+  const platform = platformFor(account?.platform);
+  const dataAttributes =
+    ' data-platform-class="' +
+    escapeHtml(platform.className) +
+    '" data-initial="' +
+    escapeHtml(accountInitial(account)) +
+    '"';
+  if (isHttpUrl(account?.avatarUrl)) {
+    return (
+      '<span class="' +
+      escapeHtml(className) +
+      '"' +
+      dataAttributes +
+      '><img src="' +
+      escapeHtml(account.avatarUrl) +
+      '" alt="' +
+      escapeHtml((account?.name || platform.label) + '头像') +
+      '" decoding="async" referrerpolicy="no-referrer" /></span>'
+    );
+  }
+  return (
+    '<span class="' +
+    escapeHtml(className) +
+    ' account-avatar-fallback ' +
+    platform.className +
+    '"' +
+    dataAttributes +
+    ' aria-hidden="true">' +
+    escapeHtml(accountInitial(account)) +
+    '</span>'
+  );
+}
+
+function bindAvatarFallbacks(container) {
+  container?.querySelectorAll('.account-avatar img, .work-account-avatar img').forEach((image) => {
+    image.addEventListener(
+      'error',
+      () => {
+        const avatar = image.closest('.account-avatar, .work-account-avatar');
+        if (!avatar) {
+          return;
+        }
+        const fallback = document.createElement('span');
+        fallback.className =
+          avatar.className + ' account-avatar-fallback ' +
+          (avatar.dataset.platformClass || 'platform-other');
+        fallback.textContent = avatar.dataset.initial || '＋';
+        image.replaceWith(fallback);
+      },
+      { once: true },
+    );
+  });
 }
 
 function isHttpUrl(value) {
@@ -372,7 +436,9 @@ function renderAccounts() {
         escapeHtml(account.state) +
         '">' +
         '<div class="account-card-top">' +
-        '<div class="account-title-wrap"><span class="state-dot"></span><div>' +
+        '<div class="account-title-wrap">' +
+        accountAvatarMarkup(account) +
+        '<span class="state-dot"></span><div>' +
         '<div class="account-platform-line"><span class="platform-chip ' +
         platform.className +
         '"><i>' +
@@ -409,6 +475,7 @@ function renderAccounts() {
       );
     })
     .join('');
+  bindAvatarFallbacks(elements.accounts);
 }
 
 function coverMarkup(work, platform) {
@@ -428,24 +495,62 @@ function coverMarkup(work, platform) {
   );
 }
 
+function workTimestamp(work) {
+  const value = Date.parse(work?.publishedAt || work?.discoveredAt || '');
+  return Number.isNaN(value) ? 0 : value;
+}
+
 function renderWorks() {
-  const visibleWorks = state.works.filter((work) => {
-    const platform = work.platform || accountFor(work.accountId)?.platform || 'other';
-    return workPlatformFilter === 'all' || platform === workPlatformFilter;
-  });
+  const selectedAccount = selectedAccountId ? accountFor(selectedAccountId) : null;
+  if (selectedAccountId && !selectedAccount) {
+    selectedAccountId = null;
+  }
+
+  const visibleWorks = state.works
+    .filter((work) => {
+      const account = accountFor(work.accountId);
+      const platform = work.platform || account?.platform || 'other';
+      const matchesPlatform = workPlatformFilter === 'all' || platform === workPlatformFilter;
+      const matchesAccount = !selectedAccountId || work.accountId === selectedAccountId;
+      return matchesPlatform && matchesAccount;
+    })
+    .sort((left, right) => workTimestamp(right) - workTimestamp(left));
+
   elements.feedCount.textContent = visibleWorks.length + ' 条';
   if (elements.monitorFeedLabel) {
-    elements.monitorFeedLabel.textContent =
-      visibleWorks.length === state.works.length
-        ? '公开作品'
-        : '筛选后 ' + visibleWorks.length + ' / ' + state.works.length;
+    elements.monitorFeedLabel.textContent = selectedAccount
+      ? selectedAccount.name + ' · ' + visibleWorks.length + ' 条作品'
+      : visibleWorks.length + ' 条公开作品';
+  }
+  if (elements.monitorSelection) {
+    elements.monitorSelection.classList.toggle('is-hidden', !selectedAccount);
+    elements.monitorSelection.textContent = selectedAccount
+      ? '正在查看：' + selectedAccount.name + ' · 按发布时间倒序'
+      : '';
+  }
+  if (elements.monitorClearAccount) {
+    elements.monitorClearAccount.classList.toggle('is-hidden', !selectedAccount);
   }
 
   if (visibleWorks.length === 0) {
+    const emptyTitle = selectedAccount
+      ? '该账号暂时没有作品'
+      : state.works.length === 0
+        ? '还没有作品'
+        : '该平台暂时没有作品';
+    const emptyDescription = selectedAccount
+      ? selectedAccount.state === 'error' && selectedAccount.lastError
+        ? selectedAccount.lastError
+        : '刷新该账号后，这里会显示作品封面、标题和发布时间。'
+      : state.works.length === 0
+        ? '点击右上角“刷新全部”，读取监控列表中的公开主页。'
+        : '换一个平台筛选，或先刷新监控账号。';
     elements.works.innerHTML =
-      state.works.length === 0
-        ? '<div class="empty-state"><div class="empty-orbit">↻</div><h3>还没有作品</h3><p>点击右上角“刷新全部”，读取监控列表中的公开主页。</p></div>'
-        : '<div class="empty-state"><div class="empty-orbit">⌁</div><h3>该平台暂时没有作品</h3><p>换一个平台筛选，或先刷新监控账号。</p></div>';
+      '<div class="empty-state"><div class="empty-orbit">⌁</div><h3>' +
+      escapeHtml(emptyTitle) +
+      '</h3><p>' +
+      escapeHtml(emptyDescription) +
+      '</p></div>';
     return;
   }
 
@@ -458,6 +563,7 @@ function renderWorks() {
       const contentId = work.contentId || work.noteId;
       const linkLabel = contentId ? '打开作品 ↗' : '打开主页 ↗';
       const accountName = account?.name || '未知账号';
+      const accountForAvatar = account || { name: accountName, platform };
       const extractionLabel =
         work.extraction === 'embedded-profile-state'
           ? '内嵌状态'
@@ -480,8 +586,11 @@ function renderWorks() {
         '</i>' +
         escapeHtml(platformInfo.label) +
         '</span><span class="work-account-name">' +
+        accountAvatarMarkup(accountForAvatar, 'work-account-avatar') +
+        '<span>' +
         escapeHtml(accountName) +
-        '</span><span class="work-time">' +
+        '</span></span>' +
+        '<span class="work-time">' +
         formatTime(work.publishedAt, '时间待解析') +
         '</span></div><h3>' +
         escapeHtml(work.title || '未命名作品') +
@@ -504,7 +613,9 @@ function renderWorks() {
     })
     .join('');
 
-  elements.works.querySelectorAll('img').forEach((image) => {
+  bindAvatarFallbacks(elements.works);
+
+  elements.works.querySelectorAll('.work-cover img').forEach((image) => {
     image.addEventListener(
       'error',
       () => {
@@ -569,43 +680,108 @@ function renderOverview() {
     .join('');
 }
 
+function renderWorkPlatformTabs() {
+  if (!elements.workPlatformTabs) {
+    return;
+  }
+  elements.workPlatformTabs.querySelectorAll('[data-work-platform]').forEach((button) => {
+    const active = button.dataset.workPlatform === workPlatformFilter;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+}
+
 function renderAccountHealth() {
   if (!elements.accountHealth) {
     return;
   }
-  const rows = ['xhs', 'douyin']
-    .map((platform) => {
-      const accounts = state.accounts.filter((account) => account.platform === platform);
-      if (!accounts.length) {
-        return null;
-      }
-      const info = platformFor(platform);
-      const active = accounts.filter((account) => account.state === 'active').length;
-      const error = accounts.filter((account) => account.state === 'error').length;
-      const pending = accounts.length - active - error;
-      const stateText = error ? error + ' 个需处理' : pending ? pending + ' 个待刷新' : '全部已连接';
-      return (
-        '<div class=\"health-row\"><span class=\"platform-logo ' +
-        info.className +
-        '\">' +
-        escapeHtml(info.symbol) +
-        '</span><div class=\"health-copy\"><strong>' +
-        escapeHtml(info.label) +
-        '</strong><small>' +
-        escapeHtml(stateText) +
-        '</small></div><div class=\"health-numbers\"><b>' +
-        accounts.length +
-        '</b><small>账号</small></div><span class=\"health-status ' +
-        (error ? 'is-error' : pending ? 'is-pending' : 'is-ok') +
-        '\">' +
-        (error ? '注意' : pending ? '待刷新' : '正常') +
-        '</span></div>'
-      );
-    })
-    .filter(Boolean);
+  const visibleAccounts = state.accounts.filter((account) => {
+    const matchesState = accountFilter === 'all' || account.state === accountFilter;
+    const matchesPlatform =
+      platformFilter === 'all' || (account.platform || 'other') === platformFilter;
+    const matchesWorkTab =
+      workPlatformFilter === 'all' || (account.platform || 'other') === workPlatformFilter;
+    return matchesState && matchesPlatform && matchesWorkTab;
+  });
+  if (elements.monitorAccountCount) {
+    elements.monitorAccountCount.textContent = visibleAccounts.length + ' 个';
+  }
+
+  const rows = visibleAccounts.map((account) => {
+    const platform = platformFor(account.platform);
+    const profileUrl = account.canonicalUrl || account.sourceUrl || '#';
+    const workCount = state.works.filter((work) => work.accountId === account.id).length;
+    const unreadCount = state.works.filter(
+      (work) => work.accountId === account.id && !work.seen,
+    ).length;
+    const isSelected = selectedAccountId === account.id;
+    const statusClass =
+      account.state === 'error'
+        ? 'is-error'
+        : account.state === 'active'
+          ? 'is-ok'
+          : 'is-pending';
+    const statusText =
+      account.state === 'error'
+        ? '需处理'
+        : account.state === 'active'
+          ? '已连接'
+          : '待刷新';
+    const subtitle =
+      account.state === 'error' && account.lastError
+        ? account.lastError
+        : account.nickname && !/^小红书 - 你的生活兴趣社区$/.test(account.nickname)
+          ? account.nickname
+          : platform.mode;
+    return (
+      '<article class="monitor-account-row state-' +
+      escapeHtml(account.state) +
+      (isSelected ? ' is-selected' : '') +
+      '" data-monitor-account="' +
+      escapeHtml(account.id) +
+      '" role="button" tabindex="0" aria-pressed="' +
+      String(isSelected) +
+      '" title="点击查看 ' +
+      escapeHtml(account.name) +
+      ' 的作品"><div class="monitor-account-main">' +
+      accountAvatarMarkup(account) +
+      '<div class="monitor-account-copy"><strong>' +
+      escapeHtml(account.name) +
+      '</strong><small><span class="monitor-platform-label ' +
+      platform.className +
+      '"><i>' +
+      escapeHtml(platform.symbol) +
+      '</i>' +
+      escapeHtml(platform.label) +
+      '</span><span class="monitor-account-subtitle">' +
+      escapeHtml(subtitle) +
+      '</span></small></div></div><div class="monitor-account-side"><div class="monitor-account-count"><b>' +
+      String(workCount) +
+      '</b><small>作品数</small></div>' +
+      (unreadCount
+        ? '<span class="monitor-unread-badge" title="' +
+          unreadCount +
+          ' 条新作品待查看" aria-label="' +
+          unreadCount +
+          ' 条新作品待查看">!</span>'
+        : '') +
+      '<div class="monitor-account-actions"><span class="health-status ' +
+      statusClass +
+      '">' +
+      statusText +
+      '</span><a href="' +
+      escapeHtml(profileUrl) +
+      '" target="_blank" rel="noreferrer">打开 ↗</a><button class="monitor-delete-account" type="button" data-delete-account="' +
+      escapeHtml(account.id) +
+      '" aria-label="删除 ' +
+      escapeHtml(account.name) +
+      '">删除</button></div></div></article>'
+    );
+  });
   elements.accountHealth.innerHTML = rows.length
     ? rows.join('')
-    : '<div class=\"empty-state compact\"><span>◎</span><p>还没有监控账号</p></div>';
+    : '<div class="empty-state compact"><span>◎</span><p>还没有符合条件的监控账号</p></div>';
+  bindAvatarFallbacks(elements.accountHealth);
 }
 
 function renderSettings() {
@@ -616,43 +792,9 @@ function renderSettings() {
         : '需要登录后才能读取中央服务。'
       : '当前使用本地服务，数据保存在本机 data/ 目录。';
   }
-  if (!elements.settingsPlatforms) {
-    return;
+  if (elements.settingsAutoRefresh) {
+    elements.settingsAutoRefresh.value = elements.autoRefresh.value;
   }
-  const platforms = state.platforms.length
-    ? state.platforms
-    : Object.entries(PLATFORM_META).map(([id, info]) => ({
-        id,
-        label: info.label,
-        mode: info.mode,
-        status: id === 'xhs' ? 'active' : id === 'douyin' ? 'beta' : 'planned',
-      }));
-  elements.settingsPlatforms.innerHTML = platforms
-    .map((platform) => {
-      const info = platformFor(platform.id);
-      const statusLabel =
-        platform.status === 'active'
-          ? '已接入'
-          : platform.status === 'beta'
-            ? 'Beta'
-            : '规划中';
-      return (
-        '<div class=\"settings-platform-row\"><span class=\"platform-logo ' +
-        info.className +
-        '\">' +
-        escapeHtml(info.symbol) +
-        '</span><div><strong>' +
-        escapeHtml(platform.label || info.label) +
-        '</strong><small>' +
-        escapeHtml(platform.mode || info.mode) +
-        '</small></div><b class=\"adapter-status is-' +
-        escapeHtml(platform.status || 'planned') +
-        '\">' +
-        statusLabel +
-        '</b></div>'
-      );
-    })
-    .join('');
 }
 
 function renderNavigationBadges() {
@@ -668,7 +810,9 @@ function renderNavigationBadges() {
 }
 
 function setView(view, options = {}) {
-  const nextView = VIEW_META[view] ? view : 'overview';
+  const requestedView = view === 'accounts' ? 'monitor' : view;
+  const nextView = VIEW_META[requestedView] ? requestedView : 'overview';
+  const viewChanged = currentView !== nextView;
   currentView = nextView;
   const meta = VIEW_META[nextView];
   elements.currentViewEyebrow.textContent = meta.eyebrow;
@@ -683,7 +827,9 @@ function setView(view, options = {}) {
   if (options.updateHash !== false && window.location.hash !== '#' + nextView) {
     window.history.replaceState(null, '', '#' + nextView);
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (viewChanged && options.scroll !== false) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 }
 function feedbackCategoryLabel(category) {
   return (
@@ -702,6 +848,7 @@ function activityTypeLabel(type) {
       refresh: '刷新',
       account_added: '加入账号',
       account_removed: '移除账号',
+      account_seen: '查看账号',
       work_seen: '标记已读',
       feedback: '提交反馈',
     }[type] || type
@@ -795,8 +942,31 @@ function updateUpdaterControls(text, disabled) {
     });
 }
 
+function clearUpdaterCheckTimer() {
+  if (updaterCheckTimer) {
+    window.clearTimeout(updaterCheckTimer);
+    updaterCheckTimer = null;
+  }
+}
+
+function armUpdaterCheckTimer() {
+  if (updaterCheckTimer) {
+    return;
+  }
+  updaterCheckTimer = window.setTimeout(() => {
+    updaterCheckTimer = null;
+    if (updaterPhase === 'checking') {
+      renderUpdater({
+        status: 'error',
+        message: '检查更新超时，请稍后重试',
+      });
+    }
+  }, 20000);
+}
+
 function renderUpdater(payload = {}) {
   if (!window.desktopUpdater) {
+    clearUpdaterCheckTimer();
     elements.updateButton?.classList.add('is-hidden');
     if (elements.settingsUpdateButton) {
       elements.settingsUpdateButton.disabled = true;
@@ -820,34 +990,45 @@ function renderUpdater(payload = {}) {
   if (status === 'checking') {
     updaterPhase = 'checking';
     updateUpdaterControls('检查中…', true);
+    armUpdaterCheckTimer();
     return;
   }
   if (status === 'available') {
+    clearUpdaterCheckTimer();
     updaterPhase = 'available';
-    updateUpdaterControls('下载更新 v' + payload.version, false);
+    updaterVersion = payload.version || updaterVersion;
+    updateUpdaterControls(
+      updaterVersion ? '下载更新 v' + updaterVersion : '下载更新',
+      false,
+    );
     return;
   }
   if (status === 'downloading') {
+    clearUpdaterCheckTimer();
     updaterPhase = 'downloading';
     updateUpdaterControls('下载中 ' + percent + '%', true);
     return;
   }
   if (status === 'downloaded') {
+    clearUpdaterCheckTimer();
     updaterPhase = 'downloaded';
     updateUpdaterControls('重启安装更新', false);
     return;
   }
   if (status === 'not-available') {
+    clearUpdaterCheckTimer();
     updaterPhase = 'idle';
     updateUpdaterControls('已是最新', false);
     return;
   }
   if (status === 'dev') {
+    clearUpdaterCheckTimer();
     updaterPhase = 'idle';
     updateUpdaterControls('开发模式', false);
     return;
   }
   if (status === 'error') {
+    clearUpdaterCheckTimer();
     updaterPhase = 'idle';
     updateUpdaterControls('更新失败，重试', false);
     if (payload.message) {
@@ -877,11 +1058,11 @@ async function handleUpdaterClick() {
 
     renderUpdater({ status: 'checking' });
     const result = await window.desktopUpdater.checkForUpdates();
+    if (result?.status && result.status !== 'checking') {
+      renderUpdater(result);
+    }
     if (result?.status === 'dev') {
-      renderUpdater(result);
       showToast('当前是开发模式，打包后可检查 GitHub Release', 'normal');
-    } else if (result?.status === 'error') {
-      renderUpdater(result);
     }
   } catch (error) {
     renderUpdater({ status: 'error', message: error.message || String(error) });
@@ -891,7 +1072,7 @@ async function handleUpdaterClick() {
 function render() {
   renderAuth();
   renderStats();
-  renderAccounts();
+  renderWorkPlatformTabs();
   renderWorks();
   renderOverview();
   renderAccountHealth();
@@ -1015,6 +1196,9 @@ async function deleteAccount(accountId) {
     const payload = await apiRequest('/api/accounts/' + encodeURIComponent(accountId), {
       method: 'DELETE',
     });
+    if (selectedAccountId === accountId) {
+      selectedAccountId = null;
+    }
     await loadState();
     showToast(
       '已删除 ' +
@@ -1025,6 +1209,51 @@ async function deleteAccount(accountId) {
   } catch (error) {
     showToast(error.message || '删除账号失败', 'error');
   }
+}
+
+async function selectMonitorAccount(accountId) {
+  const account = accountFor(accountId);
+  if (!account) {
+    return;
+  }
+
+  selectedAccountId = accountId;
+  renderWorks();
+  renderAccountHealth();
+
+  const unreadWorks = state.works.filter(
+    (work) => work.accountId === accountId && !work.seen,
+  );
+  if (!unreadWorks.length) {
+    return;
+  }
+
+  try {
+    const payload = await apiRequest(
+      '/api/accounts/' + encodeURIComponent(accountId) + '/seen',
+      { method: 'POST' },
+    );
+    const markedCount = Number(payload.markedCount || unreadWorks.length);
+    state.works.forEach((work) => {
+      if (work.accountId === accountId) {
+        work.seen = true;
+      }
+    });
+    state.stats.unseenWorkCount = Math.max(
+      0,
+      (state.stats.unseenWorkCount || 0) - markedCount,
+    );
+    render();
+    await loadAdminData();
+  } catch (error) {
+    showToast(error.message || '更新账号已读状态失败', 'error');
+  }
+}
+
+function clearSelectedMonitorAccount() {
+  selectedAccountId = null;
+  renderWorks();
+  renderAccountHealth();
 }
 
 async function markSeen(fingerprint) {
@@ -1110,13 +1339,22 @@ async function logout() {
   }
 }
 
-function resetAutoRefresh() {
+function applyAutoRefreshFrequency(value) {
+  const frequency = ['0', '30', '60'].includes(String(value)) ? String(value) : '0';
+  elements.autoRefresh.value = frequency;
+  if (elements.settingsAutoRefresh) {
+    elements.settingsAutoRefresh.value = frequency;
+  }
   window.clearInterval(autoRefreshTimer);
-  const minutes = Number(elements.autoRefresh.value);
+  const minutes = Number(frequency);
   if (minutes > 0 && isAuthenticated) {
     autoRefreshTimer = window.setInterval(refreshAll, minutes * 60 * 1000);
   }
-  window.localStorage.setItem('xhs-monitor-auto-refresh', String(minutes));
+  window.localStorage.setItem('xhs-monitor-auto-refresh', frequency);
+}
+
+function resetAutoRefresh(event) {
+  applyAutoRefreshFrequency(event?.target?.value || elements.autoRefresh.value);
 }
 
 async function loadSession() {
@@ -1153,11 +1391,95 @@ async function loadSession() {
   }
 }
 
+function applyMonitorSplitWidth(value) {
+  if (!elements.monitorLayout) {
+    return;
+  }
+  const layoutWidth = elements.monitorLayout.getBoundingClientRect().width;
+  const availableMax = layoutWidth ? Math.max(280, layoutWidth - 360) : 560;
+  const width = Math.round(
+    Math.min(Math.max(Number(value) || 360, 280), Math.min(560, availableMax)),
+  );
+  elements.monitorLayout.style.setProperty('--monitor-accounts-width', width + 'px');
+  elements.monitorSplitter?.setAttribute('aria-valuenow', String(width));
+  window.localStorage.setItem('cloud-worker-monitor-split-width', String(width));
+}
+
+function initMonitorSplitter() {
+  const splitter = elements.monitorSplitter;
+  if (!splitter || !elements.monitorLayout) {
+    return;
+  }
+
+  const savedWidth = Number(
+    window.localStorage.getItem('cloud-worker-monitor-split-width'),
+  );
+  applyMonitorSplitWidth(Number.isFinite(savedWidth) ? savedWidth : 360);
+
+  let dragging = false;
+  let pointerId = null;
+  let startX = 0;
+  let startWidth = 360;
+
+  const stopDragging = () => {
+    if (!dragging) {
+      return;
+    }
+    dragging = false;
+    pointerId = null;
+    document.body.classList.remove('is-resizing');
+  };
+
+  splitter.addEventListener('pointerdown', (event) => {
+    if (window.matchMedia('(max-width: 860px)').matches) {
+      return;
+    }
+    dragging = true;
+    pointerId = event.pointerId;
+    startX = event.clientX;
+    startWidth =
+      Number.parseFloat(
+        getComputedStyle(elements.monitorLayout).getPropertyValue(
+          '--monitor-accounts-width',
+        ),
+      ) || elements.monitorLayout.getBoundingClientRect().width * 0.3;
+    splitter.setPointerCapture?.(event.pointerId);
+    document.body.classList.add('is-resizing');
+    event.preventDefault();
+  });
+
+  splitter.addEventListener('pointermove', (event) => {
+    if (!dragging || event.pointerId !== pointerId) {
+      return;
+    }
+    applyMonitorSplitWidth(startWidth + event.clientX - startX);
+  });
+
+  splitter.addEventListener('pointerup', stopDragging);
+  splitter.addEventListener('pointercancel', stopDragging);
+  splitter.addEventListener('lostpointercapture', stopDragging);
+  splitter.addEventListener('keydown', (event) => {
+    const current =
+      Number.parseFloat(
+        getComputedStyle(elements.monitorLayout).getPropertyValue(
+          '--monitor-accounts-width',
+        ),
+      ) || 360;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      applyMonitorSplitWidth(current + (event.key === 'ArrowRight' ? 20 : -20));
+      event.preventDefault();
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      applyMonitorSplitWidth(event.key === 'Home' ? 280 : 560);
+      event.preventDefault();
+    }
+  });
+}
+
 function init() {
   const savedFrequency = window.localStorage.getItem('xhs-monitor-auto-refresh');
-  if (savedFrequency && ['0', '30', '60'].includes(savedFrequency)) {
-    elements.autoRefresh.value = savedFrequency;
-  }
+  applyAutoRefreshFrequency(savedFrequency || '0');
+  initMonitorSplitter();
 
   elements.navItems.forEach((item) => {
     item.addEventListener('click', () => setView(item.dataset.view));
@@ -1191,23 +1513,63 @@ function init() {
   });
   elements.filter.addEventListener('change', (event) => {
     accountFilter = event.target.value;
-    renderAccounts();
+    renderAccountHealth();
   });
   elements.platformFilter.addEventListener('change', (event) => {
     platformFilter = event.target.value;
-    renderAccounts();
-  });
-  elements.workPlatformFilter.addEventListener('change', (event) => {
-    workPlatformFilter = event.target.value;
+    workPlatformFilter = platformFilter;
+    selectedAccountId = null;
+    renderWorkPlatformTabs();
     renderWorks();
+    renderAccountHealth();
+  });
+  elements.workPlatformTabs?.addEventListener('click', (event) => {
+    const tab = event.target.closest('[data-work-platform]');
+    if (!tab) {
+      return;
+    }
+    workPlatformFilter = tab.dataset.workPlatform || 'all';
+    platformFilter = workPlatformFilter;
+    if (elements.platformFilter) {
+      elements.platformFilter.value = platformFilter;
+    }
+    selectedAccountId = null;
+    renderWorkPlatformTabs();
+    renderWorks();
+    renderAccountHealth();
   });
   elements.autoRefresh.addEventListener('change', resetAutoRefresh);
+  elements.settingsAutoRefresh?.addEventListener('change', resetAutoRefresh);
   elements.accounts.addEventListener('click', (event) => {
     const deleteButton = event.target.closest('[data-delete-account]');
     if (deleteButton) {
+      event.stopPropagation();
       deleteAccount(deleteButton.dataset.deleteAccount);
+      return;
+    }
+    if (event.target.closest('a')) {
+      return;
+    }
+    const row = event.target.closest('[data-monitor-account]');
+    if (row) {
+      selectMonitorAccount(row.dataset.monitorAccount);
     }
   });
+  elements.accounts.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    if (event.target.closest('[data-delete-account], a')) {
+      return;
+    }
+    const row = event.target.closest('[data-monitor-account]');
+    if (!row) {
+      return;
+    }
+    event.preventDefault();
+    selectMonitorAccount(row.dataset.monitorAccount);
+  });
+  elements.monitorClearAccount?.addEventListener('click', clearSelectedMonitorAccount);
   elements.works.addEventListener('click', (event) => {
     const button = event.target.closest('[data-seen]');
     if (button) {
@@ -1216,9 +1578,9 @@ function init() {
   });
 
   const initialView = window.location.hash.slice(1);
-  setView(VIEW_META[initialView] ? initialView : 'overview', { updateHash: true });
+  setView(initialView, { updateHash: true });
   render();
-  resetAutoRefresh();
+  applyAutoRefreshFrequency(elements.autoRefresh.value);
   loadSession();
   statePollTimer = window.setInterval(() => {
     if (isAuthenticated) {
