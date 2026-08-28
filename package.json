@@ -1,6 +1,6 @@
 {
   "name": "xhs-content-monitor-demo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "销售团队公开内容监控工作台与桌面客户端",
   "author": "lifehacker520",
   "license": "MIT",
@@ -27,6 +27,7 @@
   "build": {
     "appId": "com.aios.xhscontentmonitor",
     "productName": "销售内容雷达",
+    "artifactName": "xhs-content-monitor-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
