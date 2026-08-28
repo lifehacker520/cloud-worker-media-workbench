@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f6f8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>销售内容雷达 · 内容监控工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark">↗</span>
+          <span>
+            <strong>销售内容雷达</strong>
+            <small>AIOS / CONTENT WORKBENCH</small>
+          </span>
+        </a>
+        <div class="topbar-actions">
+          <span id="runtime-status" class="runtime-status is-loading">
+            <i></i>
+            正在连接
+          </span>
+          <div id="auth-area" class="auth-area"></div>
+          <button id="update-app" class="button button-secondary is-hidden" type="button">
+            <span class="button-icon">⇩</span>
+            检查更新
+          </button>
+          <button id="refresh-all" class="button button-primary" type="button">
+            <span class="button-icon">↻</span>
+            刷新全部
+          </button>
+        </div>
+      </header>
+
+      <main class="page">
+        <section class="intro">
+          <div class="intro-copy">
+            <div class="eyebrow">SALES CONTENT RADAR / P0</div>
+            <h1>把销售账号的新内容，<em>收进一个工作台。</em></h1>
+            <p>
+              批量读取公开的小红书主页，记录新发现的作品、发布时间和账号状态。
+              先把信息流跑通，再接 AI 分析、提醒和更多平台。
+            </p>
+            <div class="intro-tags">
+              <span>公开主页</span>
+              <span>短链自动解析</span>
+              <span>本地保存</span>
+              <span>不保存 Token</span>
+            </div>
+          </div>
+          <div class="principle-card">
+            <div class="principle-icon">◌</div>
+            <div>
+              <strong>当前采集方式</strong>
+              <p>读取主页公开返回的 HTML / 内嵌状态</p>
+            </div>
+            <span class="phase-label">P0</span>
+          </div>
+        </section>
+
+        <section id="stats" class="stats-grid" aria-label="监控统计"></section>
+
+        <section class="control-strip">
+          <div class="control-main">
+            <span class="control-label">自动刷新</span>
+            <select id="auto-refresh" class="select-control" aria-label="自动刷新频率">
+              <option value="0">手动</option>
+              <option value="30">每 30 分钟</option>
+              <option value="60">每 60 分钟</option>
+            </select>
+            <span id="last-refresh" class="muted-text">尚未刷新</span>
+          </div>
+          <div class="control-note">
+            <span class="signal-dot"></span>
+            P0 工作台
+          </div>
+        </section>
+
+        <section id="refresh-error" class="alert-banner is-hidden" role="alert"></section>
+
+        <section class="workspace-grid">
+          <aside class="accounts-panel panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">MONITORED ACCOUNTS</div>
+                <h2>账号台账</h2>
+              </div>
+              <span id="account-count-label" class="count-label">0</span>
+            </div>
+
+            <form id="add-account-form" class="add-account-form">
+              <label>
+                <span>新增账号</span>
+                <input id="account-name" name="name" type="text" placeholder="例如：销售负责人 A" required />
+              </label>
+              <label>
+                <span>主页或分享链接</span>
+                <input
+                  id="account-url"
+                  name="sourceUrl"
+                  type="url"
+                  placeholder="https://xhslink.cn/m/..."
+                  required
+                />
+              </label>
+              <button class="button button-dark button-full" type="submit">
+                <span>＋</span>
+                加入监控
+              </button>
+              <p id="add-account-message" class="form-message"></p>
+            </form>
+
+            <div class="filter-row">
+              <span class="muted-text">显示</span>
+              <select id="account-filter" class="select-control select-small" aria-label="账号筛选">
+                <option value="all">全部账号</option>
+                <option value="active">已连接</option>
+                <option value="error">需处理</option>
+                <option value="pending">待刷新</option>
+              </select>
+            </div>
+            <div id="accounts-list" class="accounts-list"></div>
+          </aside>
+
+          <section class="feed-panel panel">
+            <div class="panel-heading feed-heading">
+              <div>
+                <div class="eyebrow">LATEST WORKS</div>
+                <h2>最新作品流</h2>
+              </div>
+              <div class="feed-actions">
+                <span id="feed-count-label" class="count-label">0 条</span>
+              </div>
+            </div>
+            <div class="feed-explainer">
+              <span class="explainer-icon">i</span>
+              <span>首次刷新建立基线；之后新出现的作品会标记为“新发现”。</span>
+            </div>
+            <div id="works-feed" class="works-feed"></div>
+          </section>
+        </section>
+
+        <section class="next-phase panel">
+          <div class="next-phase-mark">✦</div>
+          <div>
+            <div class="eyebrow">NEXT LAYER</div>
+            <h2>下一步可以接什么</h2>
+            <p>AI 摘要与标签 · 内容质量复盘 · 钉钉 / 飞书提醒 · 抖音与视频号适配</p>
+          </div>
+          <span class="coming-soon">待接入</span>
+        </section>
+
+        <section class="collab-grid">
+          <section class="feedback-panel panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">FEEDBACK LOOP</div>
+                <h2>把使用反馈带回来</h2>
+              </div>
+              <span class="phase-label">协作</span>
+            </div>
+            <p class="section-intro">
+              客户可以直接提交问题、想要的功能或内容纠正；你在管理员区域统一查看。
+            </p>
+            <form id="feedback-form" class="feedback-form">
+              <label>
+                <span>反馈类型</span>
+                <select id="feedback-category" name="category" class="select-control">
+                  <option value="bug">遇到问题</option>
+                  <option value="feature">希望增加功能</option>
+                  <option value="content">内容或账号不准确</option>
+                  <option value="other">其他建议</option>
+                </select>
+              </label>
+              <label>
+                <span>反馈内容</span>
+                <textarea
+                  id="feedback-text"
+                  name="message"
+                  rows="4"
+                  maxlength="2000"
+                  placeholder="例如：刷新后没有看到某个账号今天发布的作品……"
+                  required
+                ></textarea>
+              </label>
+              <div class="feedback-submit-row">
+                <p id="feedback-message" class="form-message"></p>
+                <button class="button button-dark" type="submit">提交反馈</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="admin-console" class="admin-panel panel is-hidden">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">OWNER CONSOLE</div>
+                <h2>管理员观察区</h2>
+              </div>
+              <span class="phase-label">ADMIN</span>
+            </div>
+            <div class="admin-columns">
+              <div>
+                <h3>客户反馈</h3>
+                <div id="feedback-list" class="admin-list"></div>
+              </div>
+              <div>
+                <h3>使用活动</h3>
+                <div id="activity-list" class="admin-list"></div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>销售内容雷达 · 只读公开信息的内容监控工作台</span>
+        <span>数据保存在部署环境的 data/ 持久化目录</span>
+      </footer>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div id="login-screen" class="login-screen is-hidden">
+      <div class="login-card">
+        <div class="brand login-brand">
+          <span class="brand-mark">↗</span>
+          <span>
+            <strong>销售内容雷达</strong>
+            <small>CONTENT WORKBENCH</small>
+          </span>
+        </div>
+        <div class="eyebrow">SECURE WORKSPACE</div>
+        <h2>登录后开始使用</h2>
+        <p>客户使用成员账号，你使用管理员账号查看活动和反馈。</p>
+        <form id="login-form" class="login-form">
+          <label>
+            <span>账号</span>
+            <input id="login-username" name="username" type="text" value="client" autocomplete="username" required />
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button class="button button-primary button-full" type="submit">登录工作台</button>
+          <p id="login-message" class="form-message is-error"></p>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

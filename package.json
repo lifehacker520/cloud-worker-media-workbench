@@ -1,0 +1,90 @@
+{
+  "name": "xhs-content-monitor-demo",
+  "version": "0.1.0",
+  "description": "销售团队公开内容监控工作台与桌面客户端",
+  "author": "lifehacker520",
+  "license": "MIT",
+  "main": "electron/main.mjs",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "desktop": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "check": "node --check server.mjs && node --check src/auth.mjs && node --check public/app.js && node --check electron/main.mjs && node --check electron/preload.mjs",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lifehacker520/xhs-content-monitor.git"
+  },
+  "homepage": "https://github.com/lifehacker520/xhs-content-monitor#readme",
+  "build": {
+    "appId": "com.aios.xhscontentmonitor",
+    "productName": "销售内容雷达",
+    "directories": {
+      "output": "release"
+    },
+    "asar": true,
+    "files": [
+      "electron/**/*",
+      "public/**/*",
+      "src/**/*",
+      "config/**/*",
+      "server.mjs",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.business"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "lifehacker520",
+        "repo": "xhs-content-monitor"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
+  }
+}

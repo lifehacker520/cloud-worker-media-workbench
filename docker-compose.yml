@@ -1,0 +1,25 @@
+services:
+  xhs-radar:
+    build: .
+    container_name: xhs-sales-content-radar
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${XHS_HOST_PORT:-3188}:3188"
+    volumes:
+      - xhs-radar-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3188/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  xhs-radar-data:
