@@ -4,12 +4,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { fingerprintForWork } from './src/xhs-parser.mjs';
 import {
-  canonicalizeInput,
-  fetchProfile,
-  fingerprintForWork,
-  parseProfileHtml,
-} from './src/xhs-parser.mjs';
+  adapterFor,
+  normalizeSource,
+  platformCatalog,
+} from './src/platforms.mjs';
 import {
   authConfig,
   authenticate,
@@ -51,8 +51,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function accountIdFor(sourceUrl) {
-  return 'acct_' + createHash('sha1').update(sourceUrl).digest('hex').slice(0, 12);
+function accountIdFor(platform, sourceUrl) {
+  return (
+    'acct_' +
+    createHash('sha1')
+      .update(String(platform || 'unknown') + '\u0000' + sourceUrl)
+      .digest('hex')
+      .slice(0, 12)
+  );
 }
 
 async function readJson(filePath, fallback) {
@@ -74,17 +80,21 @@ async function writeJson(filePath, value) {
 function migrateWorks(savedWorks) {
   const unique = new Map();
   for (const savedWork of savedWorks) {
-    const fingerprint = fingerprintForWork({
-      userId: savedWork.userId,
-      title: savedWork.title,
-      publishedAt: savedWork.publishedAt,
-      noteId: savedWork.noteId,
-      coverUrl: savedWork.coverUrl,
-    });
+    const fingerprint =
+      savedWork.fingerprint ||
+      fingerprintForWork({
+        userId: savedWork.userId,
+        title: savedWork.title,
+        publishedAt: savedWork.publishedAt,
+        noteId: savedWork.noteId,
+        coverUrl: savedWork.coverUrl,
+      });
     const migratedWork = {
       ...savedWork,
       id: 'work_' + fingerprint,
       fingerprint,
+      platform: savedWork.platform || 'xhs',
+      contentId: savedWork.contentId || savedWork.noteId || null,
     };
     const existing = unique.get(fingerprint);
     if (!existing || (existing.seen && !migratedWork.seen)) {
@@ -95,18 +105,23 @@ function migrateWorks(savedWorks) {
 }
 
 function normalizeAccount(seed) {
-  const normalized = canonicalizeInput(seed.sourceUrl);
+  const normalized = normalizeSource(seed.sourceUrl || seed.canonicalUrl);
+  const platform = seed.platform || normalized.platform;
+  const adapter = adapterFor(platform);
   return {
-    id: seed.id || accountIdFor(normalized.sourceUrl),
+    id: seed.id || accountIdFor(platform, normalized.sourceUrl),
     name: seed.name?.trim() || '未命名账号',
+    platform,
+    platformLabel: adapter.label,
+    sourceKind: normalized.kind,
     sourceUrl: normalized.sourceUrl,
     shortCode: normalized.shortCode,
-    userId: seed.userId || normalized.userId || null,
+    userId: seed.userId || normalized.userId || normalized.secUid || null,
     canonicalUrl: seed.canonicalUrl || normalized.canonicalUrl || null,
     nickname: seed.nickname || null,
     state: seed.state || 'pending',
     lastCheckedAt: seed.lastCheckedAt || null,
-    lastError: null,
+    lastError: seed.lastError || null,
     workCount: Number(seed.workCount || 0),
     createdAt: seed.createdAt || nowIso(),
     createdBy: seed.createdBy || 'system',
@@ -117,11 +132,7 @@ async function ensureData() {
   await mkdir(DATA_DIR, { recursive: true });
   const savedAccounts = await readJson(ACCOUNTS_FILE, null);
   if (Array.isArray(savedAccounts) && savedAccounts.length > 0) {
-    appState.accounts = savedAccounts.map((account) => ({
-      ...account,
-      createdAt: account.createdAt || null,
-      createdBy: account.createdBy || 'system',
-    }));
+    appState.accounts = savedAccounts.map((account) => normalizeAccount(account));
   } else {
     const seeds = await readJson(SEED_FILE, []);
     appState.accounts = seeds.map(normalizeAccount);
@@ -148,15 +159,22 @@ function publicState(user = null) {
   });
   const activeAccounts = appState.accounts.filter((account) => account.state === 'active').length;
   const unseenWorks = works.filter((work) => !work.seen).length;
+  const platformCounts = appState.accounts.reduce((counts, account) => {
+    const platform = account.platform || 'other';
+    counts[platform] = (counts[platform] || 0) + 1;
+    return counts;
+  }, {});
 
   return {
     accounts: appState.accounts,
     works,
+    platforms: platformCatalog(),
     stats: {
       accountCount: appState.accounts.length,
       activeAccountCount: activeAccounts,
       workCount: works.length,
       unseenWorkCount: unseenWorks,
+      platformCounts,
     },
     meta: {
       lastRefreshAt: appState.lastRefreshAt,
@@ -181,8 +199,8 @@ function safeError(error) {
   }
   const message = error instanceof Error ? error.message : String(error);
   return message
-    .replace(/https?:\/\/[^\s)]+/gi, '小红书链接')
-    .replace(/xsec_[^&\s]+/gi, 'xsec_token=已隐藏');
+    .replace(/https?:\/\/[^\s)]+/gi, '平台链接')
+    .replace(/(?:xsec|ms|ttwid)_[^&\s]+/gi, '平台参数=已隐藏');
 }
 
 function sleep(milliseconds) {
@@ -214,10 +232,16 @@ async function recordActivity(actor, type, detail) {
 async function refreshOne(account) {
   const checkedAt = nowIso();
   try {
-    const fetched = await fetchProfile(account.canonicalUrl || account.sourceUrl, {
+    const platform = account.platform || normalizeSource(account.sourceUrl).platform;
+    const adapter = adapterFor(platform);
+    const fetched = await adapter.fetchProfile(account.canonicalUrl || account.sourceUrl, {
       signal: AbortSignal.timeout(25000),
     });
-    const parsed = parseProfileHtml(fetched.html, fetched.canonicalUrl, fetched.userId);
+    const parsed = adapter.parseProfileHtml(
+      fetched.html,
+      fetched.canonicalUrl,
+      fetched.userId || fetched.secUid,
+    );
     const previousWorks = appState.works.filter((work) => work.accountId === account.id);
     const previousKeys = new Set(previousWorks.map((work) => work.fingerprint));
     const isBaseline = previousWorks.length === 0;
@@ -240,10 +264,12 @@ async function refreshOne(account) {
       appState.works.push({
         id: 'work_' + fingerprint,
         accountId: account.id,
+        platform,
         userId: fetched.userId,
         title: parsedWork.title,
         publishedAt: parsedWork.publishedAt,
         noteId: parsedWork.noteId,
+        contentId: parsedWork.contentId || parsedWork.noteId || null,
         likes: parsedWork.likes,
         coverUrl: parsedWork.coverUrl,
         link: parsedWork.link,
@@ -258,8 +284,10 @@ async function refreshOne(account) {
       }
     }
 
-    account.userId = fetched.userId;
-    account.canonicalUrl = fetched.canonicalUrl;
+    account.userId = fetched.userId || fetched.secUid || account.userId;
+    account.platform = platform;
+    account.platformLabel = adapter.label;
+    account.canonicalUrl = fetched.canonicalUrl || account.canonicalUrl;
     account.nickname = parsed.nickname || account.nickname || account.name;
     account.state = 'active';
     account.lastCheckedAt = checkedAt;
@@ -506,7 +534,7 @@ async function handleRequest(request, response) {
 
     let normalized;
     try {
-      normalized = canonicalizeInput(sourceUrl);
+      normalized = normalizeSource(sourceUrl);
     } catch (error) {
       return sendJson(response, { ok: false, error: safeError(error) }, 400);
     }
@@ -514,7 +542,9 @@ async function handleRequest(request, response) {
     const duplicate = appState.accounts.find(
       (account) =>
         account.sourceUrl === normalized.sourceUrl ||
-        (normalized.userId && account.userId === normalized.userId),
+        (normalized.userId &&
+          account.platform === normalized.platform &&
+          account.userId === normalized.userId),
     );
     if (duplicate) {
       return sendJson(response, { ok: false, error: '这个账号已经在监控列表中' }, 409);
@@ -523,6 +553,7 @@ async function handleRequest(request, response) {
     const account = normalizeAccount({
       name,
       sourceUrl: normalized.sourceUrl,
+      platform: normalized.platform,
       createdAt: nowIso(),
       createdBy: user.username,
     });
@@ -530,6 +561,41 @@ async function handleRequest(request, response) {
     await persist();
     await recordActivity(user, 'account_added', '加入监控账号：' + name);
     return sendJson(response, { ok: true, account }, 201);
+  }
+
+  if (requestUrl.pathname.startsWith('/api/accounts/') && request.method === 'DELETE') {
+    const user = authorizedUser(request, response);
+    if (!user) {
+      return null;
+    }
+    if (appState.refreshInProgress) {
+      return sendJson(response, { ok: false, error: '刷新进行中，请稍后再删除账号' }, 409);
+    }
+
+    const accountId = decodeURIComponent(
+      requestUrl.pathname.slice('/api/accounts/'.length),
+    );
+    const accountIndex = appState.accounts.findIndex((account) => account.id === accountId);
+    if (accountIndex < 0) {
+      return sendJson(response, { ok: false, error: '监控账号不存在' }, 404);
+    }
+
+    const [account] = appState.accounts.splice(accountIndex, 1);
+    const removedWorks = appState.works.filter(
+      (work) => work.accountId === account.id,
+    ).length;
+    appState.works = appState.works.filter((work) => work.accountId !== account.id);
+    await persist();
+    await recordActivity(
+      user,
+      'account_removed',
+      '移除监控账号：' + account.name + '，同时删除 ' + removedWorks + ' 条已抓取作品',
+    );
+    return sendJson(response, {
+      ok: true,
+      account,
+      removedWorks,
+    });
   }
 
   if (requestUrl.pathname === '/api/works/seen' && request.method === 'POST') {

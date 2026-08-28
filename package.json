@@ -16,7 +16,7 @@
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "check": "node --check server.mjs && node --check src/auth.mjs && node --check public/app.js && node --check electron/main.mjs && node --check electron/preload.mjs",
+    "check": "node --check server.mjs && node --check src/auth.mjs && node --check src/xhs-parser.mjs && node --check src/douyin-parser.mjs && node --check src/platforms.mjs && node --check public/app.js && node --check electron/main.mjs && node --check electron/preload.mjs",
     "test": "node --test"
   },
   "repository": {
