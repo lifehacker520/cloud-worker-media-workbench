@@ -1,4 +1,5 @@
 import * as douyin from './douyin-parser.mjs';
+import * as channels from './channels-parser.mjs';
 import * as xhs from './xhs-parser.mjs';
 
 const ADAPTERS = new Map([
@@ -20,6 +21,16 @@ const ADAPTERS = new Map([
       mode: '公开主页监控',
       status: 'beta',
       ...douyin,
+    },
+  ],
+  [
+    'channels',
+    {
+      id: 'channels',
+      label: '视频号',
+      mode: '需微信会话监控 · Beta',
+      status: 'beta',
+      ...channels,
     },
   ],
 ]);
@@ -48,7 +59,7 @@ export function normalizeSource(input) {
 
   const lastError = errors.at(-1);
   throw new Error(
-    lastError?.message || '只支持小红书或抖音公开主页链接',
+    lastError?.message || '只支持小红书、抖音或视频号链接',
   );
 }
 
@@ -63,12 +74,6 @@ export function adapterForInput(input) {
 export function platformCatalog() {
   return [
     ...ADAPTERS.values(),
-    {
-      id: 'channels',
-      label: '视频号',
-      mode: '待接入',
-      status: 'planned',
-    },
     {
       id: 'other',
       label: '其他平台',

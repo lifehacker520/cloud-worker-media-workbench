@@ -1,6 +1,7 @@
 import {
   createHmac,
   randomBytes,
+  scryptSync,
   timingSafeEqual,
 } from 'node:crypto';
 
@@ -13,6 +14,31 @@ const AUTH_REQUIRED = process.env.XHS_AUTH_REQUIRED === 'true' || IS_PRODUCTION;
 
 const ADMIN_PASSWORD = process.env.XHS_ADMIN_PASSWORD || null;
 const CLIENT_PASSWORD = process.env.XHS_CLIENT_PASSWORD || null;
+const DEFAULT_TENANT_ID = process.env.XHS_DEFAULT_TENANT_ID || 'tenant_local';
+const ADMIN_TENANT_ID = process.env.XHS_ADMIN_TENANT_ID || DEFAULT_TENANT_ID;
+const CLIENT_TENANT_ID = process.env.XHS_CLIENT_TENANT_ID || DEFAULT_TENANT_ID;
+
+const ROLE_PERMISSIONS = {
+  admin: [
+    'workspace.read',
+    'workspace.manage',
+    'content.read',
+    'content.write',
+    'content.review',
+    'connector.manage',
+    'connector.use',
+    'publish.approve',
+  ],
+  client: [
+    'workspace.read',
+    'content.read',
+    'content.write',
+    'content.review',
+    'connector.use',
+  ],
+};
+
+let userDirectoryLookup = null;
 
 if (
   AUTH_REQUIRED &&
@@ -51,10 +77,48 @@ function authRequired() {
   return AUTH_REQUIRED;
 }
 
+function tenantIdForUsername(username) {
+  return username === 'admin' ? ADMIN_TENANT_ID : CLIENT_TENANT_ID;
+}
+
+function userPayload(username, role, displayName, tenantId = tenantIdForUsername(username)) {
+  return {
+    username,
+    role,
+    displayName,
+    tenantId,
+    permissions: ROLE_PERMISSIONS[role] || [],
+  };
+}
+
+export function configureUserDirectory(lookup) {
+  userDirectoryLookup = typeof lookup === 'function' ? lookup : null;
+}
+
+function authenticateDirectoryUser(username, password) {
+  if (!userDirectoryLookup || typeof password !== 'string' || !password) return null;
+  let entry;
+  try {
+    entry = userDirectoryLookup(username);
+  } catch {
+    return null;
+  }
+  if (!entry?.passwordHash || !entry.passwordSalt || entry.status === 'disabled') return null;
+  try {
+    const candidateHash = scryptSync(password, entry.passwordSalt, 32).toString('hex');
+    if (!safeSecretEqual(entry.passwordHash, candidateHash)) return null;
+    return userPayload(entry.username, entry.role, entry.displayName, entry.tenantId);
+  } catch {
+    return null;
+  }
+}
+
 export function authConfig() {
   return {
     required: authRequired(),
     localDefaults: !IS_PRODUCTION && !process.env.XHS_AUTH_REQUIRED,
+    tenantModel: 'tenant_project_rbac',
+    persistentMemberDirectory: Boolean(userDirectoryLookup),
   };
 }
 
@@ -62,20 +126,12 @@ export function authenticate(username, password) {
   const normalizedUsername =
     typeof username === 'string' ? username.trim().toLowerCase() : '';
   if (normalizedUsername === 'admin' && safeSecretEqual(ADMIN_PASSWORD, password)) {
-    return {
-      username: 'admin',
-      role: 'admin',
-      displayName: '管理员',
-    };
+    return userPayload('admin', 'admin', '管理员');
   }
   if (normalizedUsername === 'client' && safeSecretEqual(CLIENT_PASSWORD, password)) {
-    return {
-      username: 'client',
-      role: 'client',
-      displayName: '客户成员',
-    };
+    return userPayload('client', 'client', '客户成员');
   }
-  return null;
+  return authenticateDirectoryUser(normalizedUsername, password);
 }
 
 export function sessionCookie(user) {
@@ -84,6 +140,8 @@ export function sessionCookie(user) {
       username: user.username,
       role: user.role,
       displayName: user.displayName,
+      tenantId: user.tenantId || tenantIdForUsername(user.username),
+      permissions: user.permissions || ROLE_PERMISSIONS[user.role] || [],
       exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     }),
   );
@@ -125,6 +183,8 @@ export function currentUser(request) {
       username: 'local',
       role: 'admin',
       displayName: '本地开发者',
+      tenantId: DEFAULT_TENANT_ID,
+      permissions: ROLE_PERMISSIONS.admin,
     };
   }
 
@@ -143,10 +203,29 @@ export function currentUser(request) {
     if (!parsed.username || !parsed.role || parsed.exp < Math.floor(Date.now() / 1000)) {
       return null;
     }
+    if (userDirectoryLookup) {
+      let directoryEntry = null;
+      try {
+        directoryEntry = userDirectoryLookup(parsed.username);
+      } catch {
+        directoryEntry = null;
+      }
+      if (directoryEntry?.status === 'disabled') return null;
+      if (directoryEntry) {
+        return userPayload(
+          directoryEntry.username,
+          directoryEntry.role,
+          directoryEntry.displayName,
+          directoryEntry.tenantId,
+        );
+      }
+    }
     return {
       username: parsed.username,
       role: parsed.role,
       displayName: parsed.displayName || parsed.username,
+      tenantId: parsed.tenantId || tenantIdForUsername(parsed.username),
+      permissions: parsed.permissions || ROLE_PERMISSIONS[parsed.role] || [],
     };
   } catch {
     return null;

@@ -5,8 +5,10 @@ import {
   canonicalProfileUrl,
   canonicalizeInput,
   fingerprintForWork,
+  parseBrowserSnapshot,
   parseProfileHtml,
   resolveReference,
+  fetchProfile,
 } from '../src/xhs-parser.mjs';
 
 const userId = '6a043b3d0000000002002000';
@@ -81,4 +83,59 @@ test('fingerprint stays stable when a title-only work receives a different times
     noteId: null,
   });
   assert.equal(first, second);
+});
+
+test('parseBrowserSnapshot returns an avatar and direct note link', () => {
+  const result = parseBrowserSnapshot(
+    {
+      profile: {
+        userId,
+        nickname: '今天也在上班',
+        avatarUrl: 'https://img.example.com/browser-avatar.jpg',
+      },
+      works: [
+        {
+          contentId: '65abcdef12345678',
+          title: '浏览器补采到的内容',
+          publishTime: 1777000000000,
+          coverUrl: 'https://img.example.com/browser-cover.jpg',
+        },
+      ],
+    },
+    canonicalUrl,
+    userId,
+  );
+  assert.equal(result.avatarUrl, 'https://img.example.com/browser-avatar.jpg');
+  assert.equal(result.works[0].link, 'https://www.xiaohongshu.com/explore/65abcdef12345678');
+  assert.equal(result.works[0].coverUrl, 'https://img.example.com/browser-cover.jpg');
+});
+
+test('parseBrowserSnapshot ignores the profile path segment as the user id', () => {
+  const result = parseBrowserSnapshot(
+    {
+      profile: {
+        userId: 'profile',
+        nickname: '今天也在上班',
+      },
+      works: [
+        {
+          contentId: '65abcdef12345678',
+          title: '路径段不能成为用户 ID',
+        },
+      ],
+    },
+    canonicalUrl,
+    userId,
+  );
+  assert.equal(result.userId, userId);
+});
+
+test('fetchProfile routes browser mode to the desktop session', async () => {
+  const result = await fetchProfile(canonicalUrl, {
+    useBrowser: true,
+    browserSession: {
+      collectProfile: async (platform, input) => ({ platform, input, browserSnapshot: {} }),
+    },
+  });
+  assert.deepEqual(result, { platform: 'xhs', input: canonicalUrl, browserSnapshot: {} });
 });

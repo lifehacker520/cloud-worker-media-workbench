@@ -1,0 +1,197 @@
+{
+  "description": "仅用于本地界面验收的合成监控数据，不代表任何真实平台账号或线上表现。",
+  "accounts": [
+    {
+      "id": "demo_xhs_account",
+      "name": "演示·小红书账号",
+      "group": "演示数据",
+      "platform": "xhs",
+      "sourceUrl": "https://www.xiaohongshu.com/user/profile/000000000000000000000001",
+      "userId": "000000000000000000000001",
+      "canonicalUrl": "https://www.xiaohongshu.com/user/profile/000000000000000000000001",
+      "nickname": "演示小红书",
+      "profileMetrics": { "follower_count": 23800 },
+      "state": "active",
+      "metricStatus": "available",
+      "metricLastObservedAt": "2026-09-02T03:30:00.000Z",
+      "commentStatus": "available",
+      "commentLastFetchedAt": "2026-09-02T03:30:00.000Z",
+      "lastCheckedAt": "2026-09-02T03:30:00.000Z"
+    },
+    {
+      "id": "demo_douyin_account",
+      "name": "演示·抖音账号",
+      "group": "演示数据",
+      "platform": "douyin",
+      "sourceUrl": "https://www.douyin.com/user/MS4wLjABAAAA-demo-user",
+      "userId": "MS4wLjABAAAA-demo-user",
+      "canonicalUrl": "https://www.douyin.com/user/MS4wLjABAAAA-demo-user",
+      "nickname": "演示抖音",
+      "profileMetrics": { "follower_count": 56200 },
+      "state": "active",
+      "metricStatus": "available",
+      "metricLastObservedAt": "2026-09-02T03:30:00.000Z",
+      "commentStatus": "available",
+      "commentLastFetchedAt": "2026-09-02T03:30:00.000Z",
+      "lastCheckedAt": "2026-09-02T03:30:00.000Z"
+    },
+    {
+      "id": "demo_channels_account",
+      "name": "演示·视频号账号",
+      "group": "演示数据",
+      "platform": "channels",
+      "sourceUrl": "https://channels.weixin.qq.com/web/pages/profile?finderUsername=demo_finder_account",
+      "userId": "demo_finder_account",
+      "canonicalUrl": "https://channels.weixin.qq.com/web/pages/profile?finderUsername=demo_finder_account",
+      "nickname": "演示视频号",
+      "profileMetrics": { "follower_count": 31700 },
+      "state": "active",
+      "metricStatus": "available",
+      "metricLastObservedAt": "2026-09-02T03:30:00.000Z",
+      "commentStatus": "available",
+      "commentLastFetchedAt": "2026-09-02T03:30:00.000Z",
+      "lastCheckedAt": "2026-09-02T03:30:00.000Z"
+    }
+  ],
+  "works": [
+    {
+      "id": "demo_xhs_work_1",
+      "accountId": "demo_xhs_account",
+      "tenantId": "tenant_local",
+      "platform": "xhs",
+      "userId": "000000000000000000000001",
+      "contentId": "demo-xhs-note-1",
+      "noteId": "demo-xhs-note-1",
+      "title": "演示：企业工作手机内容拆解",
+      "publishedAt": "2026-09-01T02:00:00.000Z",
+      "discoveredAt": "2026-09-02T03:30:00.000Z",
+      "link": "https://www.xiaohongshu.com/explore/demo-xhs-note-1",
+      "metrics": {
+        "read_count": 14000,
+        "exposure_count": 22000,
+        "like_count": 860,
+        "favorite_count": 320,
+        "comment_count": 48,
+        "share_count": 76
+      },
+      "seen": true
+    },
+    {
+      "id": "demo_xhs_work_2",
+      "accountId": "demo_xhs_account",
+      "tenantId": "tenant_local",
+      "platform": "xhs",
+      "userId": "000000000000000000000001",
+      "contentId": "demo-xhs-note-2",
+      "noteId": "demo-xhs-note-2",
+      "title": "演示：销售线索复盘清单",
+      "publishedAt": "2026-09-02T01:10:00.000Z",
+      "discoveredAt": "2026-09-02T03:30:00.000Z",
+      "link": "https://www.xiaohongshu.com/explore/demo-xhs-note-2",
+      "metrics": {
+        "read_count": 9200,
+        "exposure_count": 15000,
+        "like_count": 540,
+        "favorite_count": 190,
+        "comment_count": 21,
+        "share_count": 34
+      },
+      "seen": true
+    },
+    {
+      "id": "demo_douyin_work_1",
+      "accountId": "demo_douyin_account",
+      "tenantId": "tenant_local",
+      "platform": "douyin",
+      "userId": "MS4wLjABAAAA-demo-user",
+      "contentId": "demo-douyin-video-1",
+      "title": "演示：三十秒看懂销售自动化",
+      "publishedAt": "2026-09-01T06:20:00.000Z",
+      "discoveredAt": "2026-09-02T03:30:00.000Z",
+      "link": "https://www.douyin.com/video/7550000000000000001",
+      "metrics": {
+        "play_count": 68000,
+        "exposure_count": 92000,
+        "like_count": 4300,
+        "favorite_count": 1200,
+        "comment_count": 186,
+        "share_count": 760
+      },
+      "seen": true
+    },
+    {
+      "id": "demo_douyin_work_2",
+      "accountId": "demo_douyin_account",
+      "tenantId": "tenant_local",
+      "platform": "douyin",
+      "userId": "MS4wLjABAAAA-demo-user",
+      "contentId": "demo-douyin-video-2",
+      "title": "演示：客户跟进的三个关键节点",
+      "publishedAt": "2026-09-02T00:40:00.000Z",
+      "discoveredAt": "2026-09-02T03:30:00.000Z",
+      "link": "https://www.douyin.com/video/7550000000000000002",
+      "metrics": {
+        "play_count": 42000,
+        "exposure_count": 63000,
+        "like_count": 2600,
+        "favorite_count": 740,
+        "comment_count": 94,
+        "share_count": 410
+      },
+      "seen": true
+    },
+    {
+      "id": "demo_channels_work_1",
+      "accountId": "demo_channels_account",
+      "tenantId": "tenant_local",
+      "platform": "channels",
+      "userId": "demo_finder_account",
+      "contentId": "demo-channels-video-1",
+      "title": "演示：视频号运营周报",
+      "publishedAt": "2026-09-01T10:00:00.000Z",
+      "discoveredAt": "2026-09-02T03:30:00.000Z",
+      "link": "https://weixin.qq.com/sph/demo-channels-video-1",
+      "metrics": {
+        "play_count": 32000,
+        "exposure_count": 47000,
+        "like_count": 1800,
+        "favorite_count": 510,
+        "comment_count": 73,
+        "share_count": 280
+      },
+      "seen": true
+    }
+  ],
+  "comments": [
+    {
+      "id": "demo-comment-xhs-1",
+      "accountId": "demo_xhs_account",
+      "contentId": "demo-xhs-note-2",
+      "text": "这个清单可以直接给新人使用吗？",
+      "authorName": "演示访客 A",
+      "createdAt": "2026-09-02T02:20:00.000Z",
+      "likeCount": 8,
+      "replyCount": 2
+    },
+    {
+      "id": "demo-comment-douyin-1",
+      "accountId": "demo_douyin_account",
+      "contentId": "demo-douyin-video-2",
+      "text": "想了解企业版和个人版的区别。",
+      "authorName": "演示访客 B",
+      "createdAt": "2026-09-02T01:20:00.000Z",
+      "likeCount": 13,
+      "replyCount": 3
+    },
+    {
+      "id": "demo-comment-channels-1",
+      "accountId": "demo_channels_account",
+      "contentId": "demo-channels-video-1",
+      "text": "请问周报模板在哪里可以领取？",
+      "authorName": "演示访客 C",
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "likeCount": 5,
+      "replyCount": 1
+    }
+  ]
+}

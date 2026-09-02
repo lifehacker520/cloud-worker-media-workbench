@@ -154,6 +154,22 @@ export async function resolveReference(input, options = {}) {
 }
 
 export async function fetchProfile(input, options = {}) {
+  if (options.useBrowser) {
+    if (typeof options.browserSession?.collectProfile !== 'function') {
+      throw new Error('小红书浏览器补采仅在桌面客户端可用，请打开桌面版后重试');
+    }
+    let browserInput = input;
+    try {
+      const normalized = canonicalizeInput(input);
+      if (normalized.kind === 'short') {
+        const reference = await resolveReference(input, { ...options, useBrowser: false });
+        browserInput = reference.canonicalUrl || input;
+      }
+    } catch {
+      // The persistent browser can still resolve a short link with its own session.
+    }
+    return options.browserSession.collectProfile('xhs', browserInput, options);
+  }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const reference = await resolveReference(input, { ...options, fetchImpl });
 
@@ -237,6 +253,36 @@ function workLink(canonicalUrl, noteId) {
     : canonicalUrl;
 }
 
+function metricFromSegment(segment, keys) {
+  for (const key of keys) {
+    const pattern = new RegExp('"' + key + '"\\s*:\\s*"?([^",}]+)"?');
+    const match = segment.match(pattern);
+    if (match?.[1]) {
+      return decodeJsonString(match[1]);
+    }
+  }
+  return null;
+}
+
+function metricsFromSegment(segment) {
+  const aliases = {
+    read_count: ['viewCount', 'view_count', 'readCount', 'read_count', 'reads', '阅读', '阅读量'],
+    like_count: ['likedCount', 'liked_count', 'likeCount', 'like_count', 'likes', '点赞', '点赞量'],
+    favorite_count: ['collectedCount', 'collected_count', 'collectCount', 'collect_count', 'favorites', '收藏', '收藏量'],
+    comment_count: ['commentCount', 'comment_count', 'comments', '评论', '评论量'],
+    share_count: ['shareCount', 'share_count', 'shares', '分享', '分享量'],
+    exposure_count: ['exposureCount', 'exposure_count', 'exposures', '曝光', '曝光量'],
+  };
+  const metrics = {};
+  for (const [metricKey, keys] of Object.entries(aliases)) {
+    const value = metricFromSegment(segment, keys);
+    if (value !== null) {
+      metrics[metricKey] = value;
+    }
+  }
+  return metrics;
+}
+
 export function fingerprintForWork({ userId, title, publishedAt, noteId, coverUrl }) {
   const stableKey = noteId
     ? 'note:' + noteId
@@ -309,6 +355,7 @@ function extractEmbeddedWorks(html, canonicalUrl, userId) {
 
     const noteId = safeNoteId(segment.match(/"noteId"\s*:\s*"([^"]*)"/)?.[1] ?? '');
     const likes = segment.match(/"likedCount"\s*:\s*"([^"]*)"/)?.[1] ?? null;
+    const metrics = metricsFromSegment(segment);
     const coverRaw = segment.match(/"urlDefault"\s*:\s*"((?:\\.|[^"\\])*)"/)?.[1] ?? null;
     const coverUrl = coverRaw ? decodeJsonString(coverRaw) : null;
     const fingerprint = fingerprintForWork({
@@ -324,6 +371,7 @@ function extractEmbeddedWorks(html, canonicalUrl, userId) {
       publishedAt,
       noteId,
       likes,
+      metrics,
       coverUrl,
       link: workLink(canonicalUrl, noteId),
       fingerprint,
@@ -358,6 +406,7 @@ function extractVisibleTitles(html, canonicalUrl, userId) {
       publishedAt: null,
       noteId: null,
       likes: null,
+      metrics: {},
       coverUrl: null,
       link: canonicalUrl,
       fingerprint: fingerprintForWork({
@@ -407,6 +456,76 @@ export function parseProfileHtml(html, canonicalUrl, userId) {
         : works.length > 0
           ? 'visible-profile-html'
           : 'no-public-works-found',
+  };
+}
+
+export function parseBrowserSnapshot(snapshot, canonicalUrl, userId = null) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error('小红书浏览器会话没有返回页面数据');
+  }
+  const snapshotUserId = snapshot.profile?.userId || snapshot.userId;
+  const safeUserId =
+    extractUserId(canonicalUrl) ||
+    [snapshotUserId, userId].find((candidate) => USER_ID_PATTERN.test(String(candidate || '').trim())) ||
+    null;
+  if (!safeUserId) {
+    throw new Error('浏览器会话没有识别出小红书用户 ID');
+  }
+
+  const works = Array.isArray(snapshot.works)
+    ? snapshot.works
+        .map((work) => {
+          const title = String(work?.title || '').replace(/\s+/g, ' ').trim();
+          if (!title) {
+            return null;
+          }
+          const noteId = safeNoteId(work.contentId || work.noteId || work.note_id || '');
+          const publishedAt = normalizeTimestamp(work.publishedAt || work.publishTime || work.createTime);
+          const coverUrl = normalizeImageUrl(work.coverUrl || work.cover_url || '');
+          return {
+            title,
+            publishedAt,
+            noteId,
+            likes: work.likes || null,
+            metrics: work.metrics || {},
+            coverUrl,
+            link: work.link && /^https?:\/\//i.test(work.link)
+              ? work.link
+              : workLink(canonicalUrl, noteId),
+            fingerprint: fingerprintForWork({
+              userId: safeUserId,
+              title,
+              publishedAt,
+              noteId,
+              coverUrl,
+            }),
+            extraction: 'browser-session',
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  const unique = new Map();
+  for (const work of works) {
+    const key = work.noteId || work.title + '\u0000' + (work.publishedAt || '');
+    if (!unique.has(key)) {
+      unique.set(key, work);
+    }
+  }
+  if (!unique.size) {
+    throw new Error(
+      '小红书浏览器会话没有读取到作品；请确认页面已加载并完成登录或人工验证',
+    );
+  }
+
+  return {
+    userId: safeUserId,
+    nickname: snapshot.profile?.nickname || snapshot.nickname || null,
+    avatarUrl: normalizeImageUrl(snapshot.profile?.avatarUrl || snapshot.avatarUrl || ''),
+    works: [...unique.values()]
+      .sort((left, right) => (right.publishedAt || '').localeCompare(left.publishedAt || ''))
+      .slice(0, 50),
+    extraction: 'browser-session',
   };
 }
 

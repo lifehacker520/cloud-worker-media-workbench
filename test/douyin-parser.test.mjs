@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   canonicalProfileUrl,
   canonicalizeInput,
+  fetchProfile,
+  parseBrowserSnapshot,
   parseProfileHtml,
   resolveReference,
 } from '../src/douyin-parser.mjs';
@@ -91,4 +93,66 @@ test('parseProfileHtml reports a platform security challenge instead of false su
       ),
     /安全校验/,
   );
+});
+
+test('parseBrowserSnapshot returns an avatar and direct video link', () => {
+  const result = parseBrowserSnapshot(
+    {
+      profile: {
+        userId: secUid,
+        nickname: '星枢AI',
+        avatarUrl: 'https://img.example.com/browser-avatar.jpg',
+      },
+      works: [
+        {
+          contentId: '7550000000000000002',
+          title: '浏览器补采到的抖音作品',
+          createTime: 1777000000,
+          coverUrl: 'https://img.example.com/browser-cover.jpg',
+        },
+      ],
+    },
+    canonicalUrl,
+    secUid,
+  );
+  assert.equal(result.avatarUrl, 'https://img.example.com/browser-avatar.jpg');
+  assert.equal(result.works[0].link, 'https://www.douyin.com/video/7550000000000000002');
+  assert.equal(result.works[0].coverUrl, 'https://img.example.com/browser-cover.jpg');
+});
+
+test('parseBrowserSnapshot keeps ISO timestamps and sorts newest works first', () => {
+  const result = parseBrowserSnapshot(
+    {
+      profile: { userId: secUid },
+      works: [
+        {
+          contentId: '7550000000000000003',
+          title: '较早的作品',
+          publishedAt: '2026-08-01T10:00:00.000Z',
+          position: 1,
+        },
+        {
+          contentId: '7550000000000000004',
+          title: '最新的作品',
+          publishedAt: '2026-08-28T10:00:00.000Z',
+          position: 0,
+        },
+      ],
+    },
+    canonicalUrl,
+    secUid,
+  );
+  assert.equal(result.works[0].title, '最新的作品');
+  assert.equal(result.works[0].publishedAt, '2026-08-28T10:00:00.000Z');
+  assert.equal(result.works[1].position, 1);
+});
+
+test('fetchProfile routes browser mode to the desktop session', async () => {
+  const result = await fetchProfile(canonicalUrl, {
+    useBrowser: true,
+    browserSession: {
+      collectProfile: async (platform, input) => ({ platform, input, browserSnapshot: {} }),
+    },
+  });
+  assert.deepEqual(result, { platform: 'douyin', input: canonicalUrl, browserSnapshot: {} });
 });

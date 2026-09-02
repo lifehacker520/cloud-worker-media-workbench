@@ -157,6 +157,22 @@ export async function resolveReference(input, options = {}) {
 }
 
 export async function fetchProfile(input, options = {}) {
+  if (options.useBrowser) {
+    if (typeof options.browserSession?.collectProfile !== 'function') {
+      throw new Error('抖音浏览器补采仅在桌面客户端可用，请打开桌面版后重试');
+    }
+    let browserInput = input;
+    try {
+      const normalized = canonicalizeInput(input);
+      if (normalized.kind === 'short') {
+        const reference = await resolveReference(input, { ...options, useBrowser: false });
+        browserInput = reference.canonicalUrl || input;
+      }
+    } catch {
+      // The persistent browser can still resolve a short link with its own session.
+    }
+    return options.browserSession.collectProfile('douyin', browserInput, options);
+  }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const reference = await resolveReference(input, { ...options, fetchImpl });
 
@@ -222,13 +238,23 @@ function normalizeTimestamp(raw) {
   if (raw === null || raw === undefined || raw === '') {
     return null;
   }
-  const number = Number(raw);
-  if (!Number.isFinite(number)) {
+  const text = String(raw).trim();
+  const number = Number(text);
+  if (Number.isFinite(number)) {
+    const milliseconds = text.length <= 10 ? number * 1000 : number;
+    const date = new Date(milliseconds);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function normalizePosition(value) {
+  if (value === null || value === undefined || value === '') {
     return null;
   }
-  const milliseconds = String(raw).length <= 10 ? number * 1000 : number;
-  const date = new Date(milliseconds);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function safeContentId(value) {
@@ -370,6 +396,33 @@ function likesFromObject(object) {
     || valueFromObject(object, ['digg_count', 'like_count', 'liked_count']);
 }
 
+function metricsFromObject(object) {
+  const statistics = [
+    object?.statistics,
+    object?.stats,
+    object?.statisticsInfo,
+    object?.statistics_info,
+  ].filter((item) => item && typeof item === 'object');
+  const source = Object.assign({}, object, ...statistics);
+  const aliases = {
+    play_count: ['play_count', 'playCount', 'plays', 'play', '播放', '播放量'],
+    like_count: ['digg_count', 'like_count', 'liked_count', 'likeCount', 'likes', '点赞', '点赞量'],
+    favorite_count: ['collect_count', 'collectCount', 'favorite_count', 'favoriteCount', 'favorites', '收藏', '收藏量'],
+    comment_count: ['comment_count', 'commentCount', 'comments', '评论', '评论量'],
+    share_count: ['share_count', 'shareCount', 'shares', '分享', '分享量'],
+    exposure_count: ['exposure_count', 'exposureCount', 'exposures', '曝光', '曝光量'],
+    read_count: ['read_count', 'readCount', 'reads', 'read', '阅读', '阅读量'],
+  };
+  const metrics = {};
+  for (const [metricKey, keys] of Object.entries(aliases)) {
+    const value = valueFromObject(source, keys);
+    if (value !== null) {
+      metrics[metricKey] = value;
+    }
+  }
+  return metrics;
+}
+
 function createWork(object, canonicalUrl, secUid) {
   if (!object || typeof object !== 'object') {
     return null;
@@ -393,6 +446,7 @@ function createWork(object, canonicalUrl, secUid) {
     contentId,
     noteId: contentId,
     likes: likesFromObject(object),
+    metrics: metricsFromObject(object),
     coverUrl,
     link: workLink(contentId, canonicalUrl),
     fingerprint: fingerprintForWork({ secUid, title, contentId, publishedAt, coverUrl }),
@@ -459,6 +513,26 @@ function matchFirst(pattern, segment) {
   return match ? decodeJsonString(match[1]) : null;
 }
 
+function metricsFromSegment(segment) {
+  const patterns = {
+    play_count: /"(?:play_count|playCount|plays)"\s*:\s*"?([^",}]+)"?/,
+    like_count: /"(?:digg_count|like_count|liked_count|likeCount)"\s*:\s*"?([^",}]+)"?/,
+    favorite_count: /"(?:collect_count|collectCount|favorite_count|favoriteCount)"\s*:\s*"?([^",}]+)"?/,
+    comment_count: /"(?:comment_count|commentCount)"\s*:\s*"?([^",}]+)"?/,
+    share_count: /"(?:share_count|shareCount)"\s*:\s*"?([^",}]+)"?/,
+    exposure_count: /"(?:exposure_count|exposureCount)"\s*:\s*"?([^",}]+)"?/,
+    read_count: /"(?:read_count|readCount|read)"\s*:\s*"?([^",}]+)"?/,
+  };
+  const metrics = {};
+  for (const [metricKey, pattern] of Object.entries(patterns)) {
+    const value = matchFirst(pattern, segment);
+    if (value !== null) {
+      metrics[metricKey] = value;
+    }
+  }
+  return metrics;
+}
+
 function extractRegexWorks(html, canonicalUrl, secUid) {
   const idRegex = /"(?:aweme_id|awemeId|item_id|itemId|video_id|videoId)"\s*:\s*"([^"\\]+)"/g;
   const works = [];
@@ -496,6 +570,7 @@ function extractRegexWorks(html, canonicalUrl, secUid) {
       contentId,
       noteId: contentId,
       likes: matchFirst(/"(?:digg_count|like_count|liked_count)"\s*:\s*"?([^",}]+)"?/, segment),
+      metrics: metricsFromSegment(segment),
       coverUrl,
       link: workLink(contentId, canonicalUrl),
       fingerprint: fingerprintForWork({ secUid, title, contentId, publishedAt, coverUrl }),
@@ -576,6 +651,86 @@ export function parseProfileHtml(html, canonicalUrl, secUid = extractSecUid(cano
       uniqueWorks.length > 0
         ? 'embedded-profile-state'
         : 'no-public-works-found',
+  };
+}
+
+export function parseBrowserSnapshot(snapshot, canonicalUrl, secUid = null) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new Error('抖音浏览器会话没有返回页面数据');
+  }
+  const safeSecUid = snapshot.profile?.userId || snapshot.secUid || secUid || extractSecUid(canonicalUrl);
+  if (!safeSecUid) {
+    throw new Error('浏览器会话没有识别出抖音用户 ID');
+  }
+
+  const works = Array.isArray(snapshot.works)
+    ? snapshot.works
+        .map((work) => {
+          const contentId = safeContentId(work?.contentId || work?.awemeId || work?.videoId || work?.id);
+          const title = String(work?.title || work?.desc || work?.description || '').replace(/\s+/g, ' ').trim();
+          if (!contentId || !title) {
+            return null;
+          }
+          const publishedAt = normalizeTimestamp(
+            work.publishedAt || work.publishTime || work.createTime,
+          );
+          const coverUrl = normalizeImageUrl(work.coverUrl || work.cover_url || '');
+          return {
+            title,
+            publishedAt,
+            contentId,
+            noteId: contentId,
+            likes: work.likes || work.likeCount || null,
+            metrics: work.metrics || metricsFromObject(work),
+            coverUrl,
+            link: work.link && /^https?:\/\//i.test(work.link)
+              ? work.link
+              : workLink(contentId, canonicalUrl),
+            isPinned: Boolean(work.isPinned || work.pinned),
+            position: normalizePosition(work.position),
+            fingerprint: fingerprintForWork({
+              secUid: safeSecUid,
+              title,
+              contentId,
+              publishedAt,
+              coverUrl,
+            }),
+            extraction: 'browser-session',
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const unique = new Map();
+  for (const work of works) {
+    if (!unique.has(work.contentId)) {
+      unique.set(work.contentId, work);
+    }
+  }
+  if (!unique.size) {
+    throw new Error(
+      '抖音浏览器会话没有读取到作品；请确认抖音已登录，并完成页面要求的验证后重试',
+    );
+  }
+
+  return {
+    userId: safeSecUid,
+    secUid: safeSecUid,
+    nickname: snapshot.profile?.nickname || snapshot.nickname || null,
+    avatarUrl: normalizeImageUrl(snapshot.profile?.avatarUrl || snapshot.avatarUrl || ''),
+    works: [...unique.values()]
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.publishedAt || '');
+        const rightTime = Date.parse(right.publishedAt || '');
+        if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+          return rightTime - leftTime;
+        }
+        if (left.isPinned !== right.isPinned) {
+          return left.isPinned ? 1 : -1;
+        }
+        return (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER);
+      })
+      .slice(0, 50),
+    extraction: 'browser-session',
   };
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "cloud-worker-media-workbench",
-  "version": "0.1.3",
-  "description": "云员工媒体工作台：自媒体矩阵监控与运营桌面客户端",
+  "version": "0.1.4",
+  "description": "云员工媒体：自媒体矩阵监控与运营桌面客户端",
   "author": "lifehacker520",
   "license": "MIT",
   "main": "electron/main.mjs",
@@ -10,13 +10,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node server.mjs",
-    "dev": "node server.mjs",
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "dev": "node --env-file-if-exists=.env server.mjs",
     "desktop": "electron .",
+    "eval:deepseek": "node tools/deepseek-quality-eval.mjs",
+    "backup:workbench": "node tools/workbench-backup.mjs",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "check": "node --check server.mjs && node --check src/auth.mjs && node --check src/xhs-parser.mjs && node --check src/douyin-parser.mjs && node --check src/platforms.mjs && node --check public/app.js && node --check electron/main.mjs && node --check electron/preload.mjs",
+    "check": "node --check server.mjs && node --check src/auth.mjs && node --check src/content-workflow.mjs && node --check src/workbench-store.mjs && node --check src/workbench-backup.mjs && node --check src/media-pipeline.mjs && node --check src/ai-provider.mjs && node --check src/quality-evaluator.mjs && node --check tools/deepseek-quality-eval.mjs && node --check tools/workbench-backup.mjs && node --check src/xhs-parser.mjs && node --check src/douyin-parser.mjs && node --check src/channels-parser.mjs && node --check src/platforms.mjs && node --check public/app.js && node --check public/content-workspace.js && node --check public/publish-workspace.js && node --check public/workspace-admin.js && node --check electron/main.mjs && node --check electron/platform-browser.mjs && node --check electron/preload.mjs",
     "test": "node --test"
   },
   "repository": {
@@ -26,16 +28,26 @@
   "homepage": "https://github.com/lifehacker520/cloud-worker-media-workbench#readme",
   "build": {
     "appId": "com.aios.xhscontentmonitor",
-    "productName": "云员工媒体工作台",
+    "productName": "云员工媒体",
     "artifactName": "cloud-worker-media-workbench-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
     "asar": true,
+    "asarUnpack": [
+      "tools/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools"
+      }
+    ],
     "files": [
       "electron/**/*",
       "public/**/*",
       "src/**/*",
+      "tools/**/*",
       "config/**/*",
       "server.mjs",
       "package.json"

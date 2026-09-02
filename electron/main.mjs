@@ -4,14 +4,14 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import electronUpdater from 'electron-updater';
+import { PlatformBrowserSession } from './platform-browser.mjs';
 
 const { autoUpdater } = electronUpdater;
 
 let mainWindow = null;
 let baseUrl = null;
 let updaterCheckPromise = null;
-
-const APP_PORT = Number(process.env.XHS_DESKTOP_PORT || 43188);
+let platformBrowserSession = null;
 
 function projectRoot() {
   if (app.isPackaged) {
@@ -19,6 +19,22 @@ function projectRoot() {
   }
   return resolve(dirname(fileURLToPath(import.meta.url)), '..');
 }
+
+try {
+  process.loadEnvFile(join(projectRoot(), '.env'));
+} catch (error) {
+  if (error?.code !== 'ENOENT') {
+    console.warn('[desktop-env]', error.message);
+  }
+}
+
+const requestedUserData = String(process.env.XHS_DESKTOP_USER_DATA || '').trim();
+if (requestedUserData) {
+  // 为隔离验收或多套本地工作区提供显式入口；默认仍使用 Electron 的 userData。
+  app.setPath('userData', resolve(requestedUserData));
+}
+
+const APP_PORT = Number(process.env.XHS_DESKTOP_PORT || 43188);
 
 async function readClientConfig() {
   const configPath = join(app.getPath('userData'), 'client-config.json');
@@ -60,6 +76,7 @@ async function startLocalServer() {
   process.env.XHS_DATA_DIR = join(app.getPath('userData'), 'data');
   process.env.XHS_AUTH_REQUIRED = 'false';
   process.env.NODE_ENV = 'desktop';
+  globalThis.__CLOUD_WORKER_BROWSER_SESSION__ = platformBrowserSession;
 
   const serverUrl = pathToFileURL(join(projectRoot(), 'server.mjs')).href;
   await import(serverUrl);
@@ -144,7 +161,9 @@ function configureUpdater() {
   ipcMain.handle('updater:download', async () => {
     try {
       await autoUpdater.downloadUpdate();
-      return { status: 'downloading' };
+      const result = { status: 'downloaded' };
+      sendUpdaterStatus(result);
+      return result;
     } catch (error) {
       const result = {
         status: 'error',
@@ -173,8 +192,8 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 950,
-    minWidth: 1040,
-    minHeight: 720,
+    minWidth: 320,
+    minHeight: 620,
     backgroundColor: '#f5f6f8',
     webPreferences: {
       preload: join(projectRoot(), 'electron', 'preload.mjs'),
@@ -208,6 +227,7 @@ if (!lock) {
   });
 
   app.whenReady().then(async () => {
+    platformBrowserSession = new PlatformBrowserSession();
     configureUpdater();
     await createWindow();
     app.on('activate', async () => {
@@ -224,5 +244,9 @@ if (!lock) {
     if (process.platform !== 'darwin') {
       app.quit();
     }
+  });
+
+  app.on('before-quit', () => {
+    platformBrowserSession?.flushStorageData();
   });
 }

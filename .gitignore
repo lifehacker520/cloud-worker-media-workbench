@@ -1,4 +1,7 @@
 data/*.json
+data/*.sqlite
+data/*.sqlite-*
+data/*.db
 *.log
 .DS_Store
 .playwright-cli/
