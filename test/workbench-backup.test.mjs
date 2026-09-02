@@ -146,7 +146,7 @@ test('workbench backup restores into a new empty directory and rewrites media re
       const indexedKnowledge = restoredDb.prepare('SELECT content FROM knowledge_documents_fts WHERE id = ?').get('knowledge_backup_restore_test');
       assert.ok(indexedKnowledge.content.includes(restored.copiedMedia[0].path));
       const event = restoredDb.prepare('SELECT data_json FROM content_task_events WHERE id LIKE ?').get('event_%');
-      assert.ok(event.data_json.includes(restored.copiedMedia[0].path));
+      assert.equal(JSON.parse(event.data_json).sourcePath, restored.copiedMedia[0].path);
     } finally {
       restoredDb.close();
     }
