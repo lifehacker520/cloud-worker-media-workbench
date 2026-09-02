@@ -80,7 +80,7 @@ test('content runtime parses a real local text asset, writes SQLite and indexes 
         constraints: { forbiddenClaims: ['绝对化承诺'] },
       }),
     });
-    assert.equal(brandProfile.response.status, 201);
+    assert.equal(brandProfile.response.status, 201, JSON.stringify(brandProfile.payload));
     const contextWorkspace = await jsonRequest(baseUrl + '/api/workspace');
     assert.ok(contextWorkspace.payload.customers.some((item) => item.id === customer.payload.customer.id));
     assert.ok(contextWorkspace.payload.brandProfiles.some((item) => item.id === brandProfile.payload.brandProfile.id));
