@@ -33,7 +33,7 @@ async function waitForServer(port, child) {
 
 test('monitoring insights endpoint returns period-filtered metrics and comments', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-monitoring-insights-api-'));
-  const port = 34000 + Math.floor(Math.random() * 500);
+  const port = 33600 + Math.floor(Math.random() * 200);
   const account = {
     id: 'account_insights_api',
     tenantId: 'tenant_local',
@@ -121,7 +121,7 @@ test('monitoring insights endpoint returns period-filtered metrics and comments'
 
 test('demo monitoring mode provides three platform dashboards without touching real platform sessions', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-monitoring-demo-api-'));
-  const port = 34500 + Math.floor(Math.random() * 400);
+  const port = 33800 + Math.floor(Math.random() * 200);
   const child = spawn(process.execPath, ['server.mjs'], {
     cwd: PROJECT_DIR,
     env: {

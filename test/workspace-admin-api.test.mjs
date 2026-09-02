@@ -34,7 +34,7 @@ async function requestJson(baseUrl, path, options = {}) {
 
 test('persistent members, project membership and connector configuration are tenant-scoped', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-admin-'));
-  const port = 32900 + Math.floor(Math.random() * 200);
+  const port = 33000 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),
     writeFile(join(dataDir, 'works.json'), '[]'),

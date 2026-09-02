@@ -78,7 +78,7 @@ test('monitoring JSON migrates to SQLite and remains the source after a restart'
     writeFile(join(dataDir, 'feedback.json'), JSON.stringify([{ id: 'feedback_migration_fixture', tenantId: 'tenant_local', message: '迁移反馈', createdAt: '2026-08-30T00:00:00.000Z' }])),
     writeFile(join(dataDir, 'content-tasks.json'), '[]'),
   ]);
-  const port = 33300 + Math.floor(Math.random() * 200);
+  const port = 33400 + Math.floor(Math.random() * 200);
   let child = await startServer(dataDir, port);
   try {
     const first = await fetch(`http://127.0.0.1:${port}/api/state`);

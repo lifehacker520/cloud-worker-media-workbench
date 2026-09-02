@@ -35,7 +35,7 @@ async function requestJson(baseUrl, path, options = {}) {
 test('workspace backup API is admin-only and verifies a non-destructive snapshot', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-backup-api-'));
   const offsiteDir = await mkdtemp(join(tmpdir(), 'cloud-worker-backup-api-offsite-'));
-  const port = 33100 + Math.floor(Math.random() * 200);
+  const port = 33200 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),
     writeFile(join(dataDir, 'works.json'), '[]'),

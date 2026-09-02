@@ -34,7 +34,7 @@ async function jsonRequest(url, options = {}) {
 
 test('content runtime parses a real local text asset, writes SQLite and indexes knowledge', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-runtime-'));
-  const port = 32600 + Math.floor(Math.random() * 300);
+  const port = 32600 + Math.floor(Math.random() * 200);
   const materialPath = join(dataDir, 'source.md');
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),

@@ -31,7 +31,7 @@ async function waitForServer(port, child) {
 test('platform session API exposes safe status and delegates open/clear to desktop runtime', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-platform-session-api-'));
   const fixturePath = join(dataDir, 'desktop-session-fixture.mjs');
-  const port = 35000 + Math.floor(Math.random() * 400);
+  const port = 34000 + Math.floor(Math.random() * 200);
   await writeFile(
     fixturePath,
     `globalThis.__CLOUD_WORKER_BROWSER_SESSION__ = {

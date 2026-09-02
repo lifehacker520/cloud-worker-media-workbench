@@ -34,7 +34,7 @@ async function requestJson(baseUrl, path, options = {}) {
 
 test('admin invitations create one-time members and directory sync updates the same tenant', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-directory-'));
-  const port = 32700 + Math.floor(Math.random() * 200);
+  const port = 32800 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),
     writeFile(join(dataDir, 'works.json'), '[]'),

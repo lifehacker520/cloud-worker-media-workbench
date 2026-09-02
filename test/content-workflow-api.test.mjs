@@ -43,7 +43,7 @@ async function jsonRequest(url, options = {}) {
 
 test('content workflow endpoints persist task, node evidence and review state', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-content-workflow-'));
-  const port = 32500 + Math.floor(Math.random() * 400);
+  const port = 32200 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), JSON.stringify([{ id: 'acct_fixture', name: '内容测试账号', platform: 'xhs', sourceUrl: 'https://www.xiaohongshu.com/user/profile/6a043b3d0000000002002000', userId: '6a043b3d0000000002002000', state: 'pending' }])),
     writeFile(join(dataDir, 'works.json'), '[]'),
@@ -171,7 +171,7 @@ test('content workflow endpoints persist task, node evidence and review state', 
 
 test('workflow control endpoints pause, resume, retry and replay the same run', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-content-controls-'));
-  const port = 32900 + Math.floor(Math.random() * 300);
+  const port = 32400 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),
     writeFile(join(dataDir, 'works.json'), '[]'),
