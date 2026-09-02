@@ -494,8 +494,8 @@ export class WorkbenchStore {
 
   static async open(dataDir) {
     await mkdir(dataDir, { recursive: true });
-    const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'));
-    db.exec('PRAGMA busy_timeout = 5000;');
+    const db = new DatabaseSync(join(dataDir, 'workbench.sqlite'), { timeout: 30_000 });
+    db.exec('PRAGMA busy_timeout = 30000;');
     db.exec(SCHEMA);
     const store = new WorkbenchStore(db, dataDir);
     store.ensureSchemaMigrations();

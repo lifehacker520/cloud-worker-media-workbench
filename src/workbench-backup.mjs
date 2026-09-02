@@ -537,7 +537,10 @@ function pathIsWithin(parent, candidate) {
   const parentPath = resolve(parent);
   const candidatePath = resolve(candidate);
   const relativePath = relative(parentPath, candidatePath);
-  return relativePath === '' || (relativePath !== '..' && !relativePath.startsWith('../') && !isAbsolute(relativePath));
+  return relativePath === '' || (
+    !/^\.\.(?:[\\/]|$)/.test(relativePath) &&
+    !isAbsolute(relativePath)
+  );
 }
 
 function backupArtifactPath(backupDir, relativePath, label) {

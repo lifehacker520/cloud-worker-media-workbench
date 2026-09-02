@@ -136,7 +136,7 @@ async function runCommand(command, args, options = {}) {
 
 async function commandExists(command) {
   try {
-    await runCommand('which', [command], { timeout: 5_000, maxBuffer: 32_000 });
+    await runCommand(process.platform === 'win32' ? 'where.exe' : 'which', [command], { timeout: 5_000, maxBuffer: 32_000 });
     return true;
   } catch {
     return false;
@@ -174,7 +174,7 @@ export async function runtimeCapabilities() {
   const [ffprobe, ffmpeg, zip, swift, nativeOcrScript, whisper] = await Promise.all([
     commandExists('ffprobe'),
     commandExists('ffmpeg'),
-    commandExists('zip'),
+    process.platform === 'win32' ? commandExists('powershell.exe') : commandExists('zip'),
     commandExists('swift'),
     findNativeOcrScript(),
     resolveWhisperRuntime(),
@@ -535,10 +535,23 @@ export async function packageFiles(files, outputPath, options = {}) {
   const validFiles = files.filter((file) => typeof file === 'string' && file.trim());
   if (!validFiles.length) throw new Error('没有可打包的文件');
   await mkdir(dirname(outputPath), { recursive: true });
-  await runCommand('zip', ['-j', '-q', '-FS', outputPath, ...validFiles], {
-    timeout: 120_000,
-    maxBuffer: 2 * 1024 * 1024,
-  });
+  if (process.platform === 'win32') {
+    const powershellLiteral = (value) => "'" + String(value).replaceAll("'", "''") + "'";
+    const literalFiles = validFiles.map(powershellLiteral).join(', ');
+    const command = [
+      "$ErrorActionPreference = 'Stop'",
+      `Compress-Archive -LiteralPath @(${literalFiles}) -DestinationPath ${powershellLiteral(outputPath)} -Force`,
+    ].join('; ');
+    await runCommand('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+      timeout: 120_000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+  } else {
+    await runCommand('zip', ['-j', '-q', '-FS', outputPath, ...validFiles], {
+      timeout: 120_000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+  }
   const outputStat = await stat(outputPath);
   return {
     path: outputPath,
