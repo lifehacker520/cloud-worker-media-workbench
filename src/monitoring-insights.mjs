@@ -31,6 +31,8 @@ const PLATFORM_LABELS = {
   other: '其他平台',
 };
 
+const PLATFORM_ORDER = ['xhs', 'douyin', 'channels', 'other'];
+
 const PLATFORM_PRIMARY_METRICS = {
   xhs: ['read_count', 'exposure_count', 'like_count'],
   douyin: ['play_count', 'exposure_count', 'like_count'],
@@ -463,7 +465,13 @@ export function buildMonitoringInsights({ accounts = [], works = [], snapshots =
   });
   const currentSnapshots = latestByGroup(visibleSnapshots);
   const summaryMetrics = latestSnapshotTotals(visibleSnapshots, periodWorkIds, accountIds);
-  const platformNames = [...new Set(accountList.map((account) => account.platform || 'other'))];
+  const platformNames = [...new Set(accountList.map((account) => account.platform || 'other'))]
+    .sort((left, right) => {
+      const leftIndex = PLATFORM_ORDER.indexOf(left);
+      const rightIndex = PLATFORM_ORDER.indexOf(right);
+      return (leftIndex === -1 ? PLATFORM_ORDER.length : leftIndex)
+        - (rightIndex === -1 ? PLATFORM_ORDER.length : rightIndex);
+    });
   const platformRows = platformNames.map((rowPlatform) => {
     const rowAccounts = accountList.filter((account) => (account.platform || 'other') === rowPlatform);
     const rowAccountIds = new Set(rowAccounts.map((account) => account.id));
