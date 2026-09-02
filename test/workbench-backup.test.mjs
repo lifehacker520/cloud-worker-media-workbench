@@ -138,7 +138,7 @@ test('workbench backup restores into a new empty directory and rewrites media re
       assert.equal(integrity?.integrity_check || integrity?.['integrity_check(1)'], 'ok');
       const media = restoredDb.prepare('SELECT path, metadata_json FROM media_assets WHERE id = ?').get('asset_backup_restore_test');
       assert.equal(media.path, restored.copiedMedia[0].path);
-      assert.ok(media.metadata_json.includes(restored.copiedMedia[0].path));
+      assert.equal(JSON.parse(media.metadata_json).sourcePath, restored.copiedMedia[0].path);
       const knowledge = restoredDb.prepare('SELECT source_path, content, metadata_json FROM knowledge_documents WHERE id = ?').get('knowledge_backup_restore_test');
       assert.equal(knowledge.source_path, restored.copiedMedia[0].path);
       assert.ok(knowledge.content.includes(restored.copiedMedia[0].path));

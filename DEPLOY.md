@@ -74,8 +74,8 @@
 
    客户端发布命令：
 
-       git tag v0.1.8
-       git push origin v0.1.8
+       git tag v0.1.9
+       git push origin v0.1.9
 
    GitHub Actions 会构建 macOS/Windows 安装包并更新 Release。客户打开客户端的“检查更新”即可获取新版本。
 
