@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 
 const PROJECT_DIR = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -59,7 +59,7 @@ test('platform session API exposes safe status and delegates open/clear to deskt
     'utf8',
   );
 
-  const child = spawn(process.execPath, ['--import', fixturePath, 'server.mjs'], {
+  const child = spawn(process.execPath, ['--import', pathToFileURL(fixturePath).href, 'server.mjs'], {
     cwd: PROJECT_DIR,
     env: {
       ...process.env,

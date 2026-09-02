@@ -570,6 +570,11 @@ function replaceMappedPaths(value, pathMap) {
   const mappings = [...pathMap].filter(([sourcePath]) => sourcePath).sort((left, right) => right[0].length - left[0].length);
   for (const [sourcePath, targetPath] of mappings) {
     next = next.split(sourcePath).join(targetPath);
+    const escapedSourcePath = JSON.stringify(sourcePath).slice(1, -1);
+    const escapedTargetPath = JSON.stringify(targetPath).slice(1, -1);
+    if (escapedSourcePath !== sourcePath) {
+      next = next.split(escapedSourcePath).join(escapedTargetPath);
+    }
   }
   return next;
 }
