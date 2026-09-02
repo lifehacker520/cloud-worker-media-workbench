@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
@@ -31,7 +32,7 @@ async function waitForServer(port, child) {
 }
 
 test('monitoring insights endpoint returns period-filtered metrics and comments', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-monitoring-insights-api-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-monitoring-insights-api-'));
   const port = 34000 + Math.floor(Math.random() * 500);
   const account = {
     id: 'account_insights_api',
@@ -119,7 +120,7 @@ test('monitoring insights endpoint returns period-filtered metrics and comments'
 });
 
 test('demo monitoring mode provides three platform dashboards without touching real platform sessions', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-monitoring-demo-api-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-monitoring-demo-api-'));
   const port = 34500 + Math.floor(Math.random() * 400);
   const child = spawn(process.execPath, ['server.mjs'], {
     cwd: PROJECT_DIR,

@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
@@ -32,8 +33,8 @@ async function requestJson(baseUrl, path, options = {}) {
 }
 
 test('workspace backup API is admin-only and verifies a non-destructive snapshot', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-backup-api-');
-  const offsiteDir = await mkdtemp('/tmp/cloud-worker-backup-api-offsite-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-backup-api-'));
+  const offsiteDir = await mkdtemp(join(tmpdir(), 'cloud-worker-backup-api-offsite-'));
   const port = 33100 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),

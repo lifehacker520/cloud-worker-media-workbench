@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
@@ -32,7 +33,7 @@ async function requestJson(baseUrl, path, options = {}) {
 }
 
 test('admin invitations create one-time members and directory sync updates the same tenant', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-directory-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-directory-'));
   const port = 32700 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),

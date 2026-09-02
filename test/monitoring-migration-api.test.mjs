@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
@@ -47,7 +48,7 @@ async function startServer(dataDir, port) {
 }
 
 test('monitoring JSON migrates to SQLite and remains the source after a restart', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-monitoring-migration-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-monitoring-migration-'));
   const account = {
     id: 'account_migration_fixture',
     tenantId: 'tenant_local',

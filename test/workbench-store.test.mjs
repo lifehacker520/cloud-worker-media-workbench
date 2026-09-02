@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createContentTask, recordContentNode, startContentTask } from '../src/content-workflow.mjs';
 import { WorkbenchStore } from '../src/workbench-store.mjs';
 
 test('workbench store keeps tenant and project content isolated', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-store-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-store-'));
   const store = await WorkbenchStore.open(dataDir);
   const alpha = { username: 'alpha', displayName: '客户 A', role: 'client', tenantId: 'tenant_alpha' };
   const beta = { username: 'beta', displayName: '客户 B', role: 'client', tenantId: 'tenant_beta' };
@@ -30,7 +32,7 @@ test('workbench store keeps tenant and project content isolated', async () => {
 });
 
 test('workbench store migrates monitoring ledgers into SQLite and keeps tenant scope', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-monitoring-store-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-monitoring-store-'));
   const store = await WorkbenchStore.open(dataDir);
   const admin = { username: 'admin', displayName: '管理员', role: 'admin', tenantId: 'tenant_alpha' };
   const alpha = { username: 'alpha', displayName: '客户 A', role: 'client', tenantId: 'tenant_alpha' };
@@ -61,7 +63,7 @@ test('workbench store migrates monitoring ledgers into SQLite and keeps tenant s
 });
 
 test('content run events persist ordered task snapshots for replay', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-run-replay-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-run-replay-'));
   const store = await WorkbenchStore.open(dataDir);
   const actor = { username: 'replay-user', displayName: '回放用户', role: 'client', tenantId: 'tenant_replay' };
   try {
@@ -96,7 +98,7 @@ test('content run events persist ordered task snapshots for replay', async () =>
 });
 
 test('workbench store models customer and brand profile context and links it to tasks', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-context-store-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-context-store-'));
   const store = await WorkbenchStore.open(dataDir);
   const admin = { username: 'context-admin', displayName: '上下文管理员', role: 'admin', tenantId: 'tenant_context' };
   const member = { username: 'context-member', displayName: '上下文成员', role: 'client', tenantId: 'tenant_context' };

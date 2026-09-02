@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 
 import { analyzeContentStructure, mediaKindForPath, parseMediaAsset, parseSrtSegments } from '../src/media-pipeline.mjs';
 
 test('local text material is parsed into searchable signals without fake AI output', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-media-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-media-'));
   const filePath = join(dataDir, 'brief.md');
   try {
     await writeFile(filePath, '# 业务目标\n让销售客服智能体持续工作\n\n## 受众\n中小企业老板\n', 'utf8');
@@ -24,8 +25,8 @@ test('local text material is parsed into searchable signals without fake AI outp
 });
 
 test('local material parser rejects paths outside the configured root', async () => {
-  const allowedDir = await mkdtemp('/tmp/cloud-worker-media-allowed-');
-  const outsideDir = await mkdtemp('/tmp/cloud-worker-media-outside-');
+  const allowedDir = await mkdtemp(join(tmpdir(), 'cloud-worker-media-allowed-'));
+  const outsideDir = await mkdtemp(join(tmpdir(), 'cloud-worker-media-outside-'));
   const filePath = join(outsideDir, 'brief.txt');
   try {
     await writeFile(filePath, '不应读取', 'utf8');

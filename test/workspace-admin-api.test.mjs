@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
@@ -32,7 +33,7 @@ async function requestJson(baseUrl, path, options = {}) {
 }
 
 test('persistent members, project membership and connector configuration are tenant-scoped', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-admin-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-admin-'));
   const port = 32900 + Math.floor(Math.random() * 200);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),

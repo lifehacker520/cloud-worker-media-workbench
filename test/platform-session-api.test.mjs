@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
@@ -28,7 +29,7 @@ async function waitForServer(port, child) {
 }
 
 test('platform session API exposes safe status and delegates open/clear to desktop runtime', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-platform-session-api-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-platform-session-api-'));
   const fixturePath = join(dataDir, 'desktop-session-fixture.mjs');
   const port = 34500 + Math.floor(Math.random() * 400);
   await writeFile(

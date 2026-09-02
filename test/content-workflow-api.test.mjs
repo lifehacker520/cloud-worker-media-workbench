@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
@@ -41,7 +42,7 @@ async function jsonRequest(url, options = {}) {
 }
 
 test('content workflow endpoints persist task, node evidence and review state', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-content-workflow-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-content-workflow-'));
   const port = 32500 + Math.floor(Math.random() * 400);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), JSON.stringify([{ id: 'acct_fixture', name: '内容测试账号', platform: 'xhs', sourceUrl: 'https://www.xiaohongshu.com/user/profile/6a043b3d0000000002002000', userId: '6a043b3d0000000002002000', state: 'pending' }])),
@@ -169,7 +170,7 @@ test('content workflow endpoints persist task, node evidence and review state', 
 });
 
 test('workflow control endpoints pause, resume, retry and replay the same run', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-content-controls-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-content-controls-'));
   const port = 32900 + Math.floor(Math.random() * 300);
   await Promise.all([
     writeFile(join(dataDir, 'accounts.json'), '[]'),

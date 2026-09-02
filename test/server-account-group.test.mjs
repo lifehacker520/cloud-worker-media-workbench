@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
@@ -30,7 +31,7 @@ async function waitForServer(port, child) {
 }
 
 test('adding an account preserves its monitoring group', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-account-group-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-account-group-'));
   const port = 32000 + Math.floor(Math.random() * 500);
   const seedAccount = {
     id: 'acct_group_fixture',

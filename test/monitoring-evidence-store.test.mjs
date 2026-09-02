@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { WorkbenchStore } from '../src/workbench-store.mjs';
 
 test('monitoring metric snapshots and comments persist with tenant isolation', async () => {
-  const dataDir = await mkdtemp('/tmp/cloud-worker-monitoring-evidence-');
+  const dataDir = await mkdtemp(join(tmpdir(), 'cloud-worker-monitoring-evidence-'));
   const store = await WorkbenchStore.open(dataDir);
   const alpha = { username: 'alpha', displayName: '客户 A', role: 'client', tenantId: 'tenant_alpha' };
   const beta = { username: 'beta', displayName: '客户 B', role: 'client', tenantId: 'tenant_beta' };
