@@ -63,13 +63,16 @@ test('content runtime parses a real local text asset, writes SQLite and indexes 
     const workspace = await jsonRequest(baseUrl + '/api/workspace');
     assert.equal(workspace.response.status, 200);
     assert.equal(workspace.payload.storage.type, 'sqlite');
+    const state = await jsonRequest(baseUrl + '/api/state');
+    assert.equal(state.response.status, 200);
+    assert.equal(state.payload.accounts.length, 0);
     assert.ok(workspace.payload.connectors.some((connector) => connector.capabilities.includes('media.probe')));
 
     const customer = await jsonRequest(baseUrl + '/api/workspace/customers', {
       method: 'POST',
       body: JSON.stringify({ name: '运行时验收客户', industry: '内容服务', metadata: { source: 'runtime-test' } }),
     });
-    assert.equal(customer.response.status, 201);
+    assert.equal(customer.response.status, 201, JSON.stringify(customer.payload));
     const brandProfile = await jsonRequest(baseUrl + '/api/workspace/brand-profiles', {
       method: 'POST',
       body: JSON.stringify({

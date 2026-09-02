@@ -286,7 +286,7 @@ async function ensureData() {
   const savedAccounts = await readJson(ACCOUNTS_FILE, null);
   const demoData = DEMO_MODE ? await readJson(DEMO_FILE, null) : null;
   let legacyAccounts;
-  if (Array.isArray(savedAccounts) && savedAccounts.length > 0) {
+  if (Array.isArray(savedAccounts)) {
     legacyAccounts = savedAccounts.map((account) => normalizeAccount(account));
   } else {
     const seeds = await readJson(SEED_FILE, []);
