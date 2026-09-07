@@ -11,7 +11,13 @@ const { autoUpdater } = electronUpdater;
 let mainWindow = null;
 let baseUrl = null;
 let updaterCheckPromise = null;
+let updaterCheckSource = null;
+let updaterDownloadReady = false;
+let updaterAutoCheckTimer = null;
 let platformBrowserSession = null;
+
+const AUTO_UPDATE_INITIAL_DELAY = 5000;
+const AUTO_UPDATE_INTERVAL = 6 * 60 * 60 * 1000;
 
 function projectRoot() {
   if (app.isPackaged) {
@@ -90,18 +96,90 @@ function sendUpdaterStatus(payload) {
   }
 }
 
+async function checkForUpdates({ automatic = false } = {}) {
+  if (!app.isPackaged) {
+    return { status: 'dev', version: app.getVersion() };
+  }
+  if (updaterCheckPromise) {
+    return { status: 'checking', version: app.getVersion() };
+  }
+
+  updaterCheckSource = automatic ? 'automatic' : 'manual';
+  try {
+    const checkPromise = autoUpdater.checkForUpdates();
+    updaterCheckPromise = Promise.race([
+      checkPromise,
+      wait(20000).then(() => {
+        throw new Error('检查更新超时，请稍后重试');
+      }),
+    ]);
+    const result = await updaterCheckPromise;
+    if (result?.isUpdateAvailable) {
+      const version = result.updateInfo?.version;
+      const payload = { status: 'available', version, automatic };
+      sendUpdaterStatus(payload);
+      return payload;
+    }
+    if (result?.isUpdateAvailable === false) {
+      const version = result.updateInfo?.version || app.getVersion();
+      const payload = { status: 'not-available', version, automatic };
+      sendUpdaterStatus(payload);
+      return payload;
+    }
+    return { status: 'checking', version: app.getVersion() };
+  } catch (error) {
+    const result = {
+      status: 'error',
+      message: error?.message || String(error),
+      automatic,
+    };
+    sendUpdaterStatus(result);
+    return result;
+  } finally {
+    updaterCheckPromise = null;
+    updaterCheckSource = null;
+  }
+}
+
+function scheduleAutomaticUpdateCheck(delay = AUTO_UPDATE_INITIAL_DELAY) {
+  if (!app.isPackaged) {
+    return;
+  }
+  if (updaterAutoCheckTimer) {
+    clearTimeout(updaterAutoCheckTimer);
+  }
+  updaterAutoCheckTimer = setTimeout(async () => {
+    await checkForUpdates({ automatic: true });
+    scheduleAutomaticUpdateCheck(AUTO_UPDATE_INTERVAL);
+  }, delay);
+  updaterAutoCheckTimer.unref?.();
+}
+
 function configureUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => {
-    sendUpdaterStatus({ status: 'checking', version: app.getVersion() });
+    sendUpdaterStatus({
+      status: 'checking',
+      version: app.getVersion(),
+      automatic: updaterCheckSource === 'automatic',
+    });
   });
   autoUpdater.on('update-available', (info) => {
-    sendUpdaterStatus({ status: 'available', version: info.version });
+    updaterDownloadReady = false;
+    sendUpdaterStatus({
+      status: 'available',
+      version: info.version,
+      automatic: updaterCheckSource === 'automatic',
+    });
   });
   autoUpdater.on('update-not-available', (info) => {
-    sendUpdaterStatus({ status: 'not-available', version: info.version });
+    sendUpdaterStatus({
+      status: 'not-available',
+      version: info.version,
+      automatic: updaterCheckSource === 'automatic',
+    });
   });
   autoUpdater.on('download-progress', (progress) => {
     sendUpdaterStatus({
@@ -110,57 +188,23 @@ function configureUpdater() {
     });
   });
   autoUpdater.on('update-downloaded', (info) => {
+    updaterDownloadReady = true;
     sendUpdaterStatus({ status: 'downloaded', version: info.version });
   });
   autoUpdater.on('error', (error) => {
     sendUpdaterStatus({
       status: 'error',
       message: error?.message || String(error),
+      automatic: updaterCheckSource === 'automatic',
     });
   });
 
-  ipcMain.handle('updater:check', async () => {
-    if (!app.isPackaged) {
-      return { status: 'dev', version: app.getVersion() };
-    }
-    if (updaterCheckPromise) {
-      return { status: 'checking', version: app.getVersion() };
-    }
-    try {
-      const checkPromise = autoUpdater.checkForUpdates();
-      updaterCheckPromise = Promise.race([
-        checkPromise,
-        wait(20000).then(() => {
-          throw new Error('检查更新超时，请稍后重试');
-        }),
-      ]);
-      const result = await updaterCheckPromise;
-      if (result?.isUpdateAvailable) {
-        const version = result.updateInfo?.version;
-        sendUpdaterStatus({ status: 'available', version });
-        return { status: 'available', version };
-      }
-      if (result?.isUpdateAvailable === false) {
-        const version = result.updateInfo?.version || app.getVersion();
-        sendUpdaterStatus({ status: 'not-available', version });
-        return { status: 'not-available', version };
-      }
-      return { status: 'checking', version: app.getVersion() };
-    } catch (error) {
-      const result = {
-        status: 'error',
-        message: error?.message || String(error),
-      };
-      sendUpdaterStatus(result);
-      return result;
-    } finally {
-      updaterCheckPromise = null;
-    }
-  });
+  ipcMain.handle('updater:check', () => checkForUpdates());
 
   ipcMain.handle('updater:download', async () => {
     try {
       await autoUpdater.downloadUpdate();
+      updaterDownloadReady = true;
       const result = { status: 'downloaded' };
       sendUpdaterStatus(result);
       return result;
@@ -175,6 +219,10 @@ function configureUpdater() {
   });
 
   ipcMain.handle('updater:install', () => {
+    if (!updaterDownloadReady) {
+      return { status: 'error', message: '没有可安装的已下载更新' };
+    }
+    updaterDownloadReady = false;
     autoUpdater.quitAndInstall();
     return { status: 'installing' };
   });
@@ -196,7 +244,7 @@ async function createWindow() {
     minHeight: 620,
     backgroundColor: '#f5f6f8',
     webPreferences: {
-      preload: join(projectRoot(), 'electron', 'preload.mjs'),
+      preload: join(projectRoot(), 'electron', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -230,10 +278,12 @@ if (!lock) {
     platformBrowserSession = new PlatformBrowserSession();
     configureUpdater();
     await createWindow();
+    scheduleAutomaticUpdateCheck();
     app.on('activate', async () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         await createWindow();
       }
+      scheduleAutomaticUpdateCheck(1000);
     });
   }).catch((error) => {
     console.error('[desktop-startup]', error);
@@ -247,6 +297,10 @@ if (!lock) {
   });
 
   app.on('before-quit', () => {
+    if (updaterAutoCheckTimer) {
+      clearTimeout(updaterAutoCheckTimer);
+      updaterAutoCheckTimer = null;
+    }
     platformBrowserSession?.flushStorageData();
   });
 }

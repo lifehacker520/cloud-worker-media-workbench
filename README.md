@@ -36,10 +36,10 @@
     npm run dist:mac      # 构建 macOS DMG 和 ZIP
     npm run dist:win      # 在 Windows 构建 Windows 安装包
 
-客户端右上角的“检查更新”会检查 GitHub Release；发现新版本后会先确认下载，下载完成后再确认重启安装。普通代码提交不会直接触发用户更新，发布新版本时使用版本标签，例如：
+桌面客户端启动后会自动检查 GitHub Release；发现新版本后，在设置 → 客户端更新点击一次即可下载、重启并安装。也可以手动点击“检查客户端更新”。网页模式只能打开下载页面。普通代码提交不会直接触发用户更新，发布新版本时使用与 `package.json` 一致的版本标签，例如：
 
-    git tag v0.1.14
-    git push origin v0.1.14
+    git tag v0.1.15
+    git push origin v0.1.15
 
 GitHub Actions 会在 macOS 和 Windows 环境构建安装包并上传到 Release。客户端更新依赖已发布的 Release 和安装包，不依赖客户自行拉取源码。
 

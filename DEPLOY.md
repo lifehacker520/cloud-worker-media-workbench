@@ -74,10 +74,10 @@
 
    客户端发布命令：
 
-       git tag v0.1.14
-       git push origin v0.1.14
+       git tag v0.1.15
+       git push origin v0.1.15
 
-   GitHub Actions 会构建 macOS/Windows 安装包并更新 Release。客户打开客户端的“检查更新”即可获取新版本。
+   GitHub Actions 会构建 macOS/Windows 安装包并更新 Release。桌面客户端启动后会自动检查；客户在“设置 → 客户端更新”点击一次即可下载、重启并安装新版本。
 
 ## 桌面端平台登录态
 

@@ -119,6 +119,7 @@ let authRequired = false;
 let updaterPhase = 'idle';
 let updaterCheckTimer = null;
 let updaterVersion = '';
+let updaterAutomaticCheck = false;
 const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v2';
 
 const elements = {
@@ -1544,6 +1545,7 @@ function renderUpdater(payload = {}) {
 
   if (status === 'checking') {
     updaterPhase = 'checking';
+    updaterAutomaticCheck = Boolean(payload.automatic);
     updateUpdaterControls('检查中…', true);
     renderUpdaterState('正在检查 GitHub Release…', 'is-working');
     armUpdaterCheckTimer();
@@ -1552,12 +1554,13 @@ function renderUpdater(payload = {}) {
   if (status === 'available') {
     clearUpdaterCheckTimer();
     updaterPhase = 'available';
+    updaterAutomaticCheck = false;
     updaterVersion = payload.version || updaterVersion;
     updateUpdaterControls(
-      updaterVersion ? '下载更新 v' + updaterVersion : '下载更新',
+      updaterVersion ? '下载并安装 v' + updaterVersion : '下载并安装',
       false,
     );
-    renderUpdaterState('发现新版本' + (updaterVersion ? ' v' + updaterVersion : '') + '，确认后下载。', 'is-ready');
+    renderUpdaterState('发现新版本' + (updaterVersion ? ' v' + updaterVersion : '') + '，点击一次将下载并重启安装。', 'is-ready');
     return;
   }
   if (status === 'downloading') {
@@ -1570,13 +1573,23 @@ function renderUpdater(payload = {}) {
   if (status === 'downloaded') {
     clearUpdaterCheckTimer();
     updaterPhase = 'downloaded';
+    updaterAutomaticCheck = false;
     updateUpdaterControls('重启安装更新', false);
-    renderUpdaterState('更新已下载，确认后重启安装。', 'is-ready');
+    renderUpdaterState('更新已下载，点击后立即重启安装。', 'is-ready');
+    return;
+  }
+  if (status === 'installing') {
+    clearUpdaterCheckTimer();
+    updaterPhase = 'installing';
+    updateUpdaterControls('正在重启安装…', true);
+    renderUpdaterState('正在重启客户端并安装更新…', 'is-working');
     return;
   }
   if (status === 'not-available') {
     clearUpdaterCheckTimer();
     updaterPhase = 'idle';
+    updaterAutomaticCheck = false;
+    updaterVersion = '';
     updateUpdaterControls('再次检查更新', false);
     renderUpdaterState('当前已是最新版本。', 'is-ready');
     return;
@@ -1584,6 +1597,7 @@ function renderUpdater(payload = {}) {
   if (status === 'dev') {
     clearUpdaterCheckTimer();
     updaterPhase = 'idle';
+    updaterAutomaticCheck = false;
     updateUpdaterControls('开发模式', false);
     renderUpdaterState('开发模式：打包后才会检查 GitHub Release。', 'is-neutral');
     return;
@@ -1591,9 +1605,11 @@ function renderUpdater(payload = {}) {
   if (status === 'error') {
     clearUpdaterCheckTimer();
     updaterPhase = 'idle';
+    const silent = updaterAutomaticCheck || payload.automatic;
+    updaterAutomaticCheck = false;
     updateUpdaterControls('更新失败，重试', false);
     renderUpdaterState('更新检查失败：' + (payload.message || '请稍后重试。'), 'is-warning');
-    if (payload.message) {
+    if (payload.message && !silent) {
       showToast('更新检查失败：' + payload.message, 'warning');
     }
     return;
@@ -1603,7 +1619,7 @@ function renderUpdater(payload = {}) {
   renderUpdaterState('尚未检查更新。', 'is-neutral');
 }
 
-async function downloadAndPromptInstall() {
+async function downloadAndInstall() {
   renderUpdater({ status: 'downloading', percent: 0 });
   const result = await window.desktopUpdater.downloadUpdate();
   if (result?.status) {
@@ -1612,14 +1628,8 @@ async function downloadAndPromptInstall() {
   if (result?.status !== 'downloaded' && updaterPhase !== 'downloaded') {
     return;
   }
-  const confirmed = window.confirm(
-    '新版本已经下载完成，是否立即重启并安装？\n\n安装时会关闭当前客户端，本地监控数据会保留。',
-  );
-  if (confirmed) {
-    await window.desktopUpdater.installUpdate();
-  } else {
-    showToast('更新已下载，可稍后点击“重启安装更新”', 'normal');
-  }
+  renderUpdater({ status: 'installing' });
+  await window.desktopUpdater.installUpdate();
 }
 
 async function handleUpdaterClick() {
@@ -1638,23 +1648,12 @@ async function handleUpdaterClick() {
 
   try {
     if (updaterPhase === 'available') {
-      const confirmed = window.confirm(
-        '发现新版本 ' +
-          (updaterVersion ? 'v' + updaterVersion : '') +
-          '，是否立即下载？',
-      );
-      if (confirmed) {
-        await downloadAndPromptInstall();
-      }
+      await downloadAndInstall();
       return;
     }
     if (updaterPhase === 'downloaded') {
-      const confirmed = window.confirm(
-        '更新已经下载完成，是否立即重启并安装？\n\n安装时会关闭当前客户端，本地监控数据会保留。',
-      );
-      if (confirmed) {
-        await window.desktopUpdater.installUpdate();
-      }
+      renderUpdater({ status: 'installing' });
+      await window.desktopUpdater.installUpdate();
       return;
     }
 
@@ -1664,14 +1663,7 @@ async function handleUpdaterClick() {
       renderUpdater(result);
     }
     if (result?.status === 'available') {
-      const confirmed = window.confirm(
-        '发现新版本 ' +
-          (result.version ? 'v' + result.version : '') +
-          '，是否立即下载？',
-      );
-      if (confirmed) {
-        await downloadAndPromptInstall();
-      }
+      await downloadAndInstall();
     }
     if (result?.status === 'dev') {
       showToast('当前是开发模式，打包后可检查 GitHub Release', 'normal');

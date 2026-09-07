@@ -32,6 +32,9 @@ jobs:
         run: npm ci
       - name: Run tests
         run: npm test
+      - name: Verify release version
+        shell: bash
+        run: test "v$(node -p \"require('./package.json').version\")" = "${GITHUB_REF_NAME}"
       - name: Build installer
         run: npm run dist -- ${{ matrix.args }} --publish never
       - name: Upload installer artifacts
