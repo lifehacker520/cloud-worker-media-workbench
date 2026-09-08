@@ -8,6 +8,10 @@ const APP_SOURCE = await readFile(
   resolve(dirname(fileURLToPath(import.meta.url)), '../public/app.js'),
   'utf8',
 );
+const CONTENT_SOURCE = await readFile(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../public/content-workspace.js'),
+  'utf8',
+);
 
 test('work cards render a full calendar timestamp', () => {
   assert.match(APP_SOURCE, /function formatWorkTime\(/);
@@ -37,4 +41,59 @@ test('monitor center exposes a period-aware operations dashboard', async () => {
   assert.match(stylesSource, /\.monitor-kpi-grid\s*\{/);
   assert.match(stylesSource, /\.monitor-platform-card\s*\{/);
   assert.match(stylesSource, /@media \(max-width: 680px\)/);
+});
+
+test('M1 exposes separate dashboard and monitor routes with a real history boundary', async () => {
+  const indexSource = await readFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../public/index.html'),
+    'utf8',
+  );
+  assert.match(indexSource, /<strong>云员工工作台<\/strong>/);
+  assert.match(indexSource, /data-view="insights"[^>]*>[\s\S]*?数据看板/);
+  assert.match(indexSource, /id="view-insights"[\s\S]*?id="monitor-insights"/);
+  assert.match(indexSource, /id="view-monitor"[\s\S]*?id="monitor-layout"/);
+  assert.doesNotMatch(indexSource, /id="view-monitor"[\s\S]*?id="monitor-insights"/);
+  assert.match(APP_SOURCE, /history\.pushState/);
+  assert.match(APP_SOURCE, /panel\.hidden\s*=/);
+  assert.match(APP_SOURCE, /insightsPlatformFilter/);
+});
+
+test('M2 exposes explicit monitor queue filtering and batch read controls', async () => {
+  const indexSource = await readFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../public/index.html'),
+    'utf8',
+  );
+  assert.match(indexSource, /id="work-search"/);
+  assert.match(indexSource, /id="work-read-filter"/);
+  assert.match(indexSource, /id="works-select-all"/);
+  assert.match(indexSource, /id="mark-selected-seen"/);
+  assert.match(APP_SOURCE, /selectedWorkFingerprints/);
+  assert.match(APP_SOURCE, /\/api\/works\/seen-batch/);
+  assert.match(indexSource, /阅读状态只在你显式标记后改变/);
+});
+
+test('M3 carries a monitored work into the content task form without granting authorization', () => {
+  assert.match(APP_SOURCE, /data-create-content-work/);
+  assert.match(APP_SOURCE, /content-work-prefill/);
+  assert.match(APP_SOURCE, /sourceWorkFingerprint/);
+  assert.match(APP_SOURCE, /未自动视为已授权素材/);
+  assert.match(CONTENT_SOURCE, /cloud-worker-content-prefill/);
+  assert.match(CONTENT_SOURCE, /sourceWorkFingerprint/);
+  assert.match(CONTENT_SOURCE, /已带入监控作品来源；创建前请确认素材授权/);
+});
+
+test('M4 sends only safe view context with feedback', () => {
+  assert.match(APP_SOURCE, /feedbackContextLabel/);
+  assert.match(APP_SOURCE, /context:\s*\{/);
+  assert.match(APP_SOURCE, /route:\s*window\.location\.hash/);
+});
+
+test('M4 keeps administrator maintenance out of the default settings category', async () => {
+  const indexSource = await readFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../public/index.html'),
+    'utf8',
+  );
+  assert.match(indexSource, /data-settings-target="advanced"/);
+  assert.match(APP_SOURCE, /settingsAdminZone/);
+  assert.match(APP_SOURCE, /nextPanel !== 'advanced'/);
 });

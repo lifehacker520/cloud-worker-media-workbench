@@ -1,6 +1,6 @@
 {
   "name": "cloud-worker-media-workbench",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "云员工媒体：自媒体矩阵监控与运营桌面客户端",
   "author": "lifehacker520",
   "license": "MIT",
@@ -18,7 +18,8 @@
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "check": "node --check server.mjs && node --check src/auth.mjs && node --check src/content-workflow.mjs && node --check src/workbench-store.mjs && node --check src/workbench-backup.mjs && node --check src/media-pipeline.mjs && node --check src/ai-provider.mjs && node --check src/quality-evaluator.mjs && node --check tools/deepseek-quality-eval.mjs && node --check tools/workbench-backup.mjs && node --check src/xhs-parser.mjs && node --check src/douyin-parser.mjs && node --check src/channels-parser.mjs && node --check src/platforms.mjs && node --check public/app.js && node --check public/content-workspace.js && node --check public/publish-workspace.js && node --check public/workspace-admin.js && node --check electron/main.mjs && node --check electron/platform-browser.mjs && node --check electron/preload.mjs",
+    "check": "node --check server.mjs && node --check src/auth.mjs && node --check src/content-workflow.mjs && node --check src/digital-human-domain.mjs && node --check src/content-batch-audit.mjs && node --check src/content-batch-store.mjs && node --check src/content-batch-runner.mjs && node --check src/content-media-worker-connector.mjs && node --check src/voice-comparison-fixtures.mjs && node --check src/workbench-store.mjs && node --check src/workbench-backup.mjs && node --check src/media-pipeline.mjs && node --check src/ai-provider.mjs && node --check src/quality-evaluator.mjs && node --check tools/deepseek-quality-eval.mjs && node --check tools/workbench-backup.mjs && node --check src/xhs-parser.mjs && node --check src/douyin-parser.mjs && node --check src/channels-parser.mjs && node --check src/platforms.mjs && node --check src/download-center.mjs && node --check public/app.js && node --check public/download-workspace.js && node --check public/content-workspace.js && node --check public/publish-workspace.js && node --check public/workspace-admin.js && node --check electron/main.mjs && node --check electron/platform-browser.mjs && node --check electron/preload.mjs && node --check electron/preload.cjs",
+    "test:media-worker": "python3 -m unittest discover -s tools/media-model-worker/tests -p 'test_*.py'",
     "test": "node --test"
   },
   "repository": {
@@ -93,10 +94,12 @@
         "owner": "lifehacker520",
         "repo": "cloud-worker-media-workbench"
       }
-    ]
+    ],
+    "afterSign": "electron/after-sign.cjs"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "electron": "^44.0.0",

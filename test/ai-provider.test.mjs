@@ -65,6 +65,7 @@ test('local draft generator produces a source-bounded reviewable draft without a
   const previous = {
     key: process.env.DEEPSEEK_API_KEY,
     local: process.env.XHS_LOCAL_DRAFT_GENERATOR,
+    localOnly: process.env.XHS_CONTENT_LOCAL_ONLY,
   };
   try {
     delete process.env.DEEPSEEK_API_KEY;
@@ -92,5 +93,35 @@ test('local draft generator produces a source-bounded reviewable draft without a
     else process.env.DEEPSEEK_API_KEY = previous.key;
     if (previous.local === undefined) delete process.env.XHS_LOCAL_DRAFT_GENERATOR;
     else process.env.XHS_LOCAL_DRAFT_GENERATOR = previous.local;
+    if (previous.localOnly === undefined) delete process.env.XHS_CONTENT_LOCAL_ONLY;
+    else process.env.XHS_CONTENT_LOCAL_ONLY = previous.localOnly;
+  }
+});
+
+test('local-only mode refuses external generation even when a DeepSeek key exists', async () => {
+  const previous = {
+    key: process.env.DEEPSEEK_API_KEY,
+    local: process.env.XHS_LOCAL_DRAFT_GENERATOR,
+    localOnly: process.env.XHS_CONTENT_LOCAL_ONLY,
+  };
+  try {
+    process.env.DEEPSEEK_API_KEY = 'test-only-key-that-must-not-be-used';
+    process.env.XHS_LOCAL_DRAFT_GENERATOR = 'true';
+    process.env.XHS_CONTENT_LOCAL_ONLY = 'true';
+    assert.equal(aiProviderStatus().localDraftOnly, true);
+    assert.equal(aiProviderStatus().configured, false);
+    const result = await generateContentDraft({
+      kind: 'topic',
+      task: { title: '本地锁定验收', objective: '禁止外部调用', audience: '测试用户', platforms: ['小红书'] },
+      materialText: '仅有本地素材事实。',
+    });
+    assert.equal(result.provider, 'local-template');
+  } finally {
+    if (previous.key === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = previous.key;
+    if (previous.local === undefined) delete process.env.XHS_LOCAL_DRAFT_GENERATOR;
+    else process.env.XHS_LOCAL_DRAFT_GENERATOR = previous.local;
+    if (previous.localOnly === undefined) delete process.env.XHS_CONTENT_LOCAL_ONLY;
+    else process.env.XHS_CONTENT_LOCAL_ONLY = previous.localOnly;
   }
 });

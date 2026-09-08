@@ -41,7 +41,25 @@ function sourceIndex({ knowledge = [], sourceReferences = [] } = {}) {
         const timecode = timecodes.length
           ? `｜时间码区间 ${timecodes.join(', ')}`
           : '';
-        return `素材${index + 1}｜${text(item.filename, text(item.id, '未命名素材'))}｜${text(item.kind, 'unknown')}${timecode}`;
+        const frameCitations = Array.isArray(item.ocrFrames)
+          ? item.ocrFrames
+            .filter((frame) => frame && (Number.isFinite(Number(frame.timeSeconds)) || text(frame.text)))
+            .slice(0, 24)
+            .map((frame) => {
+              const timeSeconds = Number(frame.timeSeconds);
+              const timestamp = Number.isFinite(timeSeconds) && timeSeconds >= 0
+                ? `${timeSeconds.toFixed(3)}s`
+                : '无时间点';
+              const frameText = text(frame.text);
+              const boxes = Number(frame.detectionCount);
+              const detectionNote = Number.isFinite(boxes) && boxes > 0 ? `，${boxes}个文字框` : '';
+              return frameText ? `${timestamp}「${sourceExcerpt(frameText)}」${detectionNote}` : `${timestamp}${detectionNote}`;
+            })
+          : [];
+        const frameCitation = frameCitations.length
+          ? `｜画面帧 ${frameCitations.join(', ')}`
+          : '';
+        return `素材${index + 1}｜${text(item.filename, text(item.id, '未命名素材'))}｜${text(item.kind, 'unknown')}${timecode}${frameCitation}`;
       })
     : [];
   const knowledgeReferences = knowledge
@@ -50,7 +68,7 @@ function sourceIndex({ knowledge = [], sourceReferences = [] } = {}) {
   return [...materialReferences, ...knowledgeReferences].join('\n') || '未提供结构化来源索引；只能引用原始素材文本。';
 }
 
-function localContentDraft({ kind, task, knowledge = [], structure = null, materialText = '', sourceReferences = [] } = {}) {
+function localContentDraft({ kind, task, knowledge = [], structure = null, materialText = '', sourceReferences = [], brandProfile = null } = {}) {
   const sentences = sourceSentences(materialText || task?.sourceBrief);
   const first = sourceExcerpt(sentences[0] || materialText || task?.sourceBrief);
   const second = sourceExcerpt(sentences[1] || sentences[0] || materialText || task?.sourceBrief);
@@ -64,6 +82,9 @@ function localContentDraft({ kind, task, knowledge = [], structure = null, mater
   const structureSummary = structure
     ? `结构分析已完成：${text(structure.summary, '已生成结构结果，细节待人工核对')}`
     : '结构分析尚未完成';
+  const selectedTopic = text(task?.topicSelection?.text, first);
+  const brandName = text(brandProfile?.name, '未绑定品牌资料');
+  const brandVoice = text(brandProfile?.voice, '待人工确认品牌语气');
   const header = '【本地模板草案｜仅基于已读素材｜必须人工审核】';
   const sourceNote = `\n\n素材依据：\n- ${first}\n- ${second}`;
   let draft;
@@ -78,22 +99,23 @@ function localContentDraft({ kind, task, knowledge = [], structure = null, mater
         '',
         `业务目标：${objective}`,
         `目标平台：${platforms}`,
+        `品牌上下文：${brandName}；语气：${brandVoice}`,
         '人工确认：选题是否符合品牌定位、是否需要补充案例/数据、是否存在平台敏感表达。',
       ].join('\n');
       break;
     case 'copy':
       draft = [
         header,
-        '标题候选：把“',
-        first,
+        '标题候选：围绕“',
+        selectedTopic,
         '”讲清楚，给目标用户一套可执行的方法',
         '',
         '口播脚本草案：',
-        `开场：你是不是也在关注“${first}”？`,
+        `开场：你是不是也在关注“${selectedTopic}”？`,
         `正文：先把素材里明确出现的内容说清楚——${second}。接着根据“${third}”补充步骤、画面或案例；没有来源的效果、数据和承诺不在本地模板中补写。`,
         '结尾：如果你要把这件事落地，先确认目标、素材和执行条件，再进入下一步。',
         '',
-        `发布说明：目标平台为${platforms}；知识依据为${knowledgeTitles}。`,
+        `发布说明：目标平台为${platforms}；品牌资料为${brandName}；知识依据为${knowledgeTitles}。`,
         '人工确认：标题、语气、事实、案例、数据、免责声明及最终 CTA。',
       ].join('\n');
       break;
@@ -101,7 +123,7 @@ function localContentDraft({ kind, task, knowledge = [], structure = null, mater
       draft = [
         header,
         `平台适配输入：${platforms}`,
-        `主题：${first}`,
+        `主题：${selectedTopic}`,
         `正文骨架：问题引入 → 素材事实“${second}” → 操作步骤 → 人工补充证据 → 行动提示。`,
         '标题长度、标签、封面文字和平台规则暂不自动推断；请按每个平台的最新规则人工审核。',
         '人工确认：平台版本是否需要重写、是否含有绝对化/功效性/未经证实的表达。',
@@ -111,7 +133,7 @@ function localContentDraft({ kind, task, knowledge = [], structure = null, mater
       draft = [
         header,
         '分镜与制作计划（先给可执行骨架）',
-        `镜头1｜开场：呈现主题“${first}”，配一句问题式口播。`,
+        `镜头1｜开场：呈现主题“${selectedTopic}”，配一句问题式口播。`,
         `镜头2｜证据：展示素材中“${second}”对应的原画面、字幕或转写，并标注来源时间点。`,
         `镜头3｜收束：围绕“${third}”给出步骤清单，缺失画面由人工补拍或补素材。`,
         `${structureSummary}；字幕、配音、封面和数字人素材需要人工确认后再制作。`,
@@ -143,16 +165,22 @@ function localContentDraft({ kind, task, knowledge = [], structure = null, mater
 }
 
 export function aiProviderStatus() {
+  const localDraftOnly = process.env.XHS_CONTENT_LOCAL_ONLY === 'true';
   return {
     provider: 'deepseek',
     model: text(process.env.DEEPSEEK_MODEL, DEFAULT_MODEL),
-    configured: Boolean(process.env.DEEPSEEK_API_KEY),
+    configured: Boolean(process.env.DEEPSEEK_API_KEY) && !localDraftOnly,
+    externalConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
     baseUrl: text(process.env.DEEPSEEK_BASE_URL, DEFAULT_BASE_URL),
     localDraftGenerator: process.env.XHS_LOCAL_DRAFT_GENERATOR !== 'false',
+    localDraftOnly,
   };
 }
 
 export async function generateText({ system, prompt, temperature = 0.4, maxTokens = 2000 } = {}) {
+  if (process.env.XHS_CONTENT_LOCAL_ONLY === 'true') {
+    throw providerError('当前启用本地模板锁定，禁止调用外部 AI 模型', 'AI_PROVIDER_LOCAL_ONLY');
+  }
   const apiKey = text(process.env.DEEPSEEK_API_KEY);
   if (!apiKey) {
     throw providerError('未配置 DeepSeek API Key，暂不能执行 AI 生成；可先完成本地素材解析和知识检索', 'AI_PROVIDER_NOT_CONFIGURED');
@@ -204,7 +232,7 @@ export async function generateText({ system, prompt, temperature = 0.4, maxToken
   };
 }
 
-export async function generateContentDraft({ kind, task, knowledge = [], structure = null, materialText = '', sourceReferences = [] } = {}) {
+export async function generateContentDraft({ kind, task, knowledge = [], structure = null, materialText = '', sourceReferences = [], brandProfile = null } = {}) {
   const labels = {
     topic: '选题方案',
     copy: '口播脚本与发布文案',
@@ -231,13 +259,16 @@ export async function generateContentDraft({ kind, task, knowledge = [], structu
     `目标受众：${task?.audience || '未指定'}`,
     `目标平台：${Array.isArray(task?.platforms) ? task.platforms.join('、') : '未指定'}`,
     `素材说明：${task?.sourceBrief || '未填写'}`,
+    `人工选定选题：${task?.topicSelection?.text || '尚未选择；如果生成的是脚本或后续内容，不得把候选选题当成已确认选题'}`,
+    `品牌资料（仅可引用已绑定资料；未绑定不得推断）：${brandProfile ? JSON.stringify({ id: brandProfile.id, name: brandProfile.name, voice: brandProfile.voice, constraints: brandProfile.constraints, sourceDocumentIds: brandProfile.sourceDocumentIds }) : '未绑定品牌资料'}`,
     `可引用来源索引：\n${references}`,
     `原始素材文本（只可据此引用，不足部分必须标记为待确认）：\n${sourceText}`,
     `结构分析：\n${structureText}`,
     `知识库资料：\n${knowledgeText}`,
   ].join('\n\n');
-  if (!text(process.env.DEEPSEEK_API_KEY) && aiProviderStatus().localDraftGenerator) {
-    return localContentDraft({ kind, task, knowledge, structure, materialText, sourceReferences });
+  const provider = aiProviderStatus();
+  if ((provider.localDraftOnly || !text(process.env.DEEPSEEK_API_KEY)) && provider.localDraftGenerator) {
+    return localContentDraft({ kind, task, knowledge, structure, materialText, sourceReferences, brandProfile });
   }
   const generated = await generateText({
     system: '你是内容编辑云员工。先理解业务目标，再形成可审稿的内容，不直接发布。',

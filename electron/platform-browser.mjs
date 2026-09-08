@@ -574,6 +574,40 @@ const DOM_SNAPSHOT_SCRIPT = `(() => {
   };
 })()`;
 
+const MEDIA_SNAPSHOT_SCRIPT = `(() => {
+  const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+  const urlOf = (value) => /^https?:\\/\\//i.test(String(value || '')) ? String(value) : null;
+  const visible = (element) => {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const style = window.getComputedStyle(element);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const meta = (property) => document.querySelector('meta[property="' + property + '"]')?.content || null;
+  const videoUrls = Array.from(document.querySelectorAll('video, video source'))
+    .map((element) => urlOf(element.currentSrc || element.src))
+    .filter(Boolean);
+  const coverUrls = [
+    meta('og:image'),
+    meta('twitter:image'),
+    ...Array.from(document.querySelectorAll('video[poster]')).map((element) => urlOf(element.poster)),
+  ].filter(Boolean);
+  const imageUrls = Array.from(document.images)
+    .filter(visible)
+    .map((image) => urlOf(image.currentSrc || image.src))
+    .filter(Boolean);
+  const author = clean(document.querySelector('[class*="author"],[class*="nickname"],[class*="nick-name"],[class*="user-name"]')?.innerText || '');
+  return {
+    currentUrl: location.href,
+    title: clean(meta('og:title') || document.querySelector('h1,h2')?.innerText || document.title),
+    author,
+    coverUrl: coverUrls[0] || null,
+    videoUrls: [...new Set([...videoUrls, meta('og:video'), meta('og:video:url')].filter(Boolean))],
+    imageUrls: [...new Set(imageUrls)].slice(0, 30),
+    bodyText: clean(document.body?.innerText || '').slice(0, 8000),
+  };
+})()`;
+
 function parseJsonBody(body) {
   if (typeof body !== 'string' || !body.trim()) {
     return null;
@@ -594,6 +628,20 @@ function bodyLooksRelevant(platform, url) {
     return /edith\.xiaohongshu\.com\/api|xiaohongshu\.com\/(?:api|web_api|explore)/i.test(url);
   }
   return /weixin\.qq\.com|channels\.weixin\.qq\.com|finder\.video\.qq\.com/i.test(url);
+}
+
+function mediaLooksRelevant(platform, response) {
+  const url = String(response?.url || '');
+  const mediaHost = platform === 'xhs'
+    ? /(?:xiaohongshu\.com|xhscdn\.com)/i
+    : platform === 'douyin'
+      ? /(?:douyin\.com|douyincdn\.com|douyinvod\.com|byteimg\.com|ibytedtos\.com|zijieapi\.com|snssdk\.com)/i
+      : /(?:weixin\.qq\.com|channels\.weixin\.qq\.com|finder\.video\.qq\.com|qpic\.cn|wximg\.com)/i;
+  if (!url || (!bodyLooksRelevant(platform, url) && !mediaHost.test(url))) return false;
+  const mimeType = String(response?.mimeType || '').toLowerCase();
+  const resourceType = String(response?.resourceType || '').toLowerCase();
+  return mimeType.startsWith('video/') || mimeType.startsWith('image/') ||
+    resourceType === 'media' || /\.(?:mp4|mov|m4v|webm|jpg|jpeg|png|webp)(?:[?#]|$)/i.test(url);
 }
 
 export class PlatformBrowserSession {
@@ -672,7 +720,13 @@ export class PlatformBrowserSession {
       if (method !== 'Network.responseReceived' || !params?.response?.url) {
         return;
       }
-      if (!bodyLooksRelevant(platform, params.response.url)) {
+      const payloadRelevant = bodyLooksRelevant(platform, params.response.url);
+      const mediaRelevant = mediaLooksRelevant(platform, {
+        url: params.response.url,
+        mimeType: params.response.mimeType,
+        resourceType: params.type,
+      });
+      if (!payloadRelevant && !mediaRelevant) {
         return;
       }
       const record = {
@@ -680,11 +734,15 @@ export class PlatformBrowserSession {
         status: params.response.status,
         requestId: params.requestId,
         generation: context.generation,
+        media: mediaRelevant,
+        mimeType: params.response.mimeType || '',
       };
       context.responses.push(record);
       context.responseByRequestId.set(params.requestId, record);
-      record.bodyPromise = this.readResponseBody(debuggerClient, record, context);
-      record.bodyPromise.catch(() => {});
+      if (!mediaRelevant) {
+        record.bodyPromise = this.readResponseBody(debuggerClient, record, context);
+        record.bodyPromise.catch(() => {});
+      }
     });
     debuggerClient.on('message', (_event, method, params) => {
       if (method !== 'Network.loadingFinished' || !params?.requestId) {
@@ -695,6 +753,7 @@ export class PlatformBrowserSession {
         return;
       }
       record.finished = true;
+      if (record.media) return;
       record.bodyPromise = this.readResponseBody(debuggerClient, record, context);
       record.bodyPromise.catch(() => {});
     });
@@ -898,14 +957,14 @@ export class PlatformBrowserSession {
       (record) => record.generation === entry.context.generation,
     );
     await Promise.allSettled(
-      currentRecords.map((record) =>
+      currentRecords.filter((record) => !record.media).map((record) =>
         record.body
           ? Promise.resolve(record.body)
           : this.readResponseBody(entry.debuggerClient, record, entry.context),
       ),
     );
     const payloads = entry.context.responses
-      .filter((record) => record.generation === entry.context.generation && record.body)
+      .filter((record) => record.generation === entry.context.generation && !record.media && record.body)
       .map(({ url, status, body }) => ({ url, status, body }));
     const payloadData = extractPayloadData(platform, payloads, snapshot.currentUrl || target);
     const works = [];
@@ -948,6 +1007,77 @@ export class PlatformBrowserSession {
       comments: payloadData.comments,
       source: 'browser-network',
       html: '',
+    };
+  }
+
+  async resolveMedia(platform, input, options = {}) {
+    const target = String(input || '').trim();
+    if (!isHttpUrl(target)) {
+      throw new Error('浏览器下载解析需要完整的 http(s) 平台链接');
+    }
+    const entry = await this.ensureWindow(platform);
+    entry.context.generation += 1;
+    entry.context.responses = [];
+    entry.context.responseByRequestId.clear();
+    try {
+      await Promise.race([
+        entry.browserWindow.loadURL(target),
+        wait(NAVIGATION_TIMEOUT_MS).then(() => {
+          throw new Error('平台作品页面加载超时');
+        }),
+      ]);
+    } catch (error) {
+      const loadedUrl = entry.browserWindow.webContents.getURL();
+      if (!/ERR_ABORTED|(-3)|加载超时/i.test(error.message || '') || !isHttpUrl(loadedUrl)) {
+        throw new Error('打开平台作品页面失败：' + error.message);
+      }
+    }
+    await this.attachDebugger(entry);
+    await wait(WAIT_AFTER_LOAD_MS);
+    try {
+      await executeJavaScriptWithTimeout(
+        entry.browserWindow,
+        'window.scrollTo(0, 0); document.body && document.body.click();',
+      );
+    } catch {
+      // 页面在平台重定向期间关闭时，继续使用已经加载的结果。
+    }
+    await wait(1200);
+    let snapshot;
+    try {
+      snapshot = await executeJavaScriptWithTimeout(entry.browserWindow, MEDIA_SNAPSHOT_SCRIPT);
+    } catch (error) {
+      throw new Error('读取平台作品页面失败：' + error.message);
+    }
+    const records = entry.context.responses.filter(
+      (record) => record.generation === entry.context.generation && record.media,
+    );
+    const networkVideoUrls = records
+      .filter((record) => /^video\//i.test(record.mimeType) || /\.(?:mp4|mov|m4v|webm)(?:[?#]|$)/i.test(record.url) || /(?:play|download|video)/i.test(record.url))
+      .map((record) => record.url);
+    const networkImageUrls = records
+      .filter((record) => /^image\//i.test(record.mimeType) || /\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/i.test(record.url))
+      .map((record) => record.url);
+    const videoUrl = [...new Set([...(snapshot.videoUrls || []), ...networkVideoUrls])]
+      .find((url) => isHttpUrl(url) && !/\.(?:m3u8|mpd)(?:[?#]|$)/i.test(url)) || null;
+    const coverUrl = snapshot.coverUrl || networkImageUrls[0] || snapshot.imageUrls?.[0] || null;
+    const imageUrls = [...new Set([...(snapshot.imageUrls || []), ...networkImageUrls])].slice(0, 30);
+    if (!videoUrl && !coverUrl && !imageUrls.length) {
+      if (/安全限制|安全验证|验证码|服务异常|登录即可|请登录|需要登录/i.test(snapshot.bodyText || '')) {
+        throw new Error(
+          '平台页面需要登录或人工验证；请在弹出的' + this.configFor(platform).title + '窗口完成后，再点击解析',
+        );
+      }
+      throw new Error('平台页面没有返回可下载的媒体资源；请确认链接指向具体作品后重试');
+    }
+    return {
+      title: snapshot.title || this.configFor(platform).label + '作品',
+      author: snapshot.author || '作者未提供',
+      videoUrl,
+      coverUrl,
+      imageUrls,
+      source: 'desktop-browser-session',
+      currentUrl: snapshot.currentUrl || target,
     };
   }
 }

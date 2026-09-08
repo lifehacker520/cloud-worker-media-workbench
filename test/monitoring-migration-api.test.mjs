@@ -96,6 +96,41 @@ test('monitoring JSON migrates to SQLite and remains the source after a restart'
     } finally {
       db.close();
     }
+
+    const batchSeen = await fetch(`http://127.0.0.1:${port}/api/works/seen-batch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fingerprints: [work.fingerprint] }),
+    });
+    const batchSeenPayload = await batchSeen.json();
+    assert.equal(batchSeen.status, 200);
+    assert.equal(batchSeenPayload.markedCount, 1);
+    assert.deepEqual(batchSeenPayload.markedFingerprints, [work.fingerprint]);
+
+    const sourceTask = await fetch(`http://127.0.0.1:${port}/api/content/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: '监控来源内容任务',
+        sourceWorkFingerprint: work.fingerprint,
+        sourceBrief: '公开元数据参考，待人工确认授权。',
+      }),
+    });
+    const sourceTaskPayload = await sourceTask.json();
+    assert.equal(sourceTask.status, 201);
+    assert.equal(sourceTaskPayload.task.sourceWorkFingerprint, work.fingerprint);
+
+    const duplicateSourceTask = await fetch(`http://127.0.0.1:${port}/api/content/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: '重复监控来源内容任务',
+        sourceWorkFingerprint: work.fingerprint,
+      }),
+    });
+    const duplicateSourceTaskPayload = await duplicateSourceTask.json();
+    assert.equal(duplicateSourceTask.status, 409);
+    assert.equal(duplicateSourceTaskPayload.task.id, sourceTaskPayload.task.id);
   } finally {
     if (child.exitCode === null) {
       child.kill('SIGTERM');

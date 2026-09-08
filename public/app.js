@@ -37,9 +37,14 @@ const VIEW_META = {
     description: '发布准备已收纳到内容编辑工作流，保留旧数据入口。',
   },
   insights: {
-    eyebrow: '兼容入口',
-    title: '数据洞察',
-    description: '数据洞察将在内容任务积累真实结果后接入。',
+    eyebrow: '工具中心 / 数据看板',
+    title: '数据看板',
+    description: '查看发布节奏、平台覆盖和已有表现快照。',
+  },
+  downloads: {
+    eyebrow: '功能中心 / 工具中心',
+    title: '下载中心',
+    description: '粘贴一条作品链接，解析并保存视频、封面和图片素材。',
   },
   ai: {
     eyebrow: '兼容入口',
@@ -61,6 +66,11 @@ const VIEW_META = {
     title: '设置',
     description: '按类别查看工作区、连接和客户端配置。',
   },
+};
+
+const VIEW_ALIASES = {
+  accounts: 'monitor',
+  dashboard: 'insights',
 };
 
 const PLANNED_ROLE_META = {
@@ -108,6 +118,10 @@ let currentView = 'overview';
 let currentRole = '内容编辑云员工';
 let currentSettingsPanel = 'general';
 let monitorPeriod = 'month';
+let insightsPlatformFilter = 'all';
+let workReadFilter = 'all';
+let workSearch = '';
+const selectedWorkFingerprints = new Set();
 let insightsRequestId = 0;
 let platformSessionRequestId = 0;
 let isInsightsLoading = false;
@@ -157,9 +171,12 @@ const elements = {
   loginMessage: document.querySelector('#login-message'),
   feedbackForm: document.querySelector('#feedback-form'),
   feedbackMessage: document.querySelector('#feedback-message'),
+  feedbackContextLabel: document.querySelector('#feedback-context-label'),
+  feedbackContextDetail: document.querySelector('#feedback-context-detail'),
   adminConsole: document.querySelector('#admin-console'),
   feedbackList: document.querySelector('#feedback-list'),
   activityList: document.querySelector('#activity-list'),
+  settingsAdminZone: document.querySelector('.settings-admin-zone'),
   currentViewEyebrow: document.querySelector('#current-view-eyebrow'),
   currentViewTitle: document.querySelector('#current-view-title'),
   currentViewDescription: document.querySelector('#current-view-description'),
@@ -169,10 +186,16 @@ const elements = {
   monitorFeedLabel: document.querySelector('#monitor-feed-label'),
   monitorSelection: document.querySelector('#monitor-selection'),
   monitorClearAccount: document.querySelector('#monitor-clear-account'),
+  monitorClearUnread: document.querySelector('#monitor-clear-unread'),
+  workSearch: document.querySelector('#work-search'),
+  workReadFilter: document.querySelector('#work-read-filter'),
+  worksSelectAll: document.querySelector('#works-select-all'),
+  markSelectedSeen: document.querySelector('#mark-selected-seen'),
   monitorSplitter: document.querySelector('#monitor-splitter'),
   monitorLayout: document.querySelector('#monitor-layout'),
   monitorInsights: document.querySelector('#monitor-insights'),
   monitorPeriod: document.querySelector('#monitor-period'),
+  insightsPlatformFilter: document.querySelector('#insights-platform-filter'),
   monitorInsightsUpdated: document.querySelector('#monitor-insights-updated'),
   monitorInsightsNotice: document.querySelector('#monitor-insights-notice'),
   monitorInsightsKpis: document.querySelector('#monitor-insights-kpis'),
@@ -630,10 +653,30 @@ function workTimestamp(work) {
   return Number.isNaN(value) ? 0 : value;
 }
 
+function updateWorkSelectionControls() {
+  const checkboxes = [...(elements.works?.querySelectorAll('[data-select-work]') || [])];
+  const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+  const allSelected = checkboxes.length > 0 && selectedCount === checkboxes.length;
+  if (elements.worksSelectAll) {
+    elements.worksSelectAll.checked = allSelected;
+    elements.worksSelectAll.indeterminate = selectedCount > 0 && !allSelected;
+  }
+  if (elements.markSelectedSeen) {
+    elements.markSelectedSeen.disabled = selectedCount === 0;
+    elements.markSelectedSeen.textContent = selectedCount ? '标为已读（' + selectedCount + '）' : '标为已读';
+  }
+}
+
 function renderWorks() {
   const selectedAccount = selectedAccountId ? accountFor(selectedAccountId) : null;
   if (selectedAccountId && !selectedAccount) {
     selectedAccountId = null;
+  }
+  if (elements.workSearch && elements.workSearch.value !== workSearch) {
+    elements.workSearch.value = workSearch;
+  }
+  if (elements.workReadFilter && elements.workReadFilter.value !== workReadFilter) {
+    elements.workReadFilter.value = workReadFilter;
   }
 
   const visibleWorks = state.works
@@ -643,33 +686,65 @@ function renderWorks() {
       const matchesPlatform = workPlatformFilter === 'all' || platform === workPlatformFilter;
       const matchesAccount = !selectedAccountId || work.accountId === selectedAccountId;
       const matchesGroup = groupFilter === 'all' || accountGroup(account) === groupFilter;
-      return matchesPlatform && matchesAccount && matchesGroup;
+      const matchesRead = workReadFilter === 'all' || (workReadFilter === 'unread' ? !work.seen : work.seen);
+      const matchesSearch = !workSearch || String(work.title || '').toLowerCase().includes(workSearch);
+      return matchesPlatform && matchesAccount && matchesGroup && matchesRead && matchesSearch;
     })
     .sort((left, right) => workTimestamp(right) - workTimestamp(left));
+
+  const visibleFingerprints = new Set(visibleWorks.map((work) => work.fingerprint));
+  selectedWorkFingerprints.forEach((fingerprint) => {
+    if (!visibleFingerprints.has(fingerprint)) {
+      selectedWorkFingerprints.delete(fingerprint);
+    }
+  });
 
   elements.feedCount.textContent = visibleWorks.length + ' 条';
   if (elements.monitorFeedLabel) {
     elements.monitorFeedLabel.textContent = selectedAccount
       ? selectedAccount.name + ' · ' + visibleWorks.length + ' 条作品'
-      : visibleWorks.length + ' 条公开作品';
+      : workReadFilter === 'unread'
+        ? '待查看 · ' + visibleWorks.length + ' 条作品'
+        : workReadFilter === 'read'
+          ? '已查看 · ' + visibleWorks.length + ' 条作品'
+          : visibleWorks.length + ' 条公开作品';
   }
   if (elements.monitorSelection) {
-    elements.monitorSelection.classList.toggle('is-hidden', !selectedAccount);
+    elements.monitorSelection.classList.toggle('is-hidden', !selectedAccount && workReadFilter === 'all');
     elements.monitorSelection.textContent = selectedAccount
       ? '正在查看：' + selectedAccount.name + ' · 按发布时间倒序'
-      : '';
+      : workReadFilter === 'unread'
+        ? '正在查看：所有账号的待查看作品'
+        : workReadFilter === 'read'
+          ? '正在查看：所有账号的已查看作品'
+          : '';
   }
   if (elements.monitorClearAccount) {
     elements.monitorClearAccount.classList.toggle('is-hidden', !selectedAccount);
   }
+  if (elements.monitorClearUnread) {
+    elements.monitorClearUnread.classList.toggle('is-hidden', workReadFilter === 'all');
+  }
 
   if (visibleWorks.length === 0) {
-    const emptyTitle = selectedAccount
+    const emptyTitle = workReadFilter === 'unread'
+      ? '没有待查看作品'
+      : workReadFilter === 'read'
+        ? '没有已查看作品'
+        : workSearch
+          ? '没有匹配的作品'
+      : selectedAccount
       ? '该账号暂时没有作品'
       : state.works.length === 0
         ? '还没有作品'
         : '该平台暂时没有作品';
-    const emptyDescription = selectedAccount
+    const emptyDescription = workReadFilter === 'unread'
+      ? '新作品会在采集后出现在这里。'
+      : workReadFilter === 'read'
+        ? '显式标记为已读的作品会出现在这里。'
+        : workSearch
+          ? '换一个标题关键词，或清除搜索条件。'
+      : selectedAccount
       ? selectedAccount.state === 'error' && selectedAccount.lastError
         ? selectedAccount.lastError
         : '刷新该账号后，这里会显示作品封面、标题和发布时间。'
@@ -682,6 +757,7 @@ function renderWorks() {
       '</h3><p>' +
       escapeHtml(emptyDescription) +
       '</p></div>';
+    updateWorkSelectionControls();
     return;
   }
 
@@ -717,7 +793,13 @@ function renderWorks() {
       return (
         '<article class="work-card ' +
         (isNew ? 'is-new' : '') +
-        '"><div class="work-cover-wrap">' +
+        '"><div class="work-cover-wrap"><label class="work-select" title="选择作品"><input type="checkbox" data-select-work="' +
+        escapeHtml(work.fingerprint) +
+        '"' +
+        (selectedWorkFingerprints.has(work.fingerprint) ? ' checked' : '') +
+        ' /><span class="sr-only">选择 ' +
+        escapeHtml(work.title || '未命名作品') +
+        '</span></label>' +
         coverMarkup(work, platform) +
         (isNew ? '<span class="new-badge">新发现</span>' : '') +
         '</div><div class="work-card-body"><div class="work-topline"><span class="source-chip ' +
@@ -745,6 +827,9 @@ function renderWorks() {
         '" target="_blank" rel="noreferrer">' +
         linkLabel +
         '</a>' +
+        '<button type="button" data-create-content-work="' +
+        escapeHtml(work.fingerprint) +
+        '">创建内容任务</button>' +
         (isNew
           ? '<button type="button" data-seen="' +
             escapeHtml(work.fingerprint) +
@@ -770,6 +855,7 @@ function renderWorks() {
       { once: true },
     );
   });
+  updateWorkSelectionControls();
 }
 
 const MONITOR_INSIGHT_METRICS = [
@@ -829,7 +915,15 @@ function insightMetricMarkup(insights, key, label, emptyText) {
 function renderMonitoringInsightKpis(insights) {
   if (!elements.monitorInsightsKpis) return;
   const summary = insights?.summary || {};
+  const unreadCount = state.works.filter((work) => {
+    const account = accountFor(work.accountId);
+    const platform = work.platform || account?.platform || 'other';
+    return !work.seen && (insightsPlatformFilter === 'all' || platform === insightsPlatformFilter);
+  }).length;
   const cards = [
+    '<button class="monitor-kpi-card is-available" type="button" data-view="monitor" data-monitor-focus="unread"><span>待查看作品</span><strong>' +
+      escapeHtml(unreadCount) +
+      '</strong><small>点击进入监控队列</small></button>',
     '<article class="monitor-kpi-card is-available"><span>纳入监控账号</span><strong>' +
       escapeHtml(summary.accountCount ?? 0) +
       '</strong><small>' +
@@ -966,6 +1060,9 @@ function renderMonitoringInsights() {
   if (!elements.monitorInsights) return;
   if (elements.monitorPeriod && elements.monitorPeriod.value !== monitorPeriod) {
     elements.monitorPeriod.value = monitorPeriod;
+  }
+  if (elements.insightsPlatformFilter && elements.insightsPlatformFilter.value !== insightsPlatformFilter) {
+    elements.insightsPlatformFilter.value = insightsPlatformFilter;
   }
   const insights = state.insights;
   if (!insights) {
@@ -1301,7 +1398,7 @@ function renderSettings() {
 function setSettingsPanel(panelName = 'general') {
   const hasPanel = elements.settingsCards.some(
     (card) => card.dataset.settingsCard === panelName,
-  );
+  ) || panelName === 'advanced';
   const nextPanel = hasPanel ? panelName : 'general';
   currentSettingsPanel = nextPanel;
   elements.settingsNavItems.forEach((item) => {
@@ -1314,6 +1411,7 @@ function setSettingsPanel(panelName = 'general') {
     card.classList.toggle('is-active', active);
     card.hidden = !active;
   });
+  elements.settingsAdminZone?.classList.toggle('is-hidden', nextPanel !== 'advanced');
 }
 
 function renderNavigationBadges() {
@@ -1329,8 +1427,13 @@ function renderNavigationBadges() {
 }
 
 function setView(view, options = {}) {
-  const requestedView = view === 'accounts' ? 'monitor' : view;
+  const requestedView = VIEW_ALIASES[view] || view;
   const nextView = VIEW_META[requestedView] ? requestedView : 'overview';
+  if (nextView === 'monitor' && options.monitorFocus !== undefined) {
+    workReadFilter = options.monitorFocus === 'unread' ? 'unread' : 'all';
+    renderWorks();
+    renderAccountHealth();
+  }
   if (nextView === 'content') {
     currentRole = options.role || '内容编辑云员工';
   } else if (nextView === 'planned') {
@@ -1343,20 +1446,35 @@ function setView(view, options = {}) {
   elements.currentViewEyebrow.textContent = nextView === 'planned' ? '云员工 / 规划中' : meta.eyebrow;
   elements.currentViewTitle.textContent = nextView === 'planned' ? currentRole + '云员工' : meta.title;
   elements.currentViewDescription.textContent = nextView === 'planned' ? plannedMeta.description : meta.description;
+  renderFeedbackContext(nextView);
   if (nextView === 'planned') {
     elements.plannedRoleTitle.textContent = currentRole + '云员工正在规划';
     elements.plannedRoleDescription.textContent = plannedMeta.description;
     elements.plannedRoleIcon.textContent = plannedMeta.icon;
   }
   elements.viewPanels.forEach((panel) => {
-    panel.classList.toggle('is-active', panel.dataset.viewPanel === nextView);
+    const isActive = panel.dataset.viewPanel === nextView;
+    panel.classList.toggle('is-active', isActive);
+    panel.hidden = !isActive;
   });
   elements.navItems.forEach((item) => {
     const isRoleMatch = !item.dataset.role || item.dataset.role === currentRole;
     item.classList.toggle('is-active', item.dataset.view === nextView && isRoleMatch);
   });
+  if (elements.refreshButton) {
+    const canRefresh = ['overview', 'insights', 'monitor'].includes(nextView);
+    elements.refreshButton.classList.toggle('is-hidden', !canRefresh);
+    if (elements.refreshLabel && !state.meta.refreshInProgress && !isRefreshing) {
+      elements.refreshLabel.textContent = nextView === 'insights' ? '刷新数据' : '刷新监控';
+    }
+  }
   if (options.updateHash !== false && window.location.hash !== '#' + nextView) {
-    window.history.replaceState(null, '', '#' + nextView);
+    const historyState = { view: nextView };
+    if (options.replaceHistory) {
+      window.history.replaceState(historyState, '', '#' + nextView);
+    } else {
+      window.history.pushState(historyState, '', '#' + nextView);
+    }
   }
   if (viewChanged && options.scroll !== false) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1370,6 +1488,52 @@ function setView(view, options = {}) {
     });
   }
 }
+
+function renderFeedbackContext(view = currentView) {
+  if (!elements.feedbackContextLabel || !elements.feedbackContextDetail) {
+    return;
+  }
+  const meta = VIEW_META[view] || VIEW_META.overview;
+  elements.feedbackContextLabel.textContent = meta.title;
+  elements.feedbackContextDetail.textContent =
+    '当前路由 #' + view + ' · 只发送页面名称，不包含 Cookie、密钥或本地完整路径。';
+}
+
+function createContentTaskFromWork(fingerprint) {
+  const work = state.works.find((item) => item.fingerprint === fingerprint);
+  if (!work) {
+    return;
+  }
+  const account = accountFor(work.accountId);
+  const platform = work.platform || account?.platform || 'other';
+  const platformLabel = platformFor(platform).label;
+  const target = workLinkTarget(work, account);
+  const sourceUrl = target.exactUrl || target.fallbackUrl || '';
+  const sourceBrief = [
+    '监控来源：公开平台元数据，仅作参考，未自动视为已授权素材。',
+    '平台：' + platformLabel,
+    '账号：' + (account?.name || '未知账号'),
+    '作品：' + (work.title || '未命名作品'),
+    '发布时间：' + (work.publishedAt || work.discoveredAt || '未记录'),
+    '来源链接：' + sourceUrl,
+    '下一步：请人工确认素材授权后，再导入本地素材并执行生成或导出。',
+  ].join('\n');
+  const prefill = {
+    title: '参考：' + (work.title || '未命名作品'),
+    objective: '围绕监控作品整理一条可审核的内容任务，先确认来源与授权边界。',
+    platforms: platformLabel,
+    sourceWorkFingerprint: work.fingerprint,
+    sourceBrief,
+  };
+  try {
+    window.sessionStorage.setItem('cloud-worker-content-prefill', JSON.stringify(prefill));
+  } catch {
+    // The event still carries the prefill when storage is unavailable.
+  }
+  setView('content');
+  window.dispatchEvent(new CustomEvent('content-work-prefill', { detail: prefill }));
+}
+
 function feedbackCategoryLabel(category) {
   return (
     {
@@ -1456,7 +1620,11 @@ function renderRuntime() {
     document.createTextNode(inProgress ? '…' : '↻'),
   );
   if (elements.refreshLabel) {
-    elements.refreshLabel.textContent = inProgress ? '刷新中…' : '刷新全部';
+    elements.refreshLabel.textContent = inProgress
+      ? '刷新中…'
+      : currentView === 'insights'
+        ? '刷新数据'
+        : '刷新监控';
   }
 
   if (hasError) {
@@ -1767,7 +1935,7 @@ async function loadMonitoringInsights(options = {}) {
   const requestId = ++insightsRequestId;
   const params = new URLSearchParams({
     period: monitorPeriod,
-    platform: platformFilter,
+    platform: insightsPlatformFilter,
     accountId: selectedAccountId || 'all',
   });
   isInsightsLoading = true;
@@ -2011,7 +2179,7 @@ async function clearPlatformSession(platform) {
   }
 }
 
-async function selectMonitorAccount(accountId) {
+function selectMonitorAccount(accountId) {
   const account = accountFor(accountId);
   if (!account) {
     return;
@@ -2021,34 +2189,6 @@ async function selectMonitorAccount(accountId) {
   renderWorks();
   renderAccountHealth();
   loadMonitoringInsights({ silent: true });
-
-  const unreadWorks = state.works.filter(
-    (work) => work.accountId === accountId && !work.seen,
-  );
-  if (!unreadWorks.length) {
-    return;
-  }
-
-  try {
-    const payload = await apiRequest(
-      '/api/accounts/' + encodeURIComponent(accountId) + '/seen',
-      { method: 'POST' },
-    );
-    const markedCount = Number(payload.markedCount || unreadWorks.length);
-    state.works.forEach((work) => {
-      if (work.accountId === accountId) {
-        work.seen = true;
-      }
-    });
-    state.stats.unseenWorkCount = Math.max(
-      0,
-      (state.stats.unseenWorkCount || 0) - markedCount,
-    );
-    render();
-    await loadAdminData();
-  } catch (error) {
-    showToast(error.message || '更新账号已读状态失败', 'error');
-  }
 }
 
 function clearSelectedMonitorAccount() {
@@ -2069,11 +2209,47 @@ async function markSeen(fingerprint) {
     if (work) {
       work.seen = true;
     }
+    selectedWorkFingerprints.delete(fingerprint);
     state.stats.unseenWorkCount = Math.max(0, (state.stats.unseenWorkCount || 0) - 1);
     render();
     await loadAdminData();
   } catch (error) {
     showToast(error.message || '标记失败', 'error');
+  }
+}
+
+async function markSelectedSeen() {
+  const fingerprints = [...selectedWorkFingerprints];
+  if (!fingerprints.length) {
+    return;
+  }
+  if (elements.markSelectedSeen) {
+    elements.markSelectedSeen.disabled = true;
+    elements.markSelectedSeen.textContent = '标记中…';
+  }
+  try {
+    const payload = await apiRequest('/api/works/seen-batch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fingerprints }),
+    });
+    const markedFingerprints = payload.markedFingerprints || fingerprints;
+    state.works.forEach((work) => {
+      if (markedFingerprints.includes(work.fingerprint)) {
+        work.seen = true;
+        selectedWorkFingerprints.delete(work.fingerprint);
+      }
+    });
+    state.stats.unseenWorkCount = Math.max(
+      0,
+      (state.stats.unseenWorkCount || 0) - Number(payload.markedCount || 0),
+    );
+    render();
+    await loadAdminData();
+    showToast('已标记 ' + (payload.markedCount || 0) + ' 条作品为已读', 'success');
+  } catch (error) {
+    showToast(error.message || '批量标记失败', 'error');
+    updateWorkSelectionControls();
   }
 }
 
@@ -2089,7 +2265,14 @@ async function submitFeedback(event) {
     await apiRequest('/api/feedback', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ category, message }),
+      body: JSON.stringify({
+        category,
+        message,
+        context: {
+          view: currentView,
+          route: window.location.hash || '#' + currentView,
+        },
+      }),
     });
     elements.feedbackForm.reset();
     elements.feedbackMessage.textContent = '已提交，感谢反馈';
@@ -2301,13 +2484,21 @@ function init() {
 
   elements.navItems.forEach((item) => {
     item.addEventListener('click', () =>
-      setView(item.dataset.view, { role: item.dataset.role }),
+      setView(item.dataset.view, {
+        role: item.dataset.role,
+        monitorFocus: item.dataset.monitorFocus,
+      }),
     );
   });
-  document.querySelectorAll('[data-view]:not(.nav-item)').forEach((item) => {
-    item.addEventListener('click', (event) => {
-      event.preventDefault();
-      setView(item.dataset.view, { role: item.dataset.role });
+  document.addEventListener('click', (event) => {
+    const item = event.target.closest('[data-view]:not(.nav-item)');
+    if (!item) {
+      return;
+    }
+    event.preventDefault();
+    setView(item.dataset.view, {
+      role: item.dataset.role,
+      monitorFocus: item.dataset.monitorFocus,
     });
   });
   elements.toolsNavToggle?.addEventListener('click', () => {
@@ -2318,6 +2509,10 @@ function init() {
     }
   });
   window.addEventListener('hashchange', () => {
+    const [view] = window.location.hash.slice(1).split('/');
+    setView(view, { updateHash: false });
+  });
+  window.addEventListener('popstate', () => {
     const [view] = window.location.hash.slice(1).split('/');
     setView(view, { updateHash: false });
   });
@@ -2376,6 +2571,10 @@ function init() {
   });
   elements.monitorPeriod?.addEventListener('change', (event) => {
     monitorPeriod = event.target.value || 'month';
+    loadMonitoringInsights();
+  });
+  elements.insightsPlatformFilter?.addEventListener('change', (event) => {
+    insightsPlatformFilter = event.target.value || 'all';
     loadMonitoringInsights();
   });
   elements.autoRefresh.addEventListener('change', resetAutoRefresh);
@@ -2454,15 +2653,62 @@ function init() {
     updateAccountGroup(select.dataset.accountGroupId, select.value, select);
   });
   elements.monitorClearAccount?.addEventListener('click', clearSelectedMonitorAccount);
+  elements.monitorClearUnread?.addEventListener('click', () => {
+    workReadFilter = 'all';
+    if (elements.workReadFilter) {
+      elements.workReadFilter.value = 'all';
+    }
+    renderWorks();
+  });
+  elements.workSearch?.addEventListener('input', (event) => {
+    workSearch = String(event.target.value || '').trim().toLowerCase();
+    renderWorks();
+  });
+  elements.workReadFilter?.addEventListener('change', (event) => {
+    workReadFilter = ['all', 'unread', 'read'].includes(event.target.value)
+      ? event.target.value
+      : 'all';
+    renderWorks();
+  });
+  elements.worksSelectAll?.addEventListener('change', (event) => {
+    const visibleCheckboxes = [...elements.works.querySelectorAll('[data-select-work]')];
+    visibleCheckboxes.forEach((checkbox) => {
+      if (event.target.checked) {
+        selectedWorkFingerprints.add(checkbox.dataset.selectWork);
+      } else {
+        selectedWorkFingerprints.delete(checkbox.dataset.selectWork);
+      }
+      checkbox.checked = event.target.checked;
+    });
+    updateWorkSelectionControls();
+  });
+  elements.markSelectedSeen?.addEventListener('click', markSelectedSeen);
   elements.works.addEventListener('click', (event) => {
+    const contentButton = event.target.closest('[data-create-content-work]');
+    if (contentButton) {
+      createContentTaskFromWork(contentButton.dataset.createContentWork);
+      return;
+    }
     const button = event.target.closest('[data-seen]');
     if (button) {
       markSeen(button.dataset.seen);
     }
   });
+  elements.works.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('[data-select-work]');
+    if (!checkbox) {
+      return;
+    }
+    if (checkbox.checked) {
+      selectedWorkFingerprints.add(checkbox.dataset.selectWork);
+    } else {
+      selectedWorkFingerprints.delete(checkbox.dataset.selectWork);
+    }
+    updateWorkSelectionControls();
+  });
 
   const [initialView] = window.location.hash.slice(1).split('/');
-  setView(initialView, { updateHash: true });
+  setView(initialView, { updateHash: true, replaceHistory: true });
   render();
   applyAutoRefreshFrequency(elements.autoRefresh.value);
   loadSession();

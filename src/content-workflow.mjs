@@ -31,6 +31,7 @@ export const CONTENT_NODE_CATALOG = [
 
 const EDITABLE_STATUSES = new Set(['draft', 'changes_requested']);
 const NODE_STATUSES = new Set(['pending', 'ready', 'running', 'waiting_review', 'succeeded', 'failed', 'blocked', 'skipped']);
+const CONTENT_FEEDBACK_STATUSES = new Set(['manual', 'not_published', 'observed', 'failed']);
 
 function text(value, fallback = '') {
   return typeof value === 'string' ? value.trim() : fallback;
@@ -163,6 +164,7 @@ export function normalizeContentTask(raw, options = {}) {
     objective: text(source.objective),
     audience: text(source.audience),
     platforms: list(source.platforms),
+    sourceWorkFingerprint: text(source.sourceWorkFingerprint, null),
     sourceBrief: text(source.sourceBrief),
     sourceAssets: list(source.sourceAssets),
     status: text(source.status, 'draft'),
@@ -219,6 +221,13 @@ export function normalizeContentTask(raw, options = {}) {
     nodes,
     reviews: Array.isArray(source.reviews) ? source.reviews : [],
     versions: Array.isArray(source.versions) ? source.versions : [],
+    topicSelection: objectOrNull(source.topicSelection),
+    selectedVoiceVersionId: text(source.selectedVoiceVersionId, null),
+    backupVoiceVersionId: text(source.backupVoiceVersionId, null),
+    voiceComparisons: Array.isArray(source.voiceComparisons)
+      ? source.voiceComparisons.filter((item) => objectOrNull(item)).slice(-20)
+      : [],
+    feedback: Array.isArray(source.feedback) ? source.feedback : [],
   };
 }
 
@@ -247,6 +256,7 @@ export function createContentTask(input, actor, options = {}) {
       objective: text(input?.objective),
       audience: text(input?.audience),
       platforms: list(input?.platforms),
+      sourceWorkFingerprint: text(input?.sourceWorkFingerprint, null),
       sourceBrief: text(input?.sourceBrief),
       sourceAssets: list(input?.sourceAssets),
       tenantId: text(options.tenantId, 'tenant_local'),
@@ -386,7 +396,7 @@ export function recordContentNode(task, nodeId, input, actor, options = {}) {
   node.status = status;
   node.input = input?.input ?? node.input;
   node.output = input?.output ?? null;
-  node.error = status === 'succeeded' ? null : text(input?.error, '节点未完成');
+  node.error = ['succeeded', 'skipped'].includes(status) ? null : text(input?.error, '节点未完成');
   node.completedAt = timestamp;
   node.updatedAt = timestamp;
   node.trace = buildNodeExecutionTrace(node, current, input, status, actor, timestamp);
@@ -569,6 +579,199 @@ export function resumeContentTask(task, actor, options = {}) {
   return current;
 }
 
+export function selectContentTopic(task, input, actor, options = {}) {
+  const timestamp = options.now || nowIso();
+  const current = normalizeContentTask(task, { now: timestamp });
+  if (current.run.status === 'not_started') {
+    throw new Error('请先启动内容工作流，再选择选题');
+  }
+  const topicNode = current.nodes.find((node) => node.id === 'CE-10');
+  if (topicNode?.status !== 'succeeded') {
+    throw new Error('请先完成 CE-10 选题候选生成');
+  }
+  const selectionText = text(input?.selection || input?.topic || input?.text);
+  if (!selectionText) {
+    throw new Error('请选择或填写一个最终选题');
+  }
+  if (selectionText.length > 2_000) {
+    throw new Error('最终选题不能超过 2000 个字');
+  }
+  const candidateIndex = Number(input?.candidateIndex);
+  const selection = {
+    id: text(options.selectionId, 'topic_selection_' + timestamp.replace(/[^0-9]/g, '').slice(-18)),
+    text: selectionText,
+    candidateIndex: Number.isInteger(candidateIndex) && candidateIndex > 0 ? candidateIndex : null,
+    note: text(input?.note),
+    selectedAt: timestamp,
+    selectedBy: actorSnapshot(actor),
+  };
+  current.topicSelection = selection;
+  topicNode.output = {
+    ...(objectOrNull(topicNode.output) || {}),
+    selectedTopic: selection,
+  };
+  topicNode.updatedAt = timestamp;
+  topicNode.trace = buildNodeExecutionTrace(
+    { ...topicNode, startedAt: topicNode.startedAt || timestamp },
+    current,
+    {
+      input: { selection },
+      output: selection,
+      execution: {
+        inputRefs: [current.id, topicNode.id],
+        outputRefs: [selection.id],
+        humanAction: '人工选择最终选题',
+        confirmation: {
+          confirmedBy: selection.selectedBy.username,
+          confirmedAt: timestamp,
+          selection: selection.text,
+          candidateIndex: selection.candidateIndex,
+          note: selection.note,
+        },
+      },
+    },
+    'succeeded',
+    actor,
+    timestamp,
+  );
+  topicNode.evidence = [
+    ...topicNode.evidence,
+    {
+      type: 'topic_selected',
+      selectionId: selection.id,
+      candidateIndex: selection.candidateIndex,
+      actor: selection.selectedBy,
+      note: selection.note,
+      createdAt: timestamp,
+    },
+  ];
+  current.status = 'running';
+  current.updatedAt = timestamp;
+  current.updatedBy = actorSnapshot(actor);
+  current.run = {
+    ...current.run,
+    status: 'running',
+    lastAction: '已选择最终选题，等待生成脚本与文案',
+  };
+  return current;
+}
+
+function skipNodeForScope(current, nodeId, output, note, actor, timestamp) {
+  const node = current.nodes.find((item) => item.id === nodeId);
+  if (!node || !['pending', 'ready', 'waiting_review'].includes(node.status)) return;
+  node.status = 'skipped';
+  node.output = output;
+  node.error = null;
+  node.completedAt = timestamp;
+  node.updatedAt = timestamp;
+  node.trace = buildNodeExecutionTrace(
+    { ...node, startedAt: node.startedAt || timestamp },
+    current,
+    {
+      output,
+      note,
+      execution: { humanAction: note },
+    },
+    'skipped',
+    actor,
+    timestamp,
+  );
+  node.evidence = [
+    ...node.evidence,
+    {
+      type: 'workflow_skip',
+      reason: 'out_of_p0_scope',
+      actor: actorSnapshot(actor),
+      note,
+      createdAt: timestamp,
+    },
+  ];
+  const next = current.nodes.find((item) => item.order === node.order + 1);
+  if (next?.status === 'pending') {
+    next.status = 'ready';
+    next.updatedAt = timestamp;
+  }
+}
+
+export function recordContentFeedback(task, input, actor, options = {}) {
+  const timestamp = options.now || nowIso();
+  const current = normalizeContentTask(task, { now: timestamp });
+  if (current.run.status === 'not_started') {
+    throw new Error('请先启动内容工作流，再记录反馈');
+  }
+  const packageNode = current.nodes.find((node) => node.id === 'CE-22');
+  const releaseDraftNode = current.nodes.find((node) => node.id === 'CE-23');
+  const publishNode = current.nodes.find((node) => node.id === 'CE-24');
+  if (packageNode?.status !== 'succeeded' || releaseDraftNode?.status !== 'succeeded') {
+    throw new Error('请先完成内容打包和发布草稿，再记录反馈');
+  }
+  if (current.feedback.length > 0 || current.nodes.find((node) => node.id === 'CE-25')?.status === 'succeeded') {
+    throw new Error('当前任务已经记录过反馈；请在下一轮任务中继续记录');
+  }
+  const note = text(input?.note);
+  const nextAction = text(input?.nextAction);
+  const feedbackStatus = text(input?.status, 'manual');
+  if (!CONTENT_FEEDBACK_STATUSES.has(feedbackStatus)) {
+    throw new Error('反馈状态不正确');
+  }
+  const metrics = input?.metrics && typeof input.metrics === 'object' && !Array.isArray(input.metrics)
+    ? input.metrics
+    : {};
+  if (!note && !nextAction && Object.keys(metrics).length === 0) {
+    throw new Error('请至少填写反馈说明、指标或下一步');
+  }
+  if (publishNode?.status === 'ready') {
+    skipNodeForScope(
+      current,
+      'CE-24',
+      { status: 'not_in_p0', externalPublishExecuted: false, reason: '本地/测试闭环不执行外部发布' },
+      '本地/测试闭环明确跳过真实平台发布',
+      actor,
+      timestamp,
+    );
+  }
+  const feedbackNode = current.nodes.find((node) => node.id === 'CE-25');
+  if (feedbackNode?.status !== 'ready') {
+    throw new Error('反馈节点尚未就绪，请先完成发布草稿');
+  }
+  const feedback = {
+    id: text(options.feedbackId, 'content_feedback_' + timestamp.replace(/[^0-9]/g, '').slice(-18)),
+    status: feedbackStatus,
+    platform: text(input?.platform, current.platforms[0] || null),
+    releaseDraftId: text(input?.releaseDraftId, releaseDraftNode.output?.id || null),
+    platformUrl: text(input?.platformUrl, null),
+    metrics,
+    note,
+    nextAction,
+    source: text(input?.source, 'manual'),
+    createdAt: timestamp,
+    createdBy: actorSnapshot(actor),
+  };
+  const recorded = recordContentNode(
+    current,
+    'CE-25',
+    {
+      status: 'succeeded',
+      input: {
+        releaseDraftId: feedback.releaseDraftId,
+        source: feedback.source,
+      },
+      output: feedback,
+      note: '人工记录内容反馈和下一步，不代表平台已发布或已采集真实指标',
+    },
+    actor,
+    { now: timestamp },
+  );
+  recorded.feedback = [...recorded.feedback, feedback];
+  recorded.updatedAt = timestamp;
+  recorded.updatedBy = actorSnapshot(actor);
+  recorded.run = {
+    ...recorded.run,
+    lastAction: '已记录内容反馈，等待后续复盘规划',
+  };
+  return recorded;
+}
+
 export function addContentReview(task, input, actor, options = {}) {
   const timestamp = options.now || nowIso();
   const current = normalizeContentTask(task, { now: timestamp });
@@ -739,6 +942,8 @@ export function contentTaskSummary(task) {
   const nextNode = current.nodes.find((node) => ['ready', 'running', 'waiting_review'].includes(node.status));
   return {
     id: current.id,
+    tenantId: current.tenantId,
+    projectId: current.projectId,
     title: current.title,
     role: current.role,
     status: current.status,
@@ -753,6 +958,8 @@ export function contentTaskSummary(task) {
     totalNodes: current.nodes.length,
     failedNodes,
     nextNode: nextNode ? { id: nextNode.id, label: nextNode.label, status: nextNode.status } : null,
+    topicSelection: current.topicSelection,
+    feedbackCount: current.feedback.length,
     updatedAt: current.updatedAt,
     createdAt: current.createdAt,
   };

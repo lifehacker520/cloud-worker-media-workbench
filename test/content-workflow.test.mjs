@@ -9,9 +9,11 @@ import {
   contentTaskSummary,
   createContentTask,
   pauseContentTask,
+  recordContentFeedback,
   recordContentNode,
   retryContentNode,
   resumeContentTask,
+  selectContentTopic,
   startContentTask,
 } from '../src/content-workflow.mjs';
 
@@ -50,8 +52,11 @@ test('content task creates the complete 26-node workflow contract', () => {
   assert.equal(task.nodes[0].status, 'ready');
   assert.equal(task.nodes.at(-1).id, 'CE-26');
   assert.deepEqual(task.owner, { username: actor.username, displayName: actor.displayName });
-  assert.deepEqual(contentTaskSummary(task).owner, task.owner);
-  assert.equal(contentTaskSummary(task).completedNodes, 0);
+  const summary = contentTaskSummary(task);
+  assert.deepEqual(summary.owner, task.owner);
+  assert.equal(summary.tenantId, task.tenantId);
+  assert.equal(summary.projectId, task.projectId);
+  assert.equal(summary.completedNodes, 0);
 });
 
 test('starting and recording a node keeps the run trace and advances the next node', () => {
@@ -87,6 +92,29 @@ test('starting and recording a node keeps the run trace and advances the next no
   assert.equal(recorded.nodes[1].evidence.length, 1);
   assert.equal(recorded.nodes[1].output.brand, '测试品牌');
   assert.equal(recorded.status, 'waiting_review');
+});
+
+test('manual skip records a clean terminal node without a failure error', () => {
+  const task = createContentTask(
+    { title: '跳过状态测试' },
+    actor,
+    { id: 'content_task_skip', now: '2026-08-30T00:00:00.000Z' },
+  );
+  const started = startContentTask(task, actor, {
+    runId: 'content_run_skip',
+    now: '2026-08-30T00:01:00.000Z',
+  });
+  const skipped = recordContentNode(
+    started,
+    'CE-02',
+    { status: 'skipped', output: { reason: 'out_of_scope' }, note: '当前范围明确跳过' },
+    actor,
+    { now: '2026-08-30T00:02:00.000Z' },
+  );
+
+  assert.equal(skipped.nodes.find((node) => node.id === 'CE-02').status, 'skipped');
+  assert.equal(skipped.nodes.find((node) => node.id === 'CE-02').error, null);
+  assert.equal(skipped.nodes.find((node) => node.id === 'CE-03').status, 'ready');
 });
 
 test('node execution trace keeps refs, versions, permissions and human confirmation fields', () => {
@@ -210,6 +238,82 @@ test('run replay exposes ordered snapshots and the final run summary', () => {
   assert.equal(replay.events[1].taskSnapshot.nodes[1].output.brand, '回放品牌');
   assert.equal(replay.final.status, 'waiting_review');
   assert.equal(replay.final.completedNodes, 2);
+});
+
+test('topic selection is an explicit human gate before copy generation', () => {
+  const task = createContentTask(
+    { title: '选题确认测试', sourceBrief: '素材中有三个可拆解的内容方向' },
+    actor,
+    { id: 'content_task_topic_selection', now: '2026-08-30T00:00:00.000Z' },
+  );
+  const started = startContentTask(task, actor, {
+    runId: 'content_run_topic_selection',
+    now: '2026-08-30T00:01:00.000Z',
+  });
+  let ready = started;
+  for (const nodeId of ['CE-02', 'CE-03', 'CE-04', 'CE-05', 'CE-06', 'CE-07', 'CE-08', 'CE-09', 'CE-10']) {
+    ready = recordContentNode(
+      ready,
+      nodeId,
+      { status: 'succeeded', output: { text: nodeId + ' 输出' } },
+      actor,
+      { now: '2026-08-30T00:02:00.000Z' },
+    );
+  }
+  const selected = selectContentTopic(
+    ready,
+    { selection: '围绕素材中的三个方向做一条实操说明', candidateIndex: 2, note: '符合当前目标' },
+    actor,
+    { selectionId: 'topic_selection_fixture', now: '2026-08-30T00:03:00.000Z' },
+  );
+  assert.equal(selected.topicSelection.text, '围绕素材中的三个方向做一条实操说明');
+  assert.equal(selected.topicSelection.candidateIndex, 2);
+  assert.equal(selected.nodes.find((node) => node.id === 'CE-10').trace.confirmation.confirmedBy, actor.username);
+  assert.equal(selected.nodes.find((node) => node.id === 'CE-10').evidence.at(-1).type, 'topic_selected');
+  assert.equal(selected.nodes.find((node) => node.id === 'CE-11').status, 'ready');
+});
+
+test('local feedback records the external publish boundary explicitly', () => {
+  const task = createContentTask(
+    { title: '反馈记录测试' },
+    actor,
+    { id: 'content_task_feedback', now: '2026-08-30T00:00:00.000Z' },
+  );
+  const started = startContentTask(task, actor, {
+    runId: 'content_run_feedback',
+    now: '2026-08-30T00:01:00.000Z',
+  });
+  const feedbackReady = addContentReview(
+    completeWorkflowThrough(started, 'CE-19'),
+    { decision: 'approved', note: '本地测试通过' },
+    actor,
+    { reviewId: 'review_feedback_fixture', now: '2026-08-30T00:03:00.000Z' },
+  );
+  const withPackage = recordContentNode(
+    feedbackReady,
+    'CE-22',
+    { status: 'succeeded', output: { path: '/tmp/package.zip' } },
+    actor,
+    { now: '2026-08-30T00:03:30.000Z' },
+  );
+  const withDraft = recordContentNode(
+    withPackage,
+    'CE-23',
+    { status: 'succeeded', output: { id: 'draft_feedback_fixture' } },
+    actor,
+    { now: '2026-08-30T00:03:45.000Z' },
+  );
+  const recorded = recordContentFeedback(
+    withDraft,
+    { status: 'not_published', note: '仅完成本地/测试发布草稿', nextAction: '下一轮继续观察开场表达' },
+    actor,
+    { feedbackId: 'content_feedback_fixture', now: '2026-08-30T00:04:00.000Z' },
+  );
+  assert.equal(recorded.feedback[0].id, 'content_feedback_fixture');
+  assert.equal(recorded.nodes.find((node) => node.id === 'CE-24').status, 'skipped');
+  assert.equal(recorded.nodes.find((node) => node.id === 'CE-24').output.externalPublishExecuted, false);
+  assert.equal(recorded.nodes.find((node) => node.id === 'CE-25').status, 'succeeded');
+  assert.equal(recorded.nodes.find((node) => node.id === 'CE-26').status, 'ready');
 });
 
 test('pending nodes and reviews cannot bypass the workflow start gate', () => {

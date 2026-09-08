@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "media-worker-manifest-v1",
+  "runtime": {
+    "python": ">=3.11",
+    "thirdPartyDependencies": []
+  },
+  "adapters": [
+    {
+      "id": "fake",
+      "status": "simulation",
+      "models": ["fake-tts-v1", "fake-avatar-v1"],
+      "weights": [],
+      "codeLicense": "MIT (repository license)",
+      "weightsLicense": "not applicable",
+      "dataLicense": "no training or customer data included"
+    },
+    {
+      "id": "command-bridge",
+      "status": "adapter_only",
+      "models": ["configured externally"],
+      "weights": [],
+      "codeLicense": "MIT (repository license)",
+      "weightsLicense": "provided by external model deployment",
+      "dataLicense": "external deployment must provide input and authorization controls"
+    },
+    {
+      "id": "macos-say-baseline",
+      "status": "local_real_audio_baseline",
+      "models": ["system-tts-baseline"],
+      "weights": [],
+      "codeLicense": "repository wrapper + macOS system component",
+      "weightsLicense": "not applicable",
+      "dataLicense": "script-only local test; no voice cloning"
+    },
+    {
+      "id": "mlx-audio-tts",
+      "status": "external_apple_mlx_wrapper",
+      "models": ["configured externally"],
+      "weights": ["provided by external deployment"],
+      "codeLicense": "MIT (mlx-audio upstream; repository wrapper)",
+      "weightsLicense": "must be recorded per selected model",
+      "dataLicense": "reference audio requires separate voice authorization"
+    },
+    {
+      "id": "musetalk-talking-head",
+      "status": "external_nvidia_cuda_wrapper",
+      "models": ["MuseTalk 1.5"],
+      "weights": ["provided by external deployment"],
+      "codeLicense": "MIT (MuseTalk upstream; repository wrapper)",
+      "weightsLicense": "must be recorded per selected weights",
+      "dataLicense": "base video, voice audio and both authorizations are required"
+    }
+  ],
+  "realModelStatus": "blocked_pending_gpu_worker_and_license_review"
+}

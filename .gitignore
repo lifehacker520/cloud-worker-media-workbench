@@ -12,3 +12,5 @@ output/
 node_modules/
 release/
 dist/
+__pycache__/
+*.py[cod]

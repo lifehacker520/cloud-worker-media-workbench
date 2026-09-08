@@ -65,13 +65,16 @@ GitHub Actions 会在 macOS 和 Windows 环境构建安装包并上传到 Releas
 - 提供反馈入口与管理员观察区，管理员可查看客户反馈和使用活动。
 - 服务端可通过 XHS_REFRESH_MINUTES 配置定时刷新，客户关闭浏览器后仍会继续监控。
 - 工作台已经预留总览、监控中心、内容中心、发布中心、数据洞察、AI 工作区、反馈协作、设置与更新等模块入口；账号添加、筛选、删除、作品流和已读状态统一放在监控中心。
+- 功能中心的下载中心支持粘贴小红书、抖音或视频号具体作品链接，解析后分别下载视频、封面和可用图片；桌面端优先复用按平台隔离的浏览器会话，网页端可配置解析服务，文件默认保存到本机 Downloads/云员工工作台/下载中心。
 - 内容编辑云员工 P0 已建立 26 节点工作流，内容任务、运行事件、媒体资产、知识文档、发布草稿写入 `data/workbench.sqlite`；旧 `content-tasks.json` 仅作为兼容镜像。
-- 本地素材链路已接入：绝对路径校验、文本读取、ffprobe 媒体探测、ffmpeg 首帧提取、macOS Vision 首帧 OCR、知识库关键词检索和本地视频渲染/内容包导出；内容中心支持平台版本、分镜、审核退回后的版本修改和发布草稿，发布中心支持管理员批准。
+- 本地素材链路已接入：绝对路径校验、授权状态/记录引用门禁、文本读取、ffprobe 媒体探测、FFmpeg 场景变化优先且有界回退的关键帧采样、多帧 macOS Vision/自定义 OCR（支持结构化文字框、置信度和位置证据）、知识库关键词检索、本地竖屏视频渲染、独立封面和内容包导出；内容中心支持本地媒体安全预览、平台版本、分镜、审核退回后的版本修改和发布草稿，发布中心支持管理员批准。内容结构分析、渲染和内容包导出会再次校验已导入素材的授权与扫描状态。
+- 真实时间码字幕会同时生成 SRT/ASS 侧车；当本机 FFmpeg 没有 `drawtext`/`subtitles`/`libass` 时，渲染器使用 Sharp 生成透明字幕层，再用 FFmpeg `overlay` 按时间窗烧录进视频，并保留安全区、片头时间偏移和临时文件清理。
 - 工作区底座已接入租户、项目、Customer/BrandProfile 客户品牌上下文、成员角色、连接器能力和连接器授权；内容任务支持负责人、协作人、审核状态、异常摘要和客户/品牌关联，监控账号、作品、反馈和活动也带有租户边界。`/api/workspace` 可读取当前工作区与运行时能力。
 - 管理员可以从工作区管理区创建不覆盖当前数据的 SQLite 快照备份，并执行完整性、兼容 JSON 和可选媒体副本校验；生产环境由服务端强制使用 AES-256-GCM、独立异地目录和保留策略，备份不包含 `.env`、密码、Token、Cookie 或其他密钥，媒体文件只有明确选择后才复制。
 - 本地运维命令支持列出、创建、校验、清理和把已校验备份恢复到新的空目录，并重写数据库、知识文档和兼容 JSON 中的媒体路径；目标非空或备份校验失败时会停止，缺失媒体会明确返回 `PARTIAL`，不会切换当前服务。
-- AI 生成节点配置 `DEEPSEEK_API_KEY` 后通过 DeepSeek 连接器调用；当前已用脱敏素材完成真实 `deepseek-chat` 调用验收，输出包含“事实依据与待确认”来源表，并保留人工审核闸门。没有外部密钥时，默认可用本地抽取式模板生成仅引用已读素材的草案，并明确标记为需人工审核（可用 `XHS_LOCAL_DRAFT_GENERATOR=false` 关闭）。转写节点支持通用 `XHS_TRANSCRIBE_COMMAND`，也支持本地 `whisper-cli + XHS_WHISPER_MODEL`，视频会先由 ffmpeg 转成单声道 WAV，并同时保存 TXT/SRT 时间码；未配置时返回明确的未配置状态。
+- AI 生成节点配置 `DEEPSEEK_API_KEY` 后通过 DeepSeek 连接器调用；当前已用脱敏素材完成真实 `deepseek-chat` 调用验收，输出包含“事实依据与待确认”来源表，并保留人工审核闸门。没有外部密钥时，默认可用本地抽取式模板生成仅引用已读素材的草案，并明确标记为需人工审核（可用 `XHS_LOCAL_DRAFT_GENERATOR=false` 关闭）。本地/演示验收可设置 `XHS_CONTENT_LOCAL_ONLY=true`，即使 `.env` 中存在外部密钥也会强制只用本地模板并拒绝外部模型请求。转写节点支持通用 `XHS_TRANSCRIBE_COMMAND`，也支持本地 `whisper-cli + XHS_WHISPER_MODEL`，视频会先由 ffmpeg 转成单声道 WAV，并同时保存 TXT/SRT 时间码；未配置时返回明确的未配置状态。
 - 提供可重复的 DeepSeek 质量评测器：`npm run eval:deepseek` 默认顺序评测 3 个脱敏样本，也可以用 `--media <绝对路径>` 加入用户确认可用于评测的本地媒体；评测会检查真实模型、requestId、来源名称/素材编号、视频时间码、人工审核闸门以及未经授权的发布/效果断言。
+- 批量数字人生产已具备批次/子任务、SQLite lease、受控并发、失败隔离、审核和导出闭环；可通过 `XHS_MEDIA_WORKER_URL` 接入独立 HTTP media worker。`XHS_CONTENT_BATCH_MAX_CONCURRENCY` 首轮建议为 `1`，完成小批次基准后再提高。仓库内 `tools/media-model-worker` 是无第三方依赖的 fake worker，用于协议、健康检查、受控文件引用和故障边界验证，不代表真实 TTS/数字人模型。
 - 提供 Docker、Docker Compose、Caddy HTTPS 配置示例和部署说明，详见 [DEPLOY.md](DEPLOY.md)。
 - 提供本地 API：/api/health、/api/auth/*（含一次性邀请接受）、/api/state、/api/insights、/api/platform-sessions（桌面端平台会话状态、打开和显式清除）、/api/workspace、/api/workspace/projects、/api/workspace/customers、/api/workspace/brand-profiles、/api/workspace/invitations、/api/workspace/directory/sync、/api/workspace/backups、/api/workspace/backups/:id/verify、/api/workspace/connectors、/api/knowledge/search、/api/knowledge/documents、/api/refresh、/api/accounts、/api/accounts/:id（PATCH 分组、DELETE 删除）、/api/accounts/:id/seen、/api/accounts/:id/browser-refresh、/api/works/seen、/api/feedback、/api/activity，以及内容任务、素材解析、结构分析、AI 生成、渲染、打包、发布草稿、暂停/继续/重试/回放和发布闸门接口。
 
@@ -81,11 +84,12 @@ GitHub Actions 会在 macOS 和 Windows 环境构建安装包并上传到 Releas
 
 客户端当前默认是“每台电脑一份本地数据”。平台登录态也按平台保存在该桌面客户端的 Electron `persist:` 浏览器分区中，应用不会把 Cookie 上传到服务端；登录有效性需要在平台页面实际验证。如果需要你在管理员端监控客户电脑上的统一笔记，必须把 Web 服务部署到一台长期在线的服务器，客户客户端通过 client-config.json 连接同一个中央地址；GitHub 只负责代码和安装包分发，不负责实时业务数据同步。
 
-抖音当前是 Beta 适配：无登录会话的公开 HTML 可能返回安全校验页；桌面端已经提供持久化浏览器会话补采，但仍依赖用户主动登录/验证及平台页面实际返回的作品数据。视频号当前是 Beta：没有稳定的公开他人作品接口，桌面端通过独立微信会话读取创作者页或单条公开分享页，不能保证所有账号都能读取完整历史作品。两者都不绕过验证码、登录限制或平台安全机制。macOS Vision 目前针对视频首个关键帧做 OCR；Windows/Linux 需要配置 `XHS_OCR_COMMAND`。转写现在支持 `whisper-cpp` 的本地 GGML 模型或自定义 ASR 命令；没有 DeepSeek 密钥时的本地模板只做抽取式草案，不能替代真实模型判断。发布草稿、管理员批准和执行权限闸门已经存在，但小红书/抖音/视频号的真实发布执行器尚未接入，因此不会伪造外部发布成功。钉钉/飞书通知和通知 Webhook仍未实现。
+抖音当前是 Beta 适配：无登录会话的公开 HTML 可能返回安全校验页；桌面端已经提供持久化浏览器会话补采，但仍依赖用户主动登录/验证及平台页面实际返回的作品数据。视频号当前是 Beta：没有稳定的公开他人作品接口，桌面端通过独立微信会话读取创作者页或单条公开分享页，不能保证所有账号都能读取完整历史作品。两者都不绕过验证码、登录限制或平台安全机制。macOS Vision 目前对视频优先使用 FFmpeg 场景变化检测（最长 300 秒），检测失败或超长视频回退有界均匀采样，再进行多帧 OCR；Windows/Linux 需要配置 `XHS_OCR_COMMAND`。转写现在支持 `whisper-cpp` 的本地 GGML 模型或自定义 ASR 命令；没有 DeepSeek 密钥时的本地模板只做抽取式草案，不能替代真实模型判断。字幕本地烧录已有 Sharp 透明层 fallback，但仍需负责人完成字体、遮挡、长句和金样视觉验收。发布草稿、管理员批准和执行权限闸门已经存在，但小红书/抖音/视频号的真实发布执行器尚未接入，因此不会伪造外部发布成功。钉钉/飞书通知和通知 Webhook仍未实现。
 
 不要用当前验证切片访问私密内容或绕过验证码、登录限制和平台安全机制；正式交付前应取得账号使用者和组织的必要授权，并评估平台规则。浏览器会话只保存在本机 Electron 分区，不上传 Cookie 到服务端。
 
 ## 测试
 
     npm run check
+    npm run test:media-worker
     npm test
