@@ -42,7 +42,6 @@
           <section class="nav-section tools-nav-section" aria-labelledby="tools-nav-label">
             <button id="tools-nav-toggle" class="nav-group-toggle" type="button" data-nav-toggle="tools" aria-expanded="true" aria-controls="tools-nav-submenu"><span class="nav-icon">⌘</span><span id="tools-nav-label">工具中心</span><span class="nav-chevron">⌄</span></button>
             <div id="tools-nav-submenu" class="nav-submenu" data-nav-submenu="tools">
-              <button class="nav-item nav-subitem" type="button" data-view="insights"><span class="nav-icon">▦</span><span>数据看板</span></button>
               <button class="nav-item nav-subitem" type="button" data-view="monitor"><span class="nav-icon">◌</span><span>监控中心</span><span class="nav-badge nav-badge-alert" data-nav-badge="works">0</span></button>
               <button class="nav-item nav-subitem" type="button" data-view="downloads"><span class="nav-icon">⇩</span><span>下载中心</span></button>
             </div>
@@ -111,6 +110,10 @@
 
 
           <section id="view-insights" class="view-panel" data-view-panel="insights">
+            <nav class="monitor-center-tabs" role="tablist" aria-label="监控中心内容">
+              <button class="monitor-center-tab" type="button" role="tab" aria-selected="false" data-monitor-section="monitor">监控中心</button>
+              <button class="monitor-center-tab is-active" type="button" role="tab" aria-selected="true" data-monitor-section="insights">数据看板</button>
+            </nav>
             <div class="view-intro-row"><div><span class="view-context">工具中心 / 数据看板</span><p>查看发布节奏、平台覆盖和已有表现，数据口径与最后同步时间写在这里。</p></div><span class="view-intro-status">原生平台口径</span></div>
 
             <section id="monitor-insights" class="monitor-insights panel" aria-labelledby="monitor-insights-title">
@@ -156,6 +159,10 @@
           </section>
 
           <section id="view-monitor" class="view-panel" data-view-panel="monitor">
+            <nav class="monitor-center-tabs" role="tablist" aria-label="监控中心内容">
+              <button class="monitor-center-tab is-active" type="button" role="tab" aria-selected="true" data-monitor-section="monitor">监控中心</button>
+              <button class="monitor-center-tab" type="button" role="tab" aria-selected="false" data-monitor-section="insights">数据看板</button>
+            </nav>
             <div class="view-intro-row"><div><span class="view-context">工具中心 / 账号监控</span><p>把要观察的账号、最新作品和异常状态集中在一个工作流里。</p></div><span class="view-intro-status">平台状态在这里查看</span></div>
 
             <section class="control-strip monitor-control-strip">

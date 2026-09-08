@@ -5237,6 +5237,49 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
+.monitor-center-tabs {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 0 0 17px;
+  border-bottom: 1px solid var(--line);
+}
+
+.monitor-center-tab {
+  position: relative;
+  min-height: 36px;
+  padding: 0 1px 10px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.monitor-center-tab::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 99px;
+  background: transparent;
+  content: '';
+}
+
+.monitor-center-tab:hover,
+.monitor-center-tab:focus-visible,
+.monitor-center-tab.is-active {
+  color: var(--blue);
+  outline: none;
+}
+
+.monitor-center-tab.is-active::after {
+  background: var(--blue);
+}
+
 .view-context {
   display: block;
   color: var(--blue);

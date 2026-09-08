@@ -70,7 +70,8 @@ const VIEW_META = {
 
 const VIEW_ALIASES = {
   accounts: 'monitor',
-  dashboard: 'insights',
+  dashboard: 'monitor',
+  insights: 'monitor',
 };
 
 const PLANNED_ROLE_META = {
@@ -115,6 +116,7 @@ let groupFilter = 'all';
 let workPlatformFilter = 'all';
 let selectedAccountId = null;
 let currentView = 'overview';
+let monitorSection = 'monitor';
 let currentRole = '内容编辑云员工';
 let currentSettingsPanel = 'general';
 let monitorPeriod = 'month';
@@ -206,6 +208,7 @@ const elements = {
   monitorTopWorks: document.querySelector('#monitor-top-works'),
   monitorComments: document.querySelector('#monitor-comments'),
   monitorCommentsCount: document.querySelector('#monitor-comments-count'),
+  monitorSectionTabs: [...document.querySelectorAll('[data-monitor-section]')],
   workPlatformTabs: document.querySelector('#work-platform-tabs'),
   toolsNavToggle: document.querySelector('#tools-nav-toggle'),
   toolsNavSubmenu: document.querySelector('#tools-nav-submenu'),
@@ -1426,9 +1429,28 @@ function renderNavigationBadges() {
   });
 }
 
+function routeStateFromHash(hash = window.location.hash) {
+  const [rawView = '', rawSection = ''] = hash.replace(/^#/, '').split('/');
+  const isAudioAlias = rawView === 'insights' || rawView === 'dashboard';
+  const view = VIEW_ALIASES[rawView] || rawView || 'overview';
+  return {
+    view,
+    monitorSection: view === 'monitor' && (isAudioAlias || rawSection === 'audio' || rawSection === 'insights') ? 'insights' : 'monitor',
+  };
+}
+
 function setView(view, options = {}) {
   const requestedView = VIEW_ALIASES[view] || view;
   const nextView = VIEW_META[requestedView] ? requestedView : 'overview';
+  const viewChanged = currentView !== nextView;
+  if (nextView === 'monitor') {
+    const requestedSection = options.monitorSection || (view === 'insights' || view === 'dashboard' ? 'insights' : '');
+    if (requestedSection === 'insights' || requestedSection === 'monitor') {
+      monitorSection = requestedSection;
+    } else if (viewChanged || options.monitorFocus !== undefined) {
+      monitorSection = 'monitor';
+    }
+  }
   if (nextView === 'monitor' && options.monitorFocus !== undefined) {
     workReadFilter = options.monitorFocus === 'unread' ? 'unread' : 'all';
     renderWorks();
@@ -1439,7 +1461,6 @@ function setView(view, options = {}) {
   } else if (nextView === 'planned') {
     currentRole = options.role || (currentRole === '内容编辑云员工' ? '账号运营' : currentRole);
   }
-  const viewChanged = currentView !== nextView;
   currentView = nextView;
   const meta = VIEW_META[nextView];
   const plannedMeta = PLANNED_ROLE_META[currentRole] || PLANNED_ROLE_META['账号运营'];
@@ -1452,28 +1473,35 @@ function setView(view, options = {}) {
     elements.plannedRoleDescription.textContent = plannedMeta.description;
     elements.plannedRoleIcon.textContent = plannedMeta.icon;
   }
+  const activePanel = nextView === 'monitor' && monitorSection === 'insights' ? 'insights' : nextView;
   elements.viewPanels.forEach((panel) => {
-    const isActive = panel.dataset.viewPanel === nextView;
+    const isActive = panel.dataset.viewPanel === activePanel;
     panel.classList.toggle('is-active', isActive);
     panel.hidden = !isActive;
+  });
+  elements.monitorSectionTabs.forEach((tab) => {
+    const active = nextView === 'monitor' && tab.dataset.monitorSection === monitorSection;
+    tab.classList.toggle('is-active', active);
+    tab.setAttribute('aria-selected', String(active));
   });
   elements.navItems.forEach((item) => {
     const isRoleMatch = !item.dataset.role || item.dataset.role === currentRole;
     item.classList.toggle('is-active', item.dataset.view === nextView && isRoleMatch);
   });
   if (elements.refreshButton) {
-    const canRefresh = ['overview', 'insights', 'monitor'].includes(nextView);
+    const canRefresh = ['overview', 'monitor'].includes(nextView);
     elements.refreshButton.classList.toggle('is-hidden', !canRefresh);
     if (elements.refreshLabel && !state.meta.refreshInProgress && !isRefreshing) {
-      elements.refreshLabel.textContent = nextView === 'insights' ? '刷新数据' : '刷新监控';
+      elements.refreshLabel.textContent = nextView === 'monitor' && monitorSection === 'insights' ? '刷新数据' : '刷新监控';
     }
   }
-  if (options.updateHash !== false && window.location.hash !== '#' + nextView) {
-    const historyState = { view: nextView };
+  const nextHash = nextView === 'monitor' ? '#monitor/' + monitorSection : '#' + nextView;
+  if (options.updateHash !== false && window.location.hash !== nextHash) {
+    const historyState = { view: nextView, monitorSection: nextView === 'monitor' ? monitorSection : undefined };
     if (options.replaceHistory) {
-      window.history.replaceState(historyState, '', '#' + nextView);
+      window.history.replaceState(historyState, '', nextHash);
     } else {
-      window.history.pushState(historyState, '', '#' + nextView);
+      window.history.pushState(historyState, '', nextHash);
     }
   }
   if (viewChanged && options.scroll !== false) {
@@ -1622,7 +1650,7 @@ function renderRuntime() {
   if (elements.refreshLabel) {
     elements.refreshLabel.textContent = inProgress
       ? '刷新中…'
-      : currentView === 'insights'
+      : currentView === 'monitor' && monitorSection === 'insights'
         ? '刷新数据'
         : '刷新监控';
   }
@@ -2490,6 +2518,11 @@ function init() {
       }),
     );
   });
+  elements.monitorSectionTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      setView('monitor', { monitorSection: tab.dataset.monitorSection });
+    });
+  });
   document.addEventListener('click', (event) => {
     const item = event.target.closest('[data-view]:not(.nav-item)');
     if (!item) {
@@ -2509,12 +2542,12 @@ function init() {
     }
   });
   window.addEventListener('hashchange', () => {
-    const [view] = window.location.hash.slice(1).split('/');
-    setView(view, { updateHash: false });
+    const route = routeStateFromHash();
+    setView(route.view, { monitorSection: route.monitorSection, updateHash: false });
   });
   window.addEventListener('popstate', () => {
-    const [view] = window.location.hash.slice(1).split('/');
-    setView(view, { updateHash: false });
+    const route = routeStateFromHash();
+    setView(route.view, { monitorSection: route.monitorSection, updateHash: false });
   });
 
   elements.refreshButton.addEventListener('click', refreshAll);
@@ -2707,8 +2740,12 @@ function init() {
     updateWorkSelectionControls();
   });
 
-  const [initialView] = window.location.hash.slice(1).split('/');
-  setView(initialView, { updateHash: true, replaceHistory: true });
+  const initialRoute = routeStateFromHash();
+  setView(initialRoute.view, {
+    monitorSection: initialRoute.monitorSection,
+    updateHash: true,
+    replaceHistory: true,
+  });
   render();
   applyAutoRefreshFrequency(elements.autoRefresh.value);
   loadSession();

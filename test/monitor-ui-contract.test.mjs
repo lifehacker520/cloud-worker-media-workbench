@@ -43,17 +43,22 @@ test('monitor center exposes a period-aware operations dashboard', async () => {
   assert.match(stylesSource, /@media \(max-width: 680px\)/);
 });
 
-test('M1 exposes separate dashboard and monitor routes with a real history boundary', async () => {
+test('M1 exposes one monitor center with monitor and dashboard sections', async () => {
   const indexSource = await readFile(
     resolve(dirname(fileURLToPath(import.meta.url)), '../public/index.html'),
     'utf8',
   );
   assert.match(indexSource, /<strong>云员工工作台<\/strong>/);
-  assert.match(indexSource, /data-view="insights"[^>]*>[\s\S]*?数据看板/);
+  assert.match(indexSource, /data-view="monitor"[^>]*>[\s\S]*?监控中心/);
+  assert.doesNotMatch(indexSource, /nav-subitem[^>]*data-view="insights"/);
+  assert.match(indexSource, /data-monitor-section="monitor"[^>]*>监控中心/);
+  assert.match(indexSource, /data-monitor-section="insights"[^>]*>数据看板/);
   assert.match(indexSource, /id="view-insights"[\s\S]*?id="monitor-insights"/);
   assert.match(indexSource, /id="view-monitor"[\s\S]*?id="monitor-layout"/);
   assert.doesNotMatch(indexSource, /id="view-monitor"[\s\S]*?id="monitor-insights"/);
   assert.match(APP_SOURCE, /history\.pushState/);
+  assert.match(APP_SOURCE, /#monitor\/\' \+ monitorSection/);
+  assert.match(APP_SOURCE, /routeStateFromHash/);
   assert.match(APP_SOURCE, /panel\.hidden\s*=/);
   assert.match(APP_SOURCE, /insightsPlatformFilter/);
 });
