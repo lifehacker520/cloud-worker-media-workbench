@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { fingerprintForWork } from './src/xhs-parser.mjs';
@@ -1415,7 +1415,7 @@ async function serveStatic(requestUrl, response) {
     requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname,
   );
   const target = resolve(PUBLIC_DIR, '.' + requestPath);
-  if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + '/')) {
+  if (target !== PUBLIC_DIR && !target.startsWith(PUBLIC_DIR + sep)) {
     return sendText(response, 'Not found', 404);
   }
 
