@@ -3,6 +3,8 @@ name: Release desktop client
 on:
   workflow_dispatch:
   push:
+    branches:
+      - 'release/v*'
     tags:
       - 'v*'
 
@@ -34,7 +36,7 @@ jobs:
         run: npm test
       - name: Verify release version
         shell: bash
-        run: test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME}"
+        run: test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME#release/}"
       - name: Build installer
         run: npm run dist -- ${{ matrix.args }} --publish never
       - name: Verify macOS app bundle signature
@@ -57,7 +59,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/heads/release/v')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -80,10 +82,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          RELEASE_TAG="${GITHUB_REF_NAME#release/}"
           mapfile -t assets < <(find release -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' -o -name 'latest*.yml' \) -print | sort)
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --title "云员工媒体工作台 $RELEASE_TAG" \
+            --target "$GITHUB_SHA" \
             --generate-notes
