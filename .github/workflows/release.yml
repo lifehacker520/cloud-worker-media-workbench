@@ -37,6 +37,13 @@ jobs:
         run: test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME}"
       - name: Build installer
         run: npm run dist -- ${{ matrix.args }} --publish never
+      - name: Verify macOS app bundle signature
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          app_path="$(find release -type d -name '*.app' -print -quit)"
+          test -n "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:

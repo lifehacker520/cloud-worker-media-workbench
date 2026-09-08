@@ -27,5 +27,7 @@ test('desktop updater bridge, release metadata, and one-click UI stay wired toge
   assert.doesNotMatch(updaterUiSource, /window\.confirm/);
   assert.match(indexSource, /自动检查 GitHub Release/);
   assert.equal(packageJson.build.publish[0].provider, 'github');
+  assert.equal(packageJson.build.mac.identity, '-');
+  assert.equal(packageJson.build.mac.hardenedRuntime, false);
   assert.ok(packageJson.build.mac.target.some((target) => target.target === 'zip'));
 });
