@@ -22,6 +22,7 @@ async function freePort() {
 }
 
 async function waitForWorker(url, child) {
+  child.once('error', (error) => { child.startupError = error; });
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`media worker exited before becoming ready${childOutput(child)}`);
@@ -35,7 +36,7 @@ async function waitForWorker(url, child) {
 }
 
 function childOutput(child) {
-  const output = [child.stdout?.read(), child.stderr?.read()]
+  const output = [child.startupError && `${child.startupError.code}: ${child.startupError.message}`, child.stdout?.read(), child.stderr?.read()]
     .filter(Boolean)
     .map((chunk) => chunk.toString().trim())
     .filter(Boolean)
