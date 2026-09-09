@@ -1,6 +1,6 @@
 {
   "name": "cloud-worker-media-workbench",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "云员工媒体：自媒体矩阵监控与运营桌面客户端",
   "author": "lifehacker520",
   "license": "MIT",
@@ -79,7 +79,8 @@
         {
           "target": "nsis",
           "arch": [
-            "x64"
+            "x64",
+            "ia32"
           ]
         }
       ]
@@ -102,7 +103,7 @@
     "sharp": "^0.35.4"
   },
   "devDependencies": {
-    "electron": "^44.0.0",
+    "electron": "43.6.0",
     "electron-builder": "^26.15.3"
   }
 }

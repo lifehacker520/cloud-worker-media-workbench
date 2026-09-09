@@ -15,6 +15,7 @@ test('desktop updater bridge, release metadata, and one-click UI stay wired toge
     readFile(resolve(ROOT, 'electron/after-sign.cjs'), 'utf8'),
   ]);
   const packageJson = JSON.parse(packageSource);
+  const windowsArchitectures = packageJson.build.win.target.flatMap((target) => target.arch ?? []);
 
   assert.match(mainSource, /preload\.cjs/);
   assert.match(mainSource, /scheduleAutomaticUpdateCheck/);
@@ -33,4 +34,6 @@ test('desktop updater bridge, release metadata, and one-click UI stay wired toge
   assert.equal(packageJson.build.afterSign, 'electron/after-sign.cjs');
   assert.match(afterPackSource, /designated => identifier/);
   assert.ok(packageJson.build.mac.target.some((target) => target.target === 'zip'));
+  assert.equal(packageJson.devDependencies.electron, '43.6.0');
+  assert.deepEqual([...new Set(windowsArchitectures)].sort(), ['ia32', 'x64']);
 });

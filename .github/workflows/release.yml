@@ -35,6 +35,14 @@ jobs:
           python-version: '3.13'
       - name: Install dependencies
         run: npm ci
+      - name: Install Windows x86 native dependency
+        if: matrix.args == '--win'
+        shell: bash
+        run: |
+          sharp_version="$(node -p "require('./node_modules/sharp/package.json').version")"
+          npm install --force --no-save --package-lock=false --ignore-scripts \
+            "@img/sharp-win32-ia32@$sharp_version" \
+            "@img/sharp-win32-x64@$sharp_version"
       - name: Smoke test macOS media worker
         if: matrix.args == '--mac'
         shell: bash
@@ -65,6 +73,12 @@ jobs:
         run: test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME}"
       - name: Build installer
         run: npm run dist -- ${{ matrix.args }} --publish never
+      - name: Verify Windows installers
+        if: matrix.args == '--win'
+        shell: bash
+        run: |
+          test -n "$(find release -maxdepth 1 -type f -name '*-win-x64.exe' -print -quit)"
+          test -n "$(find release -maxdepth 1 -type f -name '*-win-ia32.exe' -print -quit)"
       - name: Verify macOS app bundle signature
         if: matrix.args == '--mac'
         shell: bash
@@ -103,7 +117,10 @@ jobs:
           test -f release/latest-mac.yml
           test -f release/latest.yml
           test -n "$(find release -maxdepth 1 -type f -name '*.dmg' -print -quit)"
-          test -n "$(find release -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          test -n "$(find release -maxdepth 1 -type f -name '*-win-x64.exe' -print -quit)"
+          test -n "$(find release -maxdepth 1 -type f -name '*-win-ia32.exe' -print -quit)"
+          grep -q 'win-x64.exe' release/latest.yml
+          grep -q 'win-ia32.exe' release/latest.yml
       - name: Create GitHub Release
         shell: bash
         env:

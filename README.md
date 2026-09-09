@@ -27,7 +27,7 @@
 
 ## 下载客户端
 
-打开 GitHub 的 [Releases](https://github.com/lifehacker520/cloud-worker-media-workbench/releases) 页面，下载对应系统的安装包。客户端默认在本机运行，数据保存在当前用户的应用数据目录，不会写入 GitHub。
+打开 GitHub 的 [Releases](https://github.com/lifehacker520/cloud-worker-media-workbench/releases) 页面，下载对应系统的安装包。Windows 同时提供 64 位（x64）和 32 位（x86/ia32）安装包；客户端默认在本机运行，数据保存在当前用户的应用数据目录，不会写入 GitHub。
 
 本地开发和打包命令：
 
