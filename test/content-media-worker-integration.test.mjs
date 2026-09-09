@@ -24,14 +24,23 @@ async function freePort() {
 async function waitForWorker(url, child) {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error('media worker exited before becoming ready');
+    if (child.exitCode !== null) throw new Error(`media worker exited before becoming ready${childOutput(child)}`);
     try {
       const response = await fetch(url + '/health', { signal: AbortSignal.timeout(250) });
       if (response.ok) return;
     } catch {}
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
   }
-  throw new Error('timed out waiting for media worker');
+  throw new Error(`timed out waiting for media worker${childOutput(child)}`);
+}
+
+function childOutput(child) {
+  const output = [child.stdout?.read(), child.stderr?.read()]
+    .filter(Boolean)
+    .map((chunk) => chunk.toString().trim())
+    .filter(Boolean)
+    .join(' | ');
+  return output ? `: ${output}` : '';
 }
 
 test('Python fake media worker satisfies the Node connector contract and refuses unsafe paths', async () => {

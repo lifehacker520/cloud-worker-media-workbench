@@ -30,14 +30,23 @@ async function freePort() {
 async function waitFor(url, child, label) {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`${label} exited before becoming ready`);
+    if (child.exitCode !== null) throw new Error(`${label} exited before becoming ready${childOutput(child)}`);
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(300) });
       if (response.ok) return;
     } catch {}
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 60));
   }
-  throw new Error(`timed out waiting for ${label}`);
+  throw new Error(`timed out waiting for ${label}${childOutput(child)}`);
+}
+
+function childOutput(child) {
+  const output = [child.stdout?.read(), child.stderr?.read()]
+    .filter(Boolean)
+    .map((chunk) => chunk.toString().trim())
+    .filter(Boolean)
+    .join(' | ');
+  return output ? `: ${output}` : '';
 }
 
 async function stop(child) {
