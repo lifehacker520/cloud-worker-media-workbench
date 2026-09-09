@@ -70,4 +70,7 @@ test('browser network relevance includes comment and statistics endpoints', asyn
   const text = await source.readFile(file, 'utf8');
   assert.match(text, /comment\|statistics/);
   assert.match(text, /metricsFromWork/);
+  assert.match(text, /MEDIA_ACTIVATION_SCRIPT/);
+  assert.match(text, /normalizeDownloadMedia\(payloads\.map/);
+  assert.match(text, /async fetchMedia\(platform, input/);
 });

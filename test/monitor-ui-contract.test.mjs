@@ -48,6 +48,10 @@ test('M1 exposes one monitor center with monitor and dashboard sections', async 
     resolve(dirname(fileURLToPath(import.meta.url)), '../public/index.html'),
     'utf8',
   );
+  const stylesSource = await readFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../public/styles.css'),
+    'utf8',
+  );
   assert.match(indexSource, /<strong>云员工工作台<\/strong>/);
   assert.match(indexSource, /data-view="monitor"[^>]*>[\s\S]*?监控中心/);
   assert.doesNotMatch(indexSource, /nav-subitem[^>]*data-view="insights"/);
@@ -56,11 +60,18 @@ test('M1 exposes one monitor center with monitor and dashboard sections', async 
   assert.match(indexSource, /id="view-insights"[\s\S]*?id="monitor-insights"/);
   assert.match(indexSource, /id="view-monitor"[\s\S]*?id="monitor-layout"/);
   assert.doesNotMatch(indexSource, /id="view-monitor"[\s\S]*?id="monitor-insights"/);
+  assert.match(indexSource, /id="monitor-splitter"[^>]*aria-valuemin="280"[^>]*aria-valuemax="960"/);
+  assert.match(indexSource, /title="拖动调整监控账号和作品流宽度"/);
   assert.match(APP_SOURCE, /history\.pushState/);
   assert.match(APP_SOURCE, /#monitor\/\' \+ monitorSection/);
   assert.match(APP_SOURCE, /routeStateFromHash/);
   assert.match(APP_SOURCE, /panel\.hidden\s*=/);
   assert.match(APP_SOURCE, /insightsPlatformFilter/);
+  assert.match(APP_SOURCE, /function monitorSplitBounds\(/);
+  assert.match(APP_SOURCE, /MONITOR_SPLIT_MIN_FEED/);
+  assert.match(APP_SOURCE, /event\.key === 'Home' \? bounds\.min : bounds\.max/);
+  assert.match(stylesSource, /grid-template-columns: minmax\(280px, var\(--monitor-accounts-width, 420px\)\) 18px/);
+  assert.match(stylesSource, /\.monitor-splitter span::before/);
 });
 
 test('M2 exposes explicit monitor queue filtering and batch read controls', async () => {

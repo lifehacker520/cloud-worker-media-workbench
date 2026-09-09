@@ -59,3 +59,26 @@ test('download center only exposes approved direct media URLs', () => {
   assert.equal(imageOnly.coverUrl, 'https://qpic.cn/cover/image-only.jpg');
   assert.deepEqual(imageOnly.imageUrls, []);
 });
+
+test('download center extracts Douyin playback URLs from nested aweme video payloads', () => {
+  const normalized = normalizeDownloadMedia({
+    aweme_detail: {
+      desc: '抖音测试视频',
+      author: { nickname: '测试作者' },
+      video: {
+        play_addr: {
+          uri: 'https://v3-web.douyinvod.com/aweme/demo/playwm/demo.mp4',
+          url_list: ['https://v3-web.douyinvod.com/aweme/demo/playwm/demo.mp4'],
+        },
+        origin_cover: {
+          url_list: ['https://p3.douyinpic.com/aweme/demo/cover.jpeg'],
+        },
+      },
+    },
+  }, 'douyin');
+
+  assert.equal(normalized.title, '抖音测试视频');
+  assert.equal(normalized.author, '测试作者');
+  assert.equal(normalized.videoUrl, 'https://v3-web.douyinvod.com/aweme/demo/play/demo.mp4');
+  assert.equal(normalized.coverUrl, 'https://p3.douyinpic.com/aweme/demo/cover.jpeg');
+});

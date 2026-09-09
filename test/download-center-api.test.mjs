@@ -58,6 +58,22 @@ test('download center exposes the three platforms and keeps resolved media serve
     fixturePath,
     `globalThis.__CLOUD_WORKER_BROWSER_SESSION__ = {
   async resolveMedia(platform) {
+    if (platform === 'douyin') {
+      return {
+        aweme_detail: {
+          desc: '抖音测试视频',
+          author: { nickname: '测试作者' },
+          video: {
+            play_addr: {
+              url_list: ['https://v3-web.douyinvod.com/aweme/demo/playwm/demo.mp4'],
+            },
+            origin_cover: {
+              url_list: ['https://p3.douyinpic.com/aweme/demo/cover.jpeg'],
+            },
+          },
+        },
+      };
+    }
     if (platform !== 'channels') throw new Error('unexpected platform');
     return {
       title: '视频号测试作品',
@@ -65,6 +81,13 @@ test('download center exposes the three platforms and keeps resolved media serve
       videoUrl: 'https://finder.video.qq.com/251/20350/stodownload/test.mp4',
       coverUrl: 'https://qpic.cn/cover/test.jpg',
     };
+  },
+  async fetchMedia(platform) {
+    if (platform !== 'douyin') throw new Error('unexpected media platform');
+    return new Response('fake-douyin-video', {
+      status: 200,
+      headers: { 'content-type': 'video/mp4' },
+    });
   },
 };
 `,
@@ -111,9 +134,24 @@ test('download center exposes the three platforms and keeps resolved media serve
     assert.equal(resolved.payload.task.available.cover, true);
     assert.match(resolved.payload.task.previewUrls.video, /\/api\/download-center\/tasks\//);
 
+    const douyin = await jsonRequest(baseUrl + '/api/download-center/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://v.douyin.com/O-sS-mEBAOk/' }),
+    });
+    assert.equal(douyin.response.status, 201);
+    assert.equal(douyin.payload.task.platform, 'douyin');
+    assert.equal(douyin.payload.task.available.video, true);
+    assert.equal(douyin.payload.task.available.cover, true);
+    const video = await fetch(
+      baseUrl + '/api/download-center/tasks/' + encodeURIComponent(douyin.payload.task.id) + '/media?kind=video',
+    );
+    assert.equal(video.status, 200);
+    assert.match(video.headers.get('content-type') || '', /^video\/mp4/);
+    assert.equal(await video.text(), 'fake-douyin-video');
+
     const tasks = await jsonRequest(baseUrl + '/api/download-center/tasks');
     assert.equal(tasks.response.status, 200);
-    assert.equal(tasks.payload.tasks.length, 1);
+    assert.equal(tasks.payload.tasks.length, 2);
     assert.equal(JSON.stringify(tasks.payload).includes('finder.video.qq.com'), false);
     assert.equal(JSON.stringify(tasks.payload).includes('qpic.cn'), false);
     assert.equal(JSON.stringify(tasks.payload).includes('localFilePath'), false);

@@ -11,6 +11,11 @@ const PLATFORM_DEFINITIONS = {
       'douyin.com',
       'douyincdn.com',
       'douyinvod.com',
+      'douyinpic.com',
+      'douyinstatic.com',
+      'iesdouyin.com',
+      'pstatp.com',
+      'bytecdn.cn',
       'byteimg.com',
       'ibytedtos.com',
       'zijieapi.com',
@@ -190,7 +195,15 @@ function urlsFromValue(value, output = []) {
     return output;
   }
   if (value && typeof value === 'object') {
-    for (const key of ['url', 'url_list', 'urlList', 'src', 'uri', 'playAddr', 'downloadAddr', 'origin']) {
+    for (const key of [
+      'url', 'url_list', 'urlList', 'src', 'uri',
+      'playAddr', 'play_addr', 'playAddrH264', 'play_addr_h264',
+      'downloadAddr', 'download_addr', 'videoUrl', 'video_url',
+      'nwmVideoUrl', 'nwm_video_url', 'nwm_video_url_HQ',
+      'videoData', 'video_data', 'origin',
+      'originCover', 'origin_cover', 'dynamicCover', 'dynamic_cover',
+      'cover', 'coverUrl', 'cover_url', 'image', 'images',
+    ]) {
       urlsFromValue(value[key], output);
     }
   }
@@ -237,6 +250,8 @@ export function normalizeDownloadMedia(value, platform) {
   const records = nestedRecords(value);
   const videoCandidates = urlsFromRecords(records, [
     'videoUrl', 'video_url', 'downloadUrl', 'download_url', 'playUrl', 'play_url',
+    'playAddr', 'play_addr', 'playAddrH264', 'play_addr_h264',
+    'nwmVideoUrl', 'nwm_video_url', 'nwm_video_url_HQ',
     'h264_url', 'h264Url', 'h265_url', 'h265Url', 'video', 'play', 'download',
   ]);
   const coverCandidates = urlsFromRecords(records, [
@@ -246,7 +261,13 @@ export function normalizeDownloadMedia(value, platform) {
   const imageCandidates = urlsFromRecords(records, [
     'imageUrls', 'image_urls', 'imageList', 'image_list', 'images', 'noteImages', 'note_images',
   ]);
-  const videoUrl = firstAllowedUrl(videoCandidates, platform, 'video');
+  const videoUrl = firstAllowedUrl(
+    platform === 'douyin'
+      ? videoCandidates.map((url) => url.replace(/playwm/gi, 'play'))
+      : videoCandidates,
+    platform,
+    'video',
+  );
   const coverUrl = firstAllowedUrl(coverCandidates, platform, 'cover');
   const candidateImageUrls = [...new Set(imageCandidates.filter((url) => isAllowedMediaUrl(url, platform, 'cover')))];
   const resolvedCoverUrl = coverUrl || candidateImageUrls[0] || null;
@@ -327,13 +348,19 @@ export async function resolveDownloadMedia(source, options = {}) {
   const normalized = source?.platform ? source : detectDownloadSource(source);
   const resolverUrl = configuredResolverUrl(normalized.platform);
   const errors = [];
+  let endpointMedia = null;
   if (resolverUrl) {
     try {
-      return {
-        ...normalized,
-        ...(await resolveWithEndpoint(normalized, resolverUrl, options.signal)),
-        resolver: 'configured-endpoint',
-      };
+      endpointMedia = await resolveWithEndpoint(normalized, resolverUrl, options.signal);
+      // Some older resolvers return only a cover. Give the desktop session a
+      // chance to recover the actual playback URL before accepting that result.
+      if (
+        endpointMedia.videoUrl ||
+        endpointMedia.imageUrls.length ||
+        typeof options.browserSession?.resolveMedia !== 'function'
+      ) {
+        return { ...normalized, ...endpointMedia, resolver: 'configured-endpoint' };
+      }
     } catch (error) {
       errors.push(error);
     }
@@ -353,6 +380,9 @@ export async function resolveDownloadMedia(source, options = {}) {
     } catch (error) {
       errors.push(error);
     }
+  }
+  if (endpointMedia) {
+    return { ...normalized, ...endpointMedia, resolver: 'configured-endpoint' };
   }
   if (errors.length) throw errors.at(-1);
   throw downloadError(

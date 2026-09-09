@@ -137,6 +137,9 @@ let updaterCheckTimer = null;
 let updaterVersion = '';
 let updaterAutomaticCheck = false;
 const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v2';
+const MONITOR_SPLIT_MIN = 280;
+const MONITOR_SPLIT_DEFAULT = 420;
+const MONITOR_SPLIT_MIN_FEED = 420;
 
 const elements = {
   stats: document.querySelector('#stats'),
@@ -1512,7 +1515,7 @@ function setView(view, options = {}) {
       const savedWidth = Number(
         window.localStorage.getItem(MONITOR_SPLIT_STORAGE_KEY),
       );
-      applyMonitorSplitWidth(Number.isFinite(savedWidth) ? savedWidth : 410);
+      applyMonitorSplitWidth(Number.isFinite(savedWidth) ? savedWidth : MONITOR_SPLIT_DEFAULT);
     });
   }
 }
@@ -2408,16 +2411,34 @@ async function loadSession() {
   }
 }
 
+function monitorSplitBounds() {
+  const layoutWidth = elements.monitorLayout?.getBoundingClientRect().width || 0;
+  return {
+    min: MONITOR_SPLIT_MIN,
+    max: layoutWidth ? Math.max(MONITOR_SPLIT_MIN, layoutWidth - MONITOR_SPLIT_MIN_FEED) : null,
+  };
+}
+
 function applyMonitorSplitWidth(value) {
   if (!elements.monitorLayout) {
     return;
   }
-  const layoutWidth = elements.monitorLayout.getBoundingClientRect().width;
-  const availableMax = layoutWidth ? Math.max(320, layoutWidth - 420) : 640;
+  const bounds = monitorSplitBounds();
+  const requested = Number(value);
   const width = Math.round(
-    Math.min(Math.max(Number(value) || 410, 320), Math.min(640, availableMax)),
+    bounds.max === null
+      ? Math.max(Number.isFinite(requested) ? requested : MONITOR_SPLIT_DEFAULT, bounds.min)
+      : Math.min(
+        Math.max(Number.isFinite(requested) ? requested : MONITOR_SPLIT_DEFAULT, bounds.min),
+        bounds.max,
+      ),
   );
   elements.monitorLayout.style.setProperty('--monitor-accounts-width', width + 'px');
+  elements.monitorSplitter?.setAttribute('aria-valuemin', String(bounds.min));
+  elements.monitorSplitter?.setAttribute(
+    'aria-valuemax',
+    String(bounds.max ?? Math.max(width, MONITOR_SPLIT_DEFAULT)),
+  );
   elements.monitorSplitter?.setAttribute('aria-valuenow', String(width));
   window.localStorage.setItem(MONITOR_SPLIT_STORAGE_KEY, String(width));
 }
@@ -2431,12 +2452,12 @@ function initMonitorSplitter() {
   const savedWidth = Number(
     window.localStorage.getItem(MONITOR_SPLIT_STORAGE_KEY),
   );
-  applyMonitorSplitWidth(Number.isFinite(savedWidth) ? savedWidth : 410);
+  applyMonitorSplitWidth(Number.isFinite(savedWidth) ? savedWidth : MONITOR_SPLIT_DEFAULT);
 
   let dragging = false;
   let pointerId = null;
   let startX = 0;
-  let startWidth = 410;
+  let startWidth = MONITOR_SPLIT_DEFAULT;
 
   const stopDragging = () => {
     if (!dragging) {
@@ -2459,7 +2480,7 @@ function initMonitorSplitter() {
         getComputedStyle(elements.monitorLayout).getPropertyValue(
           '--monitor-accounts-width',
         ),
-      ) || elements.monitorLayout.getBoundingClientRect().width * 0.3;
+      ) || MONITOR_SPLIT_DEFAULT;
     splitter.setPointerCapture?.(event.pointerId);
     document.body.classList.add('is-resizing');
     event.preventDefault();
@@ -2481,13 +2502,17 @@ function initMonitorSplitter() {
         getComputedStyle(elements.monitorLayout).getPropertyValue(
           '--monitor-accounts-width',
         ),
-      ) || 410;
+      ) || MONITOR_SPLIT_DEFAULT;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       applyMonitorSplitWidth(current + (event.key === 'ArrowRight' ? 20 : -20));
       event.preventDefault();
     }
     if (event.key === 'Home' || event.key === 'End') {
-      applyMonitorSplitWidth(event.key === 'Home' ? 320 : 640);
+      const bounds = monitorSplitBounds();
+      const current = Number.parseFloat(
+        getComputedStyle(elements.monitorLayout).getPropertyValue('--monitor-accounts-width'),
+      ) || MONITOR_SPLIT_DEFAULT;
+      applyMonitorSplitWidth(event.key === 'Home' ? bounds.min : bounds.max ?? current);
       event.preventDefault();
     }
   });
@@ -2506,7 +2531,7 @@ function init() {
         getComputedStyle(elements.monitorLayout).getPropertyValue(
           '--monitor-accounts-width',
         ),
-      ) || 410;
+      ) || MONITOR_SPLIT_DEFAULT;
     applyMonitorSplitWidth(currentWidth);
   });
 

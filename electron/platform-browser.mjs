@@ -1,5 +1,7 @@
 import * as electron from 'electron';
 
+import { normalizeDownloadMedia } from '../src/download-center.mjs';
+
 const { BrowserWindow, session } = electron;
 
 const PLATFORM_CONFIG = {
@@ -608,6 +610,23 @@ const MEDIA_SNAPSHOT_SCRIPT = `(() => {
   };
 })()`;
 
+const MEDIA_ACTIVATION_SCRIPT = `(() => {
+  const videos = Array.from(document.querySelectorAll('video'));
+  for (const video of videos) {
+    try {
+      video.muted = true;
+      video.autoplay = true;
+      video.preload = 'auto';
+      video.load();
+      const playing = video.play();
+      playing?.catch(() => {});
+    } catch {
+      // A platform player can reject scripted playback; network capture still continues.
+    }
+  }
+  return videos.length;
+})()`;
+
 function parseJsonBody(body) {
   if (typeof body !== 'string' || !body.trim()) {
     return null;
@@ -635,7 +654,7 @@ function mediaLooksRelevant(platform, response) {
   const mediaHost = platform === 'xhs'
     ? /(?:xiaohongshu\.com|xhscdn\.com)/i
     : platform === 'douyin'
-      ? /(?:douyin\.com|douyincdn\.com|douyinvod\.com|byteimg\.com|ibytedtos\.com|zijieapi\.com|snssdk\.com)/i
+      ? /(?:douyin\.com|douyincdn\.com|douyinvod\.com|douyinpic\.com|douyinstatic\.com|iesdouyin\.com|pstatp\.com|bytecdn\.cn|byteimg\.com|ibytedtos\.com|zijieapi\.com|snssdk\.com)/i
       : /(?:weixin\.qq\.com|channels\.weixin\.qq\.com|finder\.video\.qq\.com|qpic\.cn|wximg\.com)/i;
   if (!url || (!bodyLooksRelevant(platform, url) && !mediaHost.test(url))) return false;
   const mimeType = String(response?.mimeType || '').toLowerCase();
@@ -897,6 +916,32 @@ export class PlatformBrowserSession {
     }
   }
 
+  async reloadAfterDebuggerAttach(entry) {
+    const webContents = entry.browserWindow.webContents;
+    await new Promise((resolve) => {
+      let settled = false;
+      let timeoutId;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        webContents.removeListener('did-finish-load', finish);
+        webContents.removeListener('did-fail-load', finish);
+        webContents.removeListener('did-stop-loading', finish);
+        resolve();
+      };
+      timeoutId = setTimeout(finish, NAVIGATION_TIMEOUT_MS);
+      webContents.once('did-finish-load', finish);
+      webContents.once('did-fail-load', finish);
+      webContents.once('did-stop-loading', finish);
+      try {
+        webContents.reload();
+      } catch {
+        finish();
+      }
+    });
+  }
+
   async collectProfile(platform, input, options = {}) {
     const target = String(input || '').trim();
     if (!isHttpUrl(target)) {
@@ -1010,6 +1055,32 @@ export class PlatformBrowserSession {
     };
   }
 
+  async fetchMedia(platform, input, options = {}) {
+    const target = String(input || '').trim();
+    if (!isHttpUrl(target)) {
+      throw new Error('浏览器媒体代理需要完整的 http(s) 地址');
+    }
+    const entry = this.windows.get(platform);
+    const browserSession = entry?.browserWindow?.webContents?.session;
+    if (!browserSession || typeof browserSession.fetch !== 'function') {
+      throw new Error('当前桌面浏览器不支持媒体代理');
+    }
+    const webContents = entry.browserWindow.webContents;
+    const referer = webContents.getURL();
+    const userAgent = webContents.getUserAgent?.() || '';
+    return browserSession.fetch(target, {
+      method: 'GET',
+      redirect: 'follow',
+      credentials: 'include',
+      headers: {
+        accept: options.kind === 'video' ? 'video/*,*/*;q=0.8' : 'image/*,*/*;q=0.8',
+        ...(isHttpUrl(referer) ? { referer } : {}),
+        ...(userAgent ? { 'user-agent': userAgent } : {}),
+      },
+      signal: options.signal,
+    });
+  }
+
   async resolveMedia(platform, input, options = {}) {
     const target = String(input || '').trim();
     if (!isHttpUrl(target)) {
@@ -1019,6 +1090,7 @@ export class PlatformBrowserSession {
     entry.context.generation += 1;
     entry.context.responses = [];
     entry.context.responseByRequestId.clear();
+    const debuggerAttachedBeforeLoad = entry.debuggerClient.isAttached();
     try {
       await Promise.race([
         entry.browserWindow.loadURL(target),
@@ -1033,6 +1105,12 @@ export class PlatformBrowserSession {
       }
     }
     await this.attachDebugger(entry);
+    if (!debuggerAttachedBeforeLoad) {
+      // The initial navigation happened before CDP was attached. Reload once
+      // so Network.responseReceived can capture the work JSON that contains
+      // the platform playback address.
+      await this.reloadAfterDebuggerAttach(entry);
+    }
     await wait(WAIT_AFTER_LOAD_MS);
     try {
       await executeJavaScriptWithTimeout(
@@ -1042,12 +1120,36 @@ export class PlatformBrowserSession {
     } catch {
       // 页面在平台重定向期间关闭时，继续使用已经加载的结果。
     }
-    await wait(1200);
+    try {
+      await executeJavaScriptWithTimeout(entry.browserWindow, MEDIA_ACTIVATION_SCRIPT);
+    } catch {
+      // 非自动播放页面仍可通过网络响应或作品 JSON 提供媒体地址。
+    }
+    await wait(1800);
     let snapshot;
     try {
       snapshot = await executeJavaScriptWithTimeout(entry.browserWindow, MEDIA_SNAPSHOT_SCRIPT);
     } catch (error) {
       throw new Error('读取平台作品页面失败：' + error.message);
+    }
+    const currentRecords = entry.context.responses.filter(
+      (record) => record.generation === entry.context.generation,
+    );
+    await Promise.allSettled(
+      currentRecords.filter((record) => !record.media).map((record) =>
+        record.body
+          ? Promise.resolve(record.body)
+          : this.readResponseBody(entry.debuggerClient, record, entry.context),
+      ),
+    );
+    const payloads = currentRecords
+      .filter((record) => !record.media && record.body)
+      .map(({ url, status, body }) => ({ url, status, body }));
+    let payloadMedia = null;
+    try {
+      payloadMedia = normalizeDownloadMedia(payloads.map(({ body }) => body), platform);
+    } catch {
+      // Not every platform response is a work-detail payload.
     }
     const records = entry.context.responses.filter(
       (record) => record.generation === entry.context.generation && record.media,
@@ -1058,10 +1160,18 @@ export class PlatformBrowserSession {
     const networkImageUrls = records
       .filter((record) => /^image\//i.test(record.mimeType) || /\.(?:jpg|jpeg|png|webp)(?:[?#]|$)/i.test(record.url))
       .map((record) => record.url);
-    const videoUrl = [...new Set([...(snapshot.videoUrls || []), ...networkVideoUrls])]
+    const videoUrl = [...new Set([
+      ...(snapshot.videoUrls || []),
+      ...(payloadMedia?.videoUrl ? [payloadMedia.videoUrl] : []),
+      ...networkVideoUrls,
+    ])]
       .find((url) => isHttpUrl(url) && !/\.(?:m3u8|mpd)(?:[?#]|$)/i.test(url)) || null;
-    const coverUrl = snapshot.coverUrl || networkImageUrls[0] || snapshot.imageUrls?.[0] || null;
-    const imageUrls = [...new Set([...(snapshot.imageUrls || []), ...networkImageUrls])].slice(0, 30);
+    const coverUrl = snapshot.coverUrl || payloadMedia?.coverUrl || networkImageUrls[0] || snapshot.imageUrls?.[0] || null;
+    const imageUrls = [...new Set([
+      ...(snapshot.imageUrls || []),
+      ...(payloadMedia?.imageUrls || []),
+      ...networkImageUrls,
+    ])].slice(0, 30);
     if (!videoUrl && !coverUrl && !imageUrls.length) {
       if (/安全限制|安全验证|验证码|服务异常|登录即可|请登录|需要登录/i.test(snapshot.bodyText || '')) {
         throw new Error(

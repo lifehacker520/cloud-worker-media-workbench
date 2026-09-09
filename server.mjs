@@ -760,19 +760,35 @@ function mediaSourceFor(asset, platform, kind, index = null) {
   return null;
 }
 
-async function fetchRemoteMedia(sourceUrl, platform, kind, limit) {
+async function fetchRemoteMedia(sourceUrl, platform, kind, limit, browserSession = null) {
   if (!isAllowedMediaUrl(sourceUrl, platform, kind === 'video' ? 'video' : 'cover')) {
     throw new Error('媒体地址不在平台白名单内');
   }
   let upstream;
-  try {
-    upstream = await fetch(sourceUrl, {
-      redirect: 'follow',
-      headers: { accept: kind === 'video' ? 'video/*' : 'image/*', 'user-agent': 'CloudWorkerDownloadCenter/0.1' },
-      signal: AbortSignal.timeout(180_000),
-    });
-  } catch (error) {
-    throw new Error('媒体文件暂时无法访问：' + safeError(error));
+  let lastError = null;
+  if (typeof browserSession?.fetchMedia === 'function') {
+    try {
+      upstream = await browserSession.fetchMedia(platform, sourceUrl, {
+        kind,
+        signal: AbortSignal.timeout(180_000),
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!upstream) {
+    try {
+      upstream = await fetch(sourceUrl, {
+        redirect: 'follow',
+        headers: { accept: kind === 'video' ? 'video/*' : 'image/*', 'user-agent': 'CloudWorkerDownloadCenter/0.1' },
+        signal: AbortSignal.timeout(180_000),
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!upstream) {
+    throw new Error('媒体文件暂时无法访问：' + safeError(lastError));
   }
   if (!upstream.ok || !upstream.body) {
     throw new Error('媒体文件返回失败（HTTP ' + upstream.status + '）');
@@ -833,7 +849,7 @@ async function runDownloadTarget(taskId, user, target) {
   let tempPath = null;
   try {
     const limit = target.kind === 'video' ? DOWNLOAD_MAX_VIDEO_BYTES : DOWNLOAD_MAX_IMAGE_BYTES;
-    const remote = await fetchRemoteMedia(sourceUrl, task.platform, target.kind, limit);
+    const remote = await fetchRemoteMedia(sourceUrl, task.platform, target.kind, limit, desktopPlatformSession());
     await mkdir(DOWNLOAD_DIR, { recursive: true });
     const filename = downloadFilename(task, target.kind, target.index ?? 0, remote.contentType, remote.finalUrl);
     const destination = join(DOWNLOAD_DIR, filename);
@@ -3759,7 +3775,7 @@ async function handleRequest(request, response) {
     const sourceUrl = mediaSourceFor(asset, task.platform, kind, Number.isInteger(index) ? index : null);
     if (!sourceUrl) return sendJson(response, { ok: false, error: '媒体资源不存在' }, 404);
     try {
-      const remote = await fetchRemoteMedia(sourceUrl, task.platform, kind === 'video' ? 'video' : 'cover', kind === 'video' ? DOWNLOAD_MAX_VIDEO_BYTES : DOWNLOAD_MAX_IMAGE_BYTES);
+      const remote = await fetchRemoteMedia(sourceUrl, task.platform, kind === 'video' ? 'video' : 'cover', kind === 'video' ? DOWNLOAD_MAX_VIDEO_BYTES : DOWNLOAD_MAX_IMAGE_BYTES, desktopPlatformSession());
       response.writeHead(200, {
         'cache-control': 'private, max-age=60',
         'content-type': remote.contentType || (kind === 'video' ? 'video/mp4' : 'image/jpeg'),
