@@ -29,7 +29,7 @@ async function freePort() {
 
 async function waitFor(url, child, label) {
   child.once('error', (error) => { child.startupError = error; });
-  const deadline = Date.now() + 8_000;
+  const deadline = Date.now() + (process.env.CI ? 45_000 : 8_000);
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`${label} exited before becoming ready${childOutput(child)}`);
     try {

@@ -23,7 +23,7 @@ async function freePort() {
 
 async function waitForWorker(url, child) {
   child.once('error', (error) => { child.startupError = error; });
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + (process.env.CI ? 45_000 : 5_000);
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`media worker exited before becoming ready${childOutput(child)}`);
     try {
