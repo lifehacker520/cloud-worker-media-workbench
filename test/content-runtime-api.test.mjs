@@ -80,7 +80,7 @@ test('content runtime parses a real local text asset, writes SQLite and indexes 
     assert.equal(state.response.status, 200);
     assert.equal(state.payload.accounts.length, 0);
     assert.ok(workspace.payload.connectors.some((connector) => connector.capabilities.includes('media.probe')));
-    assert.equal(workspace.payload.capabilities.subtitleBurnIn, true);
+    assert.equal(workspace.payload.capabilities.subtitleBurnIn, await hasFfmpeg());
 
     const customer = await jsonRequest(baseUrl + '/api/workspace/customers', {
       method: 'POST',

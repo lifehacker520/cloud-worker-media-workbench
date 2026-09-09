@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-15
             args: --mac
           - os: windows-latest
             args: --win
@@ -38,7 +38,7 @@ jobs:
       - name: Build installer
         run: npm run dist -- ${{ matrix.args }} --publish never
       - name: Verify macOS app bundle signature
-        if: matrix.os == 'macos-latest'
+        if: matrix.args == '--mac'
         shell: bash
         run: |
           app_path="$(find release -type d -name '*.app' -print -quit)"
