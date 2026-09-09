@@ -28,9 +28,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Setup Python
+        id: python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
       - name: Install dependencies
         run: npm ci
       - name: Run tests
+        env:
+          CLOUD_WORKER_PYTHON: ${{ steps.python.outputs.python-path }}
         run: npm test
       - name: Verify release version
         shell: bash

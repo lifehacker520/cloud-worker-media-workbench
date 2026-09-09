@@ -9,6 +9,7 @@ import { HttpMediaGenerationConnector } from '../src/content-media-worker-connec
 
 const PROJECT_DIR = resolve(import.meta.dirname, '..');
 const WORKER = resolve(PROJECT_DIR, 'tools/media-model-worker/app.py');
+const PYTHON = process.env.CLOUD_WORKER_PYTHON || 'python3';
 
 async function freePort() {
   const server = createServer();
@@ -35,7 +36,7 @@ async function waitForWorker(url, child) {
 
 test('Python fake media worker satisfies the Node connector contract and refuses unsafe paths', async () => {
   const port = await freePort();
-  const child = spawn('python3', [WORKER, '--port', String(port)], {
+  const child = spawn(PYTHON, [WORKER, '--port', String(port)], {
     cwd: PROJECT_DIR,
     env: { ...process.env, MEDIA_WORKER_MODE: 'fake' },
     stdio: ['ignore', 'pipe', 'pipe'],

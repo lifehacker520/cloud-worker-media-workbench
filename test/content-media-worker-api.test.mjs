@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url';
 const PROJECT_DIR = resolve(import.meta.dirname, '..');
 const WORKER = resolve(PROJECT_DIR, 'tools/media-model-worker/app.py');
 const MACOS_SAY_WRAPPER = resolve(PROJECT_DIR, 'tools/media-model-worker/wrappers/macos_say_tts.py');
+const PYTHON = process.env.CLOUD_WORKER_PYTHON || 'python3';
 const execFileAsync = promisify(execFile);
 
 async function freePort() {
@@ -70,7 +71,7 @@ test('configured media worker is visible in the catalog and executes a real HTTP
   for (const file of ['accounts.json', 'works.json', 'activity.json', 'feedback.json', 'content-tasks.json']) {
     await writeFile(join(dataDir, file), '[]');
   }
-  const worker = spawn('python3', [WORKER, '--port', String(workerPort)], {
+  const worker = spawn(PYTHON, [WORKER, '--port', String(workerPort)], {
     cwd: PROJECT_DIR,
     env: { ...process.env, MEDIA_WORKER_MODE: 'fake' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -154,7 +155,7 @@ test('configured simulated media worker blocks CE-14 and keeps CE-15 unstarted',
   for (const file of ['accounts.json', 'works.json', 'activity.json', 'feedback.json', 'content-tasks.json']) {
     await writeFile(join(dataDir, file), '[]');
   }
-  const worker = spawn('python3', [WORKER, '--port', String(workerPort)], {
+  const worker = spawn(PYTHON, [WORKER, '--port', String(workerPort)], {
     cwd: PROJECT_DIR,
     env: { ...process.env, MEDIA_WORKER_MODE: 'fake' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -270,13 +271,13 @@ test('macOS say baseline travels from CE-14 through HTTP worker into protected a
   for (const file of ['accounts.json', 'works.json', 'activity.json', 'feedback.json', 'content-tasks.json']) {
     await writeFile(join(dataDir, file), '[]');
   }
-  const worker = spawn('python3', [WORKER, '--port', String(workerPort)], {
+  const worker = spawn(PYTHON, [WORKER, '--port', String(workerPort)], {
     cwd: PROJECT_DIR,
     env: {
       ...process.env,
       MEDIA_WORKER_MODE: 'command',
       MEDIA_WORKER_DATA_DIR: dataDir,
-      MEDIA_WORKER_TTS_COMMAND: `python3 ${MACOS_SAY_WRAPPER}`,
+      MEDIA_WORKER_TTS_COMMAND: `${PYTHON} ${MACOS_SAY_WRAPPER}`,
       MEDIA_WORKER_AVATAR_COMMAND: '',
       MEDIA_WORKER_MACOS_SAY_VOICE: 'Ting-Ting',
     },
@@ -495,7 +496,7 @@ test('voice comparison API preserves two blocked candidates when the worker is s
   for (const file of ['accounts.json', 'works.json', 'activity.json', 'feedback.json', 'content-tasks.json']) {
     await writeFile(join(dataDir, file), '[]');
   }
-  const worker = spawn('python3', [WORKER, '--port', String(workerPort)], {
+  const worker = spawn(PYTHON, [WORKER, '--port', String(workerPort)], {
     cwd: PROJECT_DIR,
     env: { ...process.env, MEDIA_WORKER_MODE: 'fake' },
     stdio: ['ignore', 'pipe', 'pipe'],
