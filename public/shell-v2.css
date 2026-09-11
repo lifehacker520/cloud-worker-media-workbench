@@ -3635,3 +3635,117 @@ body {
   border-radius: var(--shell-radius-card);
   padding: 14px 16px;
 }
+
+/* ===========================================================================
+   VIS-07：内容编辑 S3 结构化（E3）
+   - cw-main-cols：任务队列（左，固定栏）+ 运行详情（右，主工作区）
+   - cw-run-detail / cw-flow-collapsible：工程区块折叠为可展开分组（V3 summary）
+   - 创建表单迁入右侧抽屉 #drawer-create-content（复用 .drawer 骨架）
+   依据：README §6.2（队列左 / 工作区中 / 审核可达）与 §8（不同时展开创建、
+   处理、诊断）。表单 id / data-* / 业务逻辑零改动。
+   =========================================================================== */
+
+#view-content .view-intro-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+#view-content .view-intro-actions .button.button-primary {
+  background: var(--blue);
+  color: #fff;
+  border: 0;
+  border-radius: var(--shell-radius-control);
+  padding: 9px 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+#view-content .view-intro-actions .button.button-primary:hover { opacity: 0.92; }
+
+/* ---- 两栏主从：列表 340px | 详情 1fr -------------------------------- */
+#view-content .cw-main-cols {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+#view-content .cw-main-cols .content-task-list-card {
+  position: sticky;
+  top: 72px;
+  max-height: calc(100vh - 108px);
+  overflow-y: auto;
+}
+#view-content .cw-main-cols .content-task-detail { min-width: 0; }
+
+/* ---- 折叠分组的 V3 summary ------------------------------------------ */
+#view-content .cw-run-detail,
+#view-content .cw-flow-collapsible {
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-hairline);
+  border-radius: var(--shell-radius-panel);
+  box-shadow: var(--shell-shadow-panel);
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+#view-content .cw-run-detail > summary,
+#view-content .cw-flow-collapsible > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+#view-content .cw-run-detail > summary::-webkit-details-marker,
+#view-content .cw-flow-collapsible > summary::-webkit-details-marker { display: none; }
+#view-content .cw-run-detail > summary:hover,
+#view-content .cw-flow-collapsible > summary:hover { background: var(--shell-hairline-soft); }
+#view-content .cw-details-title { color: var(--ink); font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+#view-content .cw-run-detail > summary small,
+#view-content .cw-flow-collapsible > summary small { flex: 1; min-width: 0; color: var(--muted); font-size: 11.5px; }
+#view-content .cw-details-chevron { color: var(--soft); font-size: 13px; transition: transform 160ms ease; }
+#view-content .cw-run-detail[open] > summary .cw-details-chevron,
+#view-content .cw-flow-collapsible[open] > summary .cw-details-chevron { transform: rotate(180deg); }
+#view-content .cw-run-detail[open] > summary,
+#view-content .cw-flow-collapsible[open] > summary { border-bottom: 1px dashed var(--shell-hairline); }
+#view-content .cw-details-body { padding: 18px; }
+
+/* ---- 详情内部两栏在右栏窄容器下改单列 ------------------------------- */
+#view-content .content-detail-layout { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- runtime strip 状态变体 ----------------------------------------- */
+#view-content .content-runtime-strip.is-ready   { background: var(--tone-mint);  border-color: var(--tone-mint-strong); }
+#view-content .content-runtime-strip.is-ready::before { color: var(--green); }
+#view-content .content-runtime-strip.is-warning { background: var(--tone-amber); border-color: var(--tone-amber-strong); }
+#view-content .content-runtime-strip.is-warning::before { color: var(--orange); }
+
+/* ---- 创建抽屉内部：表单去壳、全宽 ---------------------------------- */
+#drawer-create-content .content-create-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+#drawer-create-content .content-task-form { display: grid; gap: 12px; }
+#drawer-create-content .content-form-row { grid-template-columns: 1fr; }
+#drawer-create-content .icon-button {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--shell-hairline);
+  border-radius: 8px;
+  background: var(--shell-surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+#drawer-create-content .icon-button:hover { background: var(--shell-hairline-soft); color: var(--ink); }
+
+/* ---- 窄屏回退 ------------------------------------------------------ */
+@media (max-width: 1080px) {
+  #view-content .cw-main-cols { grid-template-columns: minmax(0, 1fr); }
+  #view-content .cw-main-cols .content-task-list-card { position: static; max-height: none; overflow-y: visible; }
+}

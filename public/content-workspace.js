@@ -104,46 +104,10 @@ if (root) {
   root.innerHTML = `
     <div class="content-workspace-intro view-intro-row">
       <div><span class="view-context">云员工 / 内容编辑</span><p>从业务目标和原始素材开始，逐步形成可审核、可交接的内容包。首期只在本地/测试模式运行，不直接发布。</p></div>
-      <span class="view-intro-status">P0 · 人工审核</span>
+      <span class="view-intro-actions"><span class="view-intro-status">P0 · 人工审核</span><button class="button button-primary" type="button" data-content-create-focus><span aria-hidden="true">＋</span>创建内容任务</button></span>
     </div>
     <div id="content-runtime-strip" class="content-runtime-strip">正在读取运行时能力…</div>
-    <section class="panel content-flow-overview" aria-label="内容编辑完整工作流">
-      <div class="panel-heading">
-        <div><div class="eyebrow">CONTENT EDITOR FLOW</div><h2>一条任务，从素材到内容包</h2><p>下面是当前内容编辑云员工已经接入的操作路径；创建任务后，每一步都会留下状态、证据和人工确认。</p></div>
-        <span class="phase-label">26 个节点</span>
-      </div>
-      <div class="content-flow-grid">
-        <article class="content-flow-card is-ready"><div class="content-flow-card-head"><span class="content-flow-index">01</span><div><strong>任务与素材</strong><small>创建 → 授权 → 解析 → 结构分析</small></div><span class="content-flow-status is-ready">可操作</span></div><p>绑定目标、平台和品牌上下文，导入已授权素材并保留来源引用。</p></article>
-        <article class="content-flow-card is-human"><div class="content-flow-card-head"><span class="content-flow-index">02</span><div><strong>选题与文案</strong><small>选题 → 脚本 → 平台版本 → 分镜</small></div><span class="content-flow-status is-human">人工确认</span></div><p>候选结果不能直接交付，负责人选择选题并审核事实、表达和平台规则。</p></article>
-        <article class="content-flow-card is-blocked"><div class="content-flow-card-head"><span class="content-flow-index">03</span><div><strong>媒体与审核</strong><small>声音/数字人 → 字幕 → 封面 → 审核</small></div><span class="content-flow-status is-blocked">按能力执行</span></div><p>本地媒体工具可用；TTS、数字人没有真实模型时明确显示未配置/待接入。</p></article>
-        <article class="content-flow-card is-human"><div class="content-flow-card-head"><span class="content-flow-index">04</span><div><strong>批量与交付</strong><small>矩阵 → 单条状态 → 重试 → 导出</small></div><span class="content-flow-status is-human">人工闸门</span></div><p>已审核数字人、文案和模板才能进入批次，最终输出内容包和发布草稿。</p></article>
-      </div>
-      <div class="content-flow-footer"><span class="content-flow-footer-label">当前能力</span><span class="content-flow-pill is-ready">解析/结构/本地渲染/字幕/封面</span><span class="content-flow-pill is-blocked">TTS/数字人：未配置/待接入</span><button class="button button-secondary button-small" type="button" data-content-create-focus>开始创建内容任务 <span>→</span></button></div>
-    </section>
-    <section class="content-workspace-grid">
-      <section class="panel content-create-card">
-        <div class="panel-heading">
-          <div><div class="eyebrow">内容任务</div><h2>创建内容任务</h2></div>
-          <span class="phase-label">本地测试</span>
-        </div>
-        <p class="section-intro">先登记目标、品牌上下文和素材说明，系统会创建完整的 26 节点工作流骨架。</p>
-        <form id="content-task-form" class="content-task-form">
-          <label><span>任务名称</span><input name="title" type="text" maxlength="120" placeholder="例如：AI 智能体客户案例口播" required /></label>
-          <label><span>业务目标</span><textarea name="objective" rows="3" maxlength="2000" placeholder="这条内容要解决什么业务问题？"></textarea></label>
-          <div class="content-form-row">
-            <label><span>目标受众</span><input name="audience" type="text" maxlength="500" placeholder="例如：中小企业老板" /></label>
-            <label><span>平台</span><input name="platforms" type="text" maxlength="200" placeholder="小红书, 抖音, 视频号" /></label>
-          </div>
-          <div class="content-form-row">
-            <label><span>客户上下文</span><select name="customerId" aria-label="客户上下文"><option value="">未绑定客户</option></select></label>
-            <label><span>品牌资料</span><select name="brandProfileId" aria-label="品牌资料"><option value="">未绑定品牌资料</option></select></label>
-          </div>
-          <label><span>本地素材路径（可选）</span><input name="sourceAssetPath" type="text" maxlength="1000" placeholder="例如：/Users/你的用户名/Downloads/宣传视频.mp4" /></label>
-          <input name="sourceWorkFingerprint" type="hidden" />
-          <label><span>素材/参考说明</span><textarea name="sourceBrief" rows="5" maxlength="20000" placeholder="记录素材来源、已授权文件、参考作品或需要补充的资料。"></textarea></label>
-          <div class="content-form-actions"><p id="content-form-message" class="form-message"></p><button class="button button-dark" type="submit">创建内容任务</button></div>
-        </form>
-      </section>
+    <section class="cw-main-cols">
       <section class="panel content-task-list-card">
         <div class="panel-heading">
           <div><div class="eyebrow">任务队列</div><h2>内容任务</h2></div>
@@ -151,8 +115,50 @@ if (root) {
         </div>
         <div id="content-task-list" class="content-task-list"><div class="empty-state compact"><span>▧</span><p>正在读取内容任务…</p></div></div>
       </section>
+      <section id="content-task-detail" class="panel content-task-detail"></section>
     </section>
-    <section id="content-task-detail" class="panel content-task-detail"></section>
+    <details class="cw-flow-collapsible panel">
+      <summary><span class="cw-details-title">内容工作流总览</span><small>4 个阶段 · 26 个节点 · 每一步留下状态、证据和人工确认</small><span class="cw-details-chevron" aria-hidden="true">⌄</span></summary>
+      <div class="cw-details-body">
+        <div class="content-flow-grid">
+          <article class="content-flow-card is-ready"><div class="content-flow-card-head"><span class="content-flow-index">01</span><div><strong>任务与素材</strong><small>创建 → 授权 → 解析 → 结构分析</small></div><span class="content-flow-status is-ready">可操作</span></div><p>绑定目标、平台和品牌上下文，导入已授权素材并保留来源引用。</p></article>
+          <article class="content-flow-card is-human"><div class="content-flow-card-head"><span class="content-flow-index">02</span><div><strong>选题与文案</strong><small>选题 → 脚本 → 平台版本 → 分镜</small></div><span class="content-flow-status is-human">人工确认</span></div><p>候选结果不能直接交付，负责人选择选题并审核事实、表达和平台规则。</p></article>
+          <article class="content-flow-card is-blocked"><div class="content-flow-card-head"><span class="content-flow-index">03</span><div><strong>媒体与审核</strong><small>声音/数字人 → 字幕 → 封面 → 审核</small></div><span class="content-flow-status is-blocked">按能力执行</span></div><p>本地媒体工具可用；TTS、数字人没有真实模型时明确显示未配置/待接入。</p></article>
+          <article class="content-flow-card is-human"><div class="content-flow-card-head"><span class="content-flow-index">04</span><div><strong>批量与交付</strong><small>矩阵 → 单条状态 → 重试 → 导出</small></div><span class="content-flow-status is-human">人工闸门</span></div><p>已审核数字人、文案和模板才能进入批次，最终输出内容包和发布草稿。</p></article>
+        </div>
+        <div class="content-flow-footer"><span class="content-flow-footer-label">当前能力</span><span class="content-flow-pill is-ready">解析/结构/本地渲染/字幕/封面</span><span class="content-flow-pill is-blocked">TTS/数字人：未配置/待接入</span></div>
+      </div>
+    </details>
+    <div id="drawer-create-content-backdrop" class="drawer-backdrop"></div>
+    <div id="drawer-create-content" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-create-content-title">
+      <div class="drawer-head">
+        <div>
+          <h2 id="drawer-create-content-title">创建内容任务</h2>
+          <p>登记目标、品牌上下文和素材说明，系统会创建完整的 26 节点工作流骨架。素材授权与解析在任务创建后进行。</p>
+        </div>
+        <button id="close-create-content" class="icon-button" type="button" aria-label="关闭">✕</button>
+      </div>
+      <div class="drawer-body">
+        <section class="panel content-create-card">
+          <form id="content-task-form" class="content-task-form">
+            <label><span>任务名称</span><input name="title" type="text" maxlength="120" placeholder="例如：AI 智能体客户案例口播" required /></label>
+            <label><span>业务目标</span><textarea name="objective" rows="3" maxlength="2000" placeholder="这条内容要解决什么业务问题？"></textarea></label>
+            <div class="content-form-row">
+              <label><span>目标受众</span><input name="audience" type="text" maxlength="500" placeholder="例如：中小企业老板" /></label>
+              <label><span>平台</span><input name="platforms" type="text" maxlength="200" placeholder="小红书, 抖音, 视频号" /></label>
+            </div>
+            <div class="content-form-row">
+              <label><span>客户上下文</span><select name="customerId" aria-label="客户上下文"><option value="">未绑定客户</option></select></label>
+              <label><span>品牌资料</span><select name="brandProfileId" aria-label="品牌资料"><option value="">未绑定品牌资料</option></select></label>
+            </div>
+            <label><span>本地素材路径（可选）</span><input name="sourceAssetPath" type="text" maxlength="1000" placeholder="例如：/Users/你的用户名/Downloads/宣传视频.mp4" /></label>
+            <input name="sourceWorkFingerprint" type="hidden" />
+            <label><span>素材/参考说明</span><textarea name="sourceBrief" rows="5" maxlength="20000" placeholder="记录素材来源、已授权文件、参考作品或需要补充的资料。"></textarea></label>
+            <div class="content-form-actions"><p id="content-form-message" class="form-message"></p><button class="button button-dark" type="submit">创建内容任务</button></div>
+          </form>
+        </section>
+      </div>
+    </div>
   `;
 
   const elements = {
@@ -162,7 +168,23 @@ if (root) {
     taskList: root.querySelector('#content-task-list'),
     detail: root.querySelector('#content-task-detail'),
     runtimeStrip: root.querySelector('#content-runtime-strip'),
+    drawer: root.querySelector('#drawer-create-content'),
+    drawerBackdrop: root.querySelector('#drawer-create-content-backdrop'),
+    drawerClose: root.querySelector('#close-create-content'),
   };
+
+  function openCreateDrawer() {
+    if (!elements.drawer) return;
+    elements.drawer.classList.add('is-open');
+    elements.drawerBackdrop?.classList.add('is-open');
+    elements.form?.querySelector('[name="title"]')?.focus();
+  }
+
+  function closeCreateDrawer() {
+    if (!elements.drawer) return;
+    elements.drawer.classList.remove('is-open');
+    elements.drawerBackdrop?.classList.remove('is-open');
+  }
 
   function applyWorkPrefill(prefill) {
     if (!prefill || !elements.form) {
@@ -177,7 +199,7 @@ if (root) {
     }
     elements.formMessage.textContent = '已带入监控作品来源；创建前请确认素材授权。';
     elements.formMessage.className = 'form-message is-working';
-    elements.form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    openCreateDrawer();
     elements.form.elements.namedItem('title')?.focus();
   }
 
@@ -548,6 +570,10 @@ if (root) {
     const singleMediaForm = canRecord && ['CE-14', 'CE-15'].includes(activeNode?.id)
       ? mediaNodeForm(task, activeNode)
       : '';
+    const detailOpenState = {};
+    for (const node of elements.detail.querySelectorAll('details[data-cw-details]')) {
+      detailOpenState[node.dataset.cwDetails] = node.open;
+    }
     elements.detail.innerHTML = `
       <div class="content-detail-heading">
         <div><div class="eyebrow">WORK ITEM / ${escapeHtml(task.workflowVersion)}</div><h2>${escapeHtml(task.title)}</h2><p>${escapeHtml(task.objective || '尚未填写业务目标')}</p></div>
@@ -555,10 +581,7 @@ if (root) {
       </div>
       <div class="content-detail-meta"><span>负责人：<b>${escapeHtml(task.owner?.displayName || '未指定')}</b></span><span>受众：<b>${escapeHtml(task.audience || '未指定')}</b></span><span>平台：<b>${escapeHtml(platforms)}</b></span><span>审核：<b>${escapeHtml(labelForStatus(task.reviews?.at(-1)?.decision || (task.status === 'waiting_review' ? 'pending' : 'not_started')))}</b></span><span>运行：<b>${escapeHtml(labelForStatus(task.run?.status || 'not_started'))}</b></span><span>更新时间：<b>${escapeHtml(formatTime(task.updatedAt))}</b></span></div>
       ${mvpStages}
-      <section class="content-material-toolbox"><div><div class="eyebrow">REAL MATERIAL PIPELINE</div><h3>本地素材与执行节点</h3><p>路径只读取允许的本地目录；解析结果会进入 SQLite 媒体资产和知识索引。素材必须先确认授权并填写授权记录引用；ASR、OCR、渲染和发布连接器会显示真实能力状态；没有外部模型时可生成仅引用已读素材的本地模板草案。</p></div><div class="content-capability-grid">${renderCapability('素材探测', runtimeCapabilities.ffprobe && runtimeCapabilities.ffmpeg, runtimeCapabilities.ffprobe && runtimeCapabilities.ffmpeg ? 'ffprobe / ffmpeg 可用' : '媒体工具未完整配置')}${renderCapability('TTS 语音', ttsReady, ttsReady ? 'Worker 已报告 tts 能力' : workerSimulation ? 'Worker 仅返回模拟输出，不可交付' : '未配置或 Worker 未就绪，生成会阻塞')}${renderCapability('数字人', avatarReady, avatarReady ? 'Worker 已报告 talking_head 能力' : workerSimulation ? 'Worker 仅返回模拟输出，不可交付' : '未配置或 Worker 未就绪，生成会阻塞')}${renderCapability('媒体 Worker', workerReady, workerReady ? '连接成功，仍需人工验收模型输出' : workerSimulation ? '仅模拟输出，不可作为真实成片' : worker.reason || '未配置或无法连接')}</div><form id="content-material-form" class="content-material-form"><input name="path" type="text" maxlength="1000" value="${escapeHtml(task.sourceAssets?.[0] || '')}" placeholder="/Users/你的用户名/Downloads/素材.mp4" required /><input name="sourceRef" type="text" maxlength="1000" placeholder="素材来源（URL、文件说明或采集记录）" required /><select name="authorizationStatus" aria-label="素材授权状态" required><option value="">请选择授权状态</option><option value="approved">已确认授权</option></select><input name="authorizationRef" type="text" maxlength="500" placeholder="授权记录引用" required /><button class="button button-secondary" type="submit">确认授权并解析</button></form><ul class="content-asset-list">${assetSummary}</ul><div class="content-runtime-actions">${nodeStatus('CE-09') === 'ready' ? '<button class="button button-quiet" type="button" data-analyze-content="' + escapeHtml(task.id) + '">分析内容结构</button>' : ''}${nodeStatus('CE-10') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="topic">生成选题</button>' : ''}${nodeStatus('CE-11') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="copy">生成脚本</button>' : ''}${nodeStatus('CE-12') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="platform">生成平台版本</button>' : ''}${nodeStatus('CE-13') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="shotlist">生成分镜</button>' : ''}${nodeStatus('CE-16') === 'ready' ? '<button class="button button-quiet" type="button" data-render-content="' + escapeHtml(task.id) + '">本地渲染</button>' : ''}${nodeStatus('CE-22') === 'ready' ? '<button class="button button-quiet" type="button" data-package-content="' + escapeHtml(task.id) + '">导出内容包</button>' : ''}${nodeStatus('CE-23') === 'ready' ? '<button class="button button-dark" type="button" data-create-release-draft="' + escapeHtml(task.id) + '">创建发布草稿</button>' : ''}${nodeStatus('CE-26') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="retro">生成复盘建议</button>' : ''}</div></section>
-      ${structurePanel}
-      ${renderBatchPanel(task)}
-      <section class="content-feedback-box"><div><div class="eyebrow">FEEDBACK LOOP</div><h3>反馈与下一步</h3></div><ul class="content-asset-list">${feedbackSummary}</ul></section>
+      <details class="cw-run-detail" data-cw-details="ops" open><summary><span class="cw-details-title">工作流执行与审核</span><small>节点进度 · 节点检查器 · 人工闸门与登记</small><span class="cw-details-chevron" aria-hidden="true">⌄</span></summary><div class="cw-details-body">
       <div class="content-detail-layout">
         <section class="content-node-panel"><div class="panel-heading"><div><div class="eyebrow">26 NODE TRACE</div><h3>工作流节点</h3></div><span class="count-label">${task.nodes.filter((node) => ['succeeded', 'skipped'].includes(node.status)).length}/${task.nodes.length}</span></div><div class="content-node-list">${task.nodes.map(renderNode).join('')}</div></section>
         <section class="content-node-inspector">
@@ -574,9 +597,24 @@ if (root) {
           ${canRecordFeedback ? `<form id="content-feedback-form" class="content-review-form"><div class="eyebrow">LOCAL FEEDBACK RECORD</div><p class="node-blocked-hint">只记录人工提供的发布状态、指标或下一步；本地/测试闭环不会调用外部平台。</p><label><span>反馈状态</span><select name="status"><option value="manual">人工记录</option><option value="not_published">未发布</option><option value="observed">已观察</option><option value="failed">执行失败</option></select></label><label><span>平台</span><input name="platform" type="text" maxlength="80" value="${escapeHtml(task.platforms[0] || '')}" placeholder="例如：小红书" /></label><label><span>指标 JSON（可选）</span><textarea name="metrics" rows="2" placeholder='例如：{"views":1000,"likes":20}'></textarea></label><label><span>反馈说明</span><textarea name="note" rows="3" maxlength="5000" placeholder="记录真实观察或人工反馈；没有数据就明确写待观察。"></textarea></label><label><span>下一步</span><textarea name="nextAction" rows="2" maxlength="2000" placeholder="例如：下一轮只改开场，继续使用同一素材"></textarea></label><button class="button button-secondary" type="submit">保存反馈与下一步</button></form>` : ''}
         </section>
       </div>
+      </div></details>
+      <details class="cw-run-detail" data-cw-details="material"><summary><span class="cw-details-title">素材解析 · 授权 · 能力状态</span><small>本地素材导入、授权确认、媒体能力与结构分析</small><span class="cw-details-chevron" aria-hidden="true">⌄</span></summary><div class="cw-details-body">
+      <section class="content-material-toolbox"><div><div class="eyebrow">REAL MATERIAL PIPELINE</div><h3>本地素材与执行节点</h3><p>路径只读取允许的本地目录；解析结果会进入 SQLite 媒体资产和知识索引。素材必须先确认授权并填写授权记录引用；ASR、OCR、渲染和发布连接器会显示真实能力状态；没有外部模型时可生成仅引用已读素材的本地模板草案。</p></div><div class="content-capability-grid">${renderCapability('素材探测', runtimeCapabilities.ffprobe && runtimeCapabilities.ffmpeg, runtimeCapabilities.ffprobe && runtimeCapabilities.ffmpeg ? 'ffprobe / ffmpeg 可用' : '媒体工具未完整配置')}${renderCapability('TTS 语音', ttsReady, ttsReady ? 'Worker 已报告 tts 能力' : workerSimulation ? 'Worker 仅返回模拟输出，不可交付' : '未配置或 Worker 未就绪，生成会阻塞')}${renderCapability('数字人', avatarReady, avatarReady ? 'Worker 已报告 talking_head 能力' : workerSimulation ? 'Worker 仅返回模拟输出，不可交付' : '未配置或 Worker 未就绪，生成会阻塞')}${renderCapability('媒体 Worker', workerReady, workerReady ? '连接成功，仍需人工验收模型输出' : workerSimulation ? '仅模拟输出，不可作为真实成片' : worker.reason || '未配置或无法连接')}</div><form id="content-material-form" class="content-material-form"><input name="path" type="text" maxlength="1000" value="${escapeHtml(task.sourceAssets?.[0] || '')}" placeholder="/Users/你的用户名/Downloads/素材.mp4" required /><input name="sourceRef" type="text" maxlength="1000" placeholder="素材来源（URL、文件说明或采集记录）" required /><select name="authorizationStatus" aria-label="素材授权状态" required><option value="">请选择授权状态</option><option value="approved">已确认授权</option></select><input name="authorizationRef" type="text" maxlength="500" placeholder="授权记录引用" required /><button class="button button-secondary" type="submit">确认授权并解析</button></form><ul class="content-asset-list">${assetSummary}</ul><div class="content-runtime-actions">${nodeStatus('CE-09') === 'ready' ? '<button class="button button-quiet" type="button" data-analyze-content="' + escapeHtml(task.id) + '">分析内容结构</button>' : ''}${nodeStatus('CE-10') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="topic">生成选题</button>' : ''}${nodeStatus('CE-11') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="copy">生成脚本</button>' : ''}${nodeStatus('CE-12') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="platform">生成平台版本</button>' : ''}${nodeStatus('CE-13') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="shotlist">生成分镜</button>' : ''}${nodeStatus('CE-16') === 'ready' ? '<button class="button button-quiet" type="button" data-render-content="' + escapeHtml(task.id) + '">本地渲染</button>' : ''}${nodeStatus('CE-22') === 'ready' ? '<button class="button button-quiet" type="button" data-package-content="' + escapeHtml(task.id) + '">导出内容包</button>' : ''}${nodeStatus('CE-23') === 'ready' ? '<button class="button button-dark" type="button" data-create-release-draft="' + escapeHtml(task.id) + '">创建发布草稿</button>' : ''}${nodeStatus('CE-26') === 'ready' ? '<button class="button button-quiet" type="button" data-generate-content="retro">生成复盘建议</button>' : ''}</div></section>
+      ${structurePanel}
+      </div></details>
+      <details class="cw-run-detail" data-cw-details="batch"><summary><span class="cw-details-title">数字人批量生产</span><small>资产登记 · 组合计划 · 逐条审核与导出</small><span class="cw-details-chevron" aria-hidden="true">⌄</span></summary><div class="cw-details-body">
+      ${renderBatchPanel(task)}
+      </div></details>
+      <details class="cw-run-detail" data-cw-details="feedback"><summary><span class="cw-details-title">反馈 · 回放 · 版本证据</span><small>发布反馈记录、运行回放与版本 JSON 证据</small><span class="cw-details-chevron" aria-hidden="true">⌄</span></summary><div class="cw-details-body">
+      <section class="content-feedback-box"><div><div class="eyebrow">FEEDBACK LOOP</div><h3>反馈与下一步</h3></div><ul class="content-asset-list">${feedbackSummary}</ul></section>
+      </div></details>
       ${replay ? `<details class="content-source-details" open><summary>运行回放：${escapeHtml(replaySummary)}</summary><pre>${escapeHtml(JSON.stringify(replay, null, 2))}</pre></details>` : ''}
       <details class="content-source-details"><summary>查看素材说明与版本证据</summary><p>${escapeHtml(task.sourceBrief || '尚未填写素材说明')}</p><pre>${escapeHtml(JSON.stringify({ run: task.run, topicSelection: task.topicSelection, reviews: task.reviews, versions: task.versions, feedback: task.feedback }, null, 2))}</pre></details>
     `;
+    for (const [key, value] of Object.entries(detailOpenState)) {
+      const node = elements.detail.querySelector(`details[data-cw-details="${key}"]`);
+      if (node) node.open = value;
+    }
     const batchPlanForm = elements.detail.querySelector('#content-batch-plan-form');
     const batchRegistration = elements.detail.querySelector('.content-batch-registration');
     if (batchRegistration && !batchRegistration.querySelector('[data-batch-register="template"]')) {
@@ -686,8 +724,9 @@ if (root) {
       contentState.selectedTaskId = payload.task.id;
       elements.form.reset();
       delete elements.form.dataset.sourceWorkFingerprint;
-      elements.formMessage.textContent = '已创建，下一步启动本地测试工作流';
-      elements.formMessage.className = 'form-message is-success';
+      elements.formMessage.textContent = '';
+      elements.formMessage.className = 'form-message';
+      closeCreateDrawer();
       await loadTasks({ selectFirst: false });
     } catch (error) {
       elements.formMessage.textContent = error.message || '创建失败';
@@ -1125,11 +1164,17 @@ if (root) {
   }
 
   elements.form.addEventListener('submit', createTask);
+  elements.drawerClose?.addEventListener('click', closeCreateDrawer);
+  elements.drawerBackdrop?.addEventListener('click', closeCreateDrawer);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && elements.drawer?.classList.contains('is-open')) {
+      closeCreateDrawer();
+    }
+  });
   root.addEventListener('click', (event) => {
     const createFocusButton = event.target.closest('[data-content-create-focus]');
     if (createFocusButton) {
-      elements.form.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      elements.form.querySelector('[name="title"]')?.focus();
+      openCreateDrawer();
       return;
     }
     const taskButton = event.target.closest('[data-content-task]');
