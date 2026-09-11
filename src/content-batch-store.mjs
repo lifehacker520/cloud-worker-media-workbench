@@ -155,10 +155,26 @@ CREATE TABLE IF NOT EXISTS quality_reports (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+-- F5-02：AI 数字人口播生产任务的最小草稿。
+-- 它不是 content_batches 的替代品，也不构成第二套批次真相：草稿里没有明细、没有状态机，
+-- 只有在 F5-05 通过 preflight 之后才会由 buildBatchPlan + createContentBatch 变成真正的批次。
+CREATE TABLE IF NOT EXISTS digital_human_drafts (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  title TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_content_batches_project ON content_batches(project_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_content_batch_items_ready ON content_batch_items(batch_id, status, lease_until);
 CREATE INDEX IF NOT EXISTS idx_model_runs_item ON model_runs(item_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_quality_reports_item ON quality_reports(item_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_digital_human_drafts_project ON digital_human_drafts(project_id, updated_at);
 `;
 
 function text(value, fallback = '') {
@@ -697,6 +713,85 @@ export class ContentBatchStore {
       ? this.db.prepare('SELECT * FROM content_batches WHERE project_id = ? AND task_id = ? ORDER BY updated_at DESC').all(context.project.id, taskId)
       : this.db.prepare('SELECT * FROM content_batches WHERE project_id = ? ORDER BY updated_at DESC').all(context.project.id);
     return rows.map((row) => this.getBatch(actor, row.id));
+  }
+
+  /* -------------------------------------------------------------------------
+     F5-02：最小任务草稿
+     草稿只保存“这次生产想做什么”，不保存明细、不参与状态机、不进入交付。
+     真正的批次仍然只由 buildBatchPlan + createContentBatch 产生。
+     ------------------------------------------------------------------------- */
+
+  getDraft(actor, projectId, taskId = null) {
+    const context = this.context(actor, projectId);
+    const row = taskId
+      ? this.db.prepare('SELECT * FROM digital_human_drafts WHERE project_id = ? AND task_id = ? ORDER BY updated_at DESC LIMIT 1').get(context.project.id, taskId)
+      : this.db.prepare('SELECT * FROM digital_human_drafts WHERE project_id = ? ORDER BY updated_at DESC LIMIT 1').get(context.project.id);
+    if (!row) return null;
+    return this.publicDraft(row);
+  }
+
+  publicDraft(row) {
+    return {
+      ...parse(row.payload_json, {}),
+      id: row.id,
+      tenantId: row.tenant_id,
+      projectId: row.project_id,
+      taskId: row.task_id,
+      mode: row.mode,
+      title: row.title,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  saveDraft(actor, input = {}) {
+    const context = this.context(actor, input.projectId);
+    const taskId = text(input.taskId);
+    if (!taskId) throw new Error('草稿必须关联一个内容任务');
+    const existing = this.getDraft(actor, context.project.id, taskId);
+    const mode = text(input.mode, existing?.mode || 'A');
+    if (!['A', 'B'].includes(mode)) throw new Error('草稿模式只能是 A 或 B');
+    const id = text(input.id, existing?.id || 'dh_draft_' + randomUUID());
+    const timestamp = now();
+    /* 合并语义：字段为 undefined 表示“保持原值”，null / 空串表示“清除”。
+       这样客户端每次只提交它改动的字段，不会把别的选择意外抹掉。 */
+    const pickText = (value, previous) => {
+      if (value === undefined) return previous ?? null;
+      const trimmed = typeof value === 'string' ? value.trim() : '';
+      return trimmed ? trimmed : null;
+    };
+    const pickCount = (value, previous) => {
+      if (value === undefined) return previous ?? null;
+      const parsed = Number(value);
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    };
+    const pickObject = (value, previous) => {
+      if (value === undefined) return previous ?? null;
+      return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+    };
+    const payload = {
+      note: pickText(input.note, existing?.note),
+      plannedItemCount: pickCount(input.plannedItemCount, existing?.plannedItemCount),
+      /* F5-03/F5-04：P02 选定的文案版本、P03/P05 选定的形象/声音/模板版本。
+         这里只做存储，不做业务判定（判定在投影层 + buildBatchPlan）。 */
+      selectedScriptVersionId: pickText(input.selectedScriptVersionId, existing?.selectedScriptVersionId),
+      selectedAvatarVersionId: pickText(input.selectedAvatarVersionId, existing?.selectedAvatarVersionId),
+      selectedVoiceVersionId: pickText(input.selectedVoiceVersionId, existing?.selectedVoiceVersionId),
+      selectedTemplateVersionId: pickText(input.selectedTemplateVersionId, existing?.selectedTemplateVersionId),
+      contextSnapshot: pickObject(input.contextSnapshot, existing?.contextSnapshot),
+    };
+    this.db.prepare(`
+      INSERT INTO digital_human_drafts (id, tenant_id, project_id, task_id, mode, title, payload_json, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET mode = excluded.mode, title = excluded.title,
+        payload_json = excluded.payload_json, updated_at = excluded.updated_at
+    `).run(
+      id, context.tenantId, context.project.id, taskId, mode,
+      text(input.title, existing?.title || '未命名口播生产草稿'),
+      json(payload), actorName(actor), existing?.createdAt || timestamp, timestamp,
+    );
+    return this.publicDraft(this.db.prepare('SELECT * FROM digital_human_drafts WHERE id = ?').get(id));
   }
 
   recoverExpiredLeases(actor, batchId, timestamp = now()) {

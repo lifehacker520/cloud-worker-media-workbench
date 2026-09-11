@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f2ec" />
+    <title>内容编辑 · 云员工工作台视觉 Demo</title>
+    <link rel="stylesheet" href="/content-editor-visual-demo.css" />
+  </head>
+  <body>
+    <div class="demo-shell">
+      <aside class="demo-sidebar">
+        <a class="demo-brand" href="#" aria-label="云员工工作台视觉 Demo">
+          <span class="demo-brand-mark">✦</span>
+          <span class="demo-brand-copy">
+            <strong>云员工工作台</strong>
+            <small>CLOUD WORKER WORKBENCH</small>
+          </span>
+        </a>
+
+        <div class="demo-workspace-switcher">
+          <span class="demo-overline">当前工作区</span>
+          <strong>内容运营工作台</strong>
+          <span>7 个云员工协同工作</span>
+          <span class="demo-chevron">⌄</span>
+        </div>
+
+        <nav class="demo-nav" aria-label="云员工岗位">
+          <div class="demo-nav-label">云员工</div>
+          <a class="demo-nav-item is-active" href="#content-editor" aria-current="page">
+            <span class="demo-nav-icon tone-indigo">✦</span>
+            <span class="demo-nav-copy"><strong>内容编辑</strong><small>素材、脚本与审核</small></span>
+            <span class="demo-nav-state is-ready">可用</span>
+          </a>
+          <a class="demo-nav-item" href="#account-ops">
+            <span class="demo-nav-icon tone-blue">◎</span>
+            <span class="demo-nav-copy"><strong>账号运营</strong><small>账号策略与日常运营</small></span>
+            <span class="demo-nav-state">规划中</span>
+          </a>
+          <a class="demo-nav-item" href="#private-sales">
+            <span class="demo-nav-icon tone-coral">⌁</span>
+            <span class="demo-nav-copy"><strong>私域跟单</strong><small>线索跟进与交接</small></span>
+            <span class="demo-nav-state">规划中</span>
+          </a>
+          <a class="demo-nav-item" href="#customer-success">
+            <span class="demo-nav-icon tone-green">◌</span>
+            <span class="demo-nav-copy"><strong>客户成功客服</strong><small>问题响应与客户记录</small></span>
+            <span class="demo-nav-state">规划中</span>
+          </a>
+          <a class="demo-nav-item" href="#geo-specialist">
+            <span class="demo-nav-icon tone-amber">◇</span>
+            <span class="demo-nav-copy"><strong>GEO 专员</strong><small>搜索可见性与问答</small></span>
+            <span class="demo-nav-state">规划中</span>
+          </a>
+          <a class="demo-nav-item" href="#live-ops">
+            <span class="demo-nav-icon tone-pink">◉</span>
+            <span class="demo-nav-copy"><strong>直播运营</strong><small>直播准备与复盘</small></span>
+            <span class="demo-nav-state">规划中</span>
+          </a>
+          <a class="demo-nav-item" href="#phone-sales">
+            <span class="demo-nav-icon tone-violet">⌕</span>
+            <span class="demo-nav-copy"><strong>电话销售</strong><small>线索触达与话术</small></span>
+            <span class="demo-nav-state">规划中</span>
+          </a>
+        </nav>
+
+        <div class="demo-sidebar-bottom">
+          <a class="demo-utility-link" href="#assets"><span>▣</span><span>素材资产</span></a>
+          <a class="demo-utility-link" href="#settings"><span>⚙</span><span>工作台设置</span></a>
+          <div class="demo-human-note"><span class="demo-signal-dot"></span><span><strong>AI 整理，人来判断</strong><small>所有交付都保留审核状态</small></span></div>
+        </div>
+      </aside>
+
+      <main class="demo-main">
+        <header class="demo-topbar">
+          <div class="demo-breadcrumb"><span>云员工</span><i>/</i><strong>内容编辑</strong><span class="demo-demo-label">视觉 Demo</span></div>
+          <div class="demo-topbar-actions">
+            <span class="demo-save-status"><span class="demo-saved-dot"></span>本地演示 · 不写入数据</span>
+            <button class="demo-icon-button" type="button" aria-label="通知">♧<span class="demo-notification-dot"></span></button>
+            <span class="demo-avatar">R</span>
+          </div>
+        </header>
+
+        <div class="demo-page-head">
+          <div>
+            <span class="demo-overline">内容编辑云员工</span>
+            <h1>把素材，整理成可以交付的内容。</h1>
+            <p>从平台信号开始，完成选题、脚本、预览和人工审核；每一条内容都知道下一步。</p>
+          </div>
+          <div class="demo-head-actions">
+            <button class="demo-button demo-button-quiet" type="button">查看工作流</button>
+            <button class="demo-button demo-button-primary" type="button"><span>＋</span> 新建内容任务</button>
+          </div>
+        </div>
+
+        <section class="demo-content-grid" aria-label="内容编辑视觉代表页">
+          <aside class="demo-task-panel">
+            <div class="demo-panel-heading">
+              <div><span class="demo-overline">今日待处理</span><h2>内容任务</h2></div>
+              <span class="demo-count-badge">06</span>
+            </div>
+            <div class="demo-filter-row"><button class="demo-filter is-active" type="button">全部 <b>6</b></button><button class="demo-filter" type="button">待审核 <b>2</b></button><button class="demo-filter" type="button">草稿 <b>3</b></button></div>
+
+            <div class="demo-task-list">
+              <button class="demo-task is-selected" type="button" data-demo-task="guide" data-title="秋季高效办公指南" data-copy="把复杂的工作方法整理成一条清晰、可执行的内容。" data-platform="小红书 · 图文" data-state="待审核" data-tone="indigo">
+                <span class="demo-task-thumb art-guide"><i>WORK<br />SMART</i></span>
+                <span class="demo-task-copy"><strong>秋季高效办公指南</strong><small>小红书 · 图文 · 12 分钟前</small><em class="demo-status status-review">待审核</em></span>
+                <span class="demo-task-arrow">›</span>
+              </button>
+              <button class="demo-task" type="button" data-demo-task="video" data-title="3 分钟认识云员工" data-copy="用一段轻量短视频说明云员工如何接住重复工作。" data-platform="抖音 · 短视频" data-state="制作中" data-tone="blue">
+                <span class="demo-task-thumb art-video"><i>3:00<br />HOW IT<br />WORKS</i></span>
+                <span class="demo-task-copy"><strong>3 分钟认识云员工</strong><small>抖音 · 短视频 · 28 分钟前</small><em class="demo-status status-making">制作中</em></span>
+                <span class="demo-task-arrow">›</span>
+              </button>
+              <button class="demo-task" type="button" data-demo-task="case" data-title="客户案例：从线索到交付" data-copy="以真实过程为线索，呈现一次内容运营的前后变化。" data-platform="公众号 · 长图文" data-state="草稿" data-tone="coral">
+                <span class="demo-task-thumb art-case"><i>CASE<br />STUDY</i></span>
+                <span class="demo-task-copy"><strong>客户案例：从线索到交付</strong><small>公众号 · 长图文 · 1 小时前</small><em class="demo-status status-draft">草稿</em></span>
+                <span class="demo-task-arrow">›</span>
+              </button>
+              <button class="demo-task" type="button" data-demo-task="weekly" data-title="本周内容复盘" data-copy="把本周发布结果和下一轮动作放在一张可读的复盘卡里。" data-platform="内部 · 复盘" data-state="待补充" data-tone="green">
+                <span class="demo-task-thumb art-weekly"><i>WEEK<br />REVIEW</i></span>
+                <span class="demo-task-copy"><strong>本周内容复盘</strong><small>内部 · 复盘 · 昨天</small><em class="demo-status status-pending">待补充</em></span>
+                <span class="demo-task-arrow">›</span>
+              </button>
+              <button class="demo-task" type="button" data-demo-task="cover" data-title="知识库封面模板" data-copy="为知识库内容准备统一的封面和标题组合。" data-platform="素材 · 封面" data-state="草稿" data-tone="violet">
+                <span class="demo-task-thumb art-cover"><i>IDEA<br />LIBRARY</i></span>
+                <span class="demo-task-copy"><strong>知识库封面模板</strong><small>素材 · 封面 · 昨天</small><em class="demo-status status-draft">草稿</em></span>
+                <span class="demo-task-arrow">›</span>
+              </button>
+            </div>
+            <button class="demo-more-tasks" type="button">查看全部任务 <span>→</span></button>
+          </aside>
+
+          <section class="demo-workspace-stage">
+            <div class="demo-stage-toolbar">
+              <div class="demo-stage-tabs"><button class="is-active" type="button">内容预览</button><button type="button">内容结构</button><button type="button">版本记录</button></div>
+              <div class="demo-stage-tools"><button type="button" aria-label="缩小">−</button><span>80%</span><button type="button" aria-label="放大">＋</button><button type="button" aria-label="全屏">⛶</button></div>
+            </div>
+            <div class="demo-preview-surface">
+              <div class="demo-preview-topline"><span class="demo-platform-pill"><span class="demo-platform-dot"></span><span id="demo-preview-platform">小红书 · 图文</span></span><span class="demo-preview-version">V3 · 2026-09-09 17:06</span></div>
+              <article class="demo-preview-card">
+                <div class="demo-preview-art art-guide" id="demo-preview-art">
+                  <div class="demo-art-grid"></div>
+                  <span class="demo-art-kicker">CLOUD WORKER / 01</span>
+                  <strong>把复杂的工作<br /><em>变得更清晰</em></strong>
+                  <span class="demo-art-caption">一份可执行的高效办公指南</span>
+                  <span class="demo-art-orb orb-one"></span><span class="demo-art-orb orb-two"></span>
+                </div>
+                <div class="demo-preview-copy">
+                  <div class="demo-preview-copy-heading"><span class="demo-overline">内容预览</span><span class="demo-preview-read-time">预计阅读 3 分钟</span></div>
+                  <h2 id="demo-preview-title">秋季高效办公指南</h2>
+                  <p id="demo-preview-copy">把复杂的工作方法整理成一条清晰、可执行的内容。</p>
+                  <div class="demo-preview-tags"><span>#工作方法</span><span>#云员工</span><span>#效率提升</span></div>
+                </div>
+              </article>
+              <div class="demo-preview-footer"><span><b>内容完整度</b><strong>86%</strong></span><span><b>已引用素材</b><strong>04 个</strong></span><span><b>待确认事实</b><strong class="is-warning">02 项</strong></span><span class="demo-preview-footer-note">预览仅用于结构检查</span></div>
+            </div>
+          </section>
+
+          <aside class="demo-inspector">
+            <div class="demo-inspector-heading"><div><span class="demo-overline">任务详情</span><h2>审核与交付</h2></div><button class="demo-more-button" type="button" aria-label="更多操作">•••</button></div>
+            <div class="demo-review-card">
+              <div class="demo-review-card-top"><span class="demo-review-icon">✦</span><span class="demo-status status-review" id="demo-preview-state">待审核</span></div>
+              <h3>需要你确认这条内容</h3>
+              <p>AI 已完成整理和初稿，人需要确认事实、品牌表达与发布准备。</p>
+              <div class="demo-review-progress"><span><b>审核准备度</b><strong>3 / 4</strong></span><i><em></em></i></div>
+              <div class="demo-review-checks"><div class="is-done"><span>✓</span><span>素材来源已记录</span></div><div class="is-done"><span>✓</span><span>平台版本已生成</span></div><div class="is-done"><span>✓</span><span>内容结构已检查</span></div><div class="is-current"><span>4</span><span>等待人工审核决定</span></div></div>
+            </div>
+
+            <div class="demo-detail-card">
+              <div class="demo-card-title"><h3>内容信息</h3><button type="button">编辑</button></div>
+              <dl class="demo-detail-list"><div><dt>负责人</dt><dd><span class="demo-small-avatar">R</span> Rance</dd></div><div><dt>目标平台</dt><dd id="demo-inspector-platform">小红书 · 图文</dd></div><div><dt>内容类型</dt><dd>知识分享</dd></div><div><dt>素材数量</dt><dd>4 个 <span class="demo-inline-state">已授权</span></dd></div><div><dt>最后更新</dt><dd>今天 17:06</dd></div></dl>
+            </div>
+
+            <div class="demo-delivery-card">
+              <div class="demo-card-title"><h3>下一步动作</h3><span class="demo-action-label">人工闸门</span></div>
+              <button class="demo-button demo-button-primary demo-button-wide" type="button">打开审核清单 <span>→</span></button>
+              <button class="demo-button demo-button-outline demo-button-wide" type="button">退回修改</button>
+              <small>通过审核后才可进入交付准备，外部发布仍需单独确认。</small>
+            </div>
+          </aside>
+        </section>
+
+        <footer class="demo-footer"><span>云员工工作台 · 内容编辑视觉代表页</span><span>视觉方向：清爽工作室 / 靛蓝品牌色 / 明确状态</span></footer>
+      </main>
+    </div>
+
+    <script>
+      const taskButtons = [...document.querySelectorAll('[data-demo-task]')];
+      const title = document.querySelector('#demo-preview-title');
+      const copy = document.querySelector('#demo-preview-copy');
+      const state = document.querySelector('#demo-preview-state');
+      const platform = document.querySelector('#demo-preview-platform');
+      const inspectorPlatform = document.querySelector('#demo-inspector-platform');
+      const art = document.querySelector('#demo-preview-art');
+
+      taskButtons.forEach((task) => task.addEventListener('click', () => {
+        taskButtons.forEach((item) => item.classList.toggle('is-selected', item === task));
+        title.textContent = task.dataset.title;
+        copy.textContent = task.dataset.copy;
+        state.textContent = task.dataset.state;
+        state.className = 'demo-status status-' + (task.dataset.state === '待审核' ? 'review' : task.dataset.state === '制作中' ? 'making' : task.dataset.state === '草稿' ? 'draft' : task.dataset.state === '待补充' ? 'pending' : 'review');
+        platform.textContent = task.dataset.platform;
+        inspectorPlatform.textContent = task.dataset.platform;
+        art.className = 'demo-preview-art art-' + task.dataset.tone;
+      }));
+    </script>
+  </body>
+</html>

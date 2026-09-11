@@ -16,11 +16,6 @@ const state = {
 };
 
 const VIEW_META = {
-  overview: {
-    eyebrow: '当前工作区',
-    title: '工作台',
-    description: '查看今天的待处理事项和下一步。',
-  },
   monitor: {
     eyebrow: '工具中心 / 账号监控',
     title: '监控中心',
@@ -30,6 +25,13 @@ const VIEW_META = {
     eyebrow: '云员工 / 内容编辑',
     title: '内容编辑云员工',
     description: '从目标和素材开始，形成可审核、可交付的内容任务。',
+  },
+  /* F5-01：AI 数字人口播生产中心从属于内容编辑云员工，不是独立产品岗位。 */
+  'digital-human': {
+    eyebrow: '云员工 / 内容编辑 · AI 数字人口播',
+    title: 'AI 数字人口播生产中心',
+    description:
+      '用已确认文案、数字人资产或已有视频，批量生成并人工验收口播视频。当前为演示骨架，未接入真实模型。',
   },
   publish: {
     eyebrow: '兼容入口',
@@ -68,13 +70,16 @@ const VIEW_META = {
   },
 };
 
+// VIS-02：工作台首页已移除。旧 #overview / #工作台 链接统一兼容到监控中心，不留死链接或空白页。
 const VIEW_ALIASES = {
+  overview: 'monitor',
   accounts: 'monitor',
   dashboard: 'monitor',
   insights: 'monitor',
 };
 
 const PLANNED_ROLE_META = {
+  平面设计: { icon: '▤', description: '视觉物料、版式与素材规范工作流正在设计中。' },
   账号运营: { icon: '◎', description: '账号策略、栏目与日常运营工作流正在设计中。' },
   私域跟单: { icon: '⌁', description: '线索跟进、提醒与交接工作流正在设计中。' },
   客户成功客服: { icon: '◌', description: '问题响应、回访与客户记录工作流正在设计中。' },
@@ -115,7 +120,7 @@ let platformFilter = 'all';
 let groupFilter = 'all';
 let workPlatformFilter = 'all';
 let selectedAccountId = null;
-let currentView = 'overview';
+let currentView = 'monitor';
 let monitorSection = 'monitor';
 let currentRole = '内容编辑云员工';
 let currentSettingsPanel = 'general';
@@ -136,14 +141,14 @@ let updaterPhase = 'idle';
 let updaterCheckTimer = null;
 let updaterVersion = '';
 let updaterAutomaticCheck = false;
-const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v2';
-const MONITOR_SPLIT_MIN = 280;
-const MONITOR_SPLIT_DEFAULT = 420;
+/* VIS-04：键名升级到 v3。v2 历史值可能已被“空存档被当成 0”的旧逻辑污染成最小值。 */
+const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v3';
+const MONITOR_SPLIT_MIN = 300;
+const MONITOR_SPLIT_DEFAULT = 336;
 const MONITOR_SPLIT_MIN_FEED = 420;
 
 const elements = {
-  stats: document.querySelector('#stats'),
-  accounts: document.querySelector('#overview-account-health'),
+  accounts: document.querySelector('#monitor-account-health'),
   works: document.querySelector('#works-feed'),
   accountCount: document.querySelector('#monitor-account-count'),
   feedCount: document.querySelector('#feed-count-label'),
@@ -185,8 +190,7 @@ const elements = {
   currentViewEyebrow: document.querySelector('#current-view-eyebrow'),
   currentViewTitle: document.querySelector('#current-view-title'),
   currentViewDescription: document.querySelector('#current-view-description'),
-  overviewHighlights: document.querySelector('#overview-highlights'),
-  accountHealth: document.querySelector('#overview-account-health'),
+  accountHealth: document.querySelector('#monitor-account-health'),
   monitorAccountCount: document.querySelector('#monitor-account-count'),
   monitorFeedLabel: document.querySelector('#monitor-feed-label'),
   monitorSelection: document.querySelector('#monitor-selection'),
@@ -223,6 +227,20 @@ const elements = {
   viewPanels: [...document.querySelectorAll('[data-view-panel]')],
   navItems: [...document.querySelectorAll('.nav-item[data-view]')],
   navBadges: [...document.querySelectorAll('[data-nav-badge]')],
+  /* 动作条与检视器（VIS-03 骨架层） */
+  stripAccountCount: document.querySelector('#strip-account-count'),
+  stripLinkedCount: document.querySelector('#strip-linked-count'),
+  stripUnreadCount: document.querySelector('#strip-unread-count'),
+  stripErrorCount: document.querySelector('#strip-error-count'),
+  inspectorAccountTotal: document.querySelector('#inspector-account-total'),
+  inspectorWorkTotal: document.querySelector('#inspector-work-total'),
+  inspectorCurrentAccount: document.querySelector('#inspector-current-account'),
+  inspectorPlatformTags: document.querySelector('#inspector-platform-tags'),
+  inspectorRefresh: document.querySelector('#inspector-refresh'),
+  addAccountDrawer: document.querySelector('#drawer-add-account'),
+  addAccountBackdrop: document.querySelector('#drawer-add-account-backdrop'),
+  openAddAccount: document.querySelector('#open-add-account'),
+  closeAddAccount: document.querySelector('#close-add-account'),
 };
 
 function escapeHtml(value) {
@@ -488,67 +506,6 @@ async function apiRequest(path, options = {}) {
     throw error;
   }
   return payload;
-}
-
-function renderStats() {
-  const cards = [
-    {
-      label: '监控账号',
-      value: state.stats.accountCount ?? 0,
-      suffix: '个',
-      hint: (state.stats.activeAccountCount ?? 0) + ' 个已连接',
-      tone: 'blue',
-    },
-    {
-      label: '已抓取作品',
-      value: state.stats.workCount ?? 0,
-      suffix: '条',
-      hint: '本地去重后',
-      tone: 'ink',
-    },
-    {
-      label: '新发现',
-      value: state.stats.unseenWorkCount ?? 0,
-      suffix: '条',
-      hint: '待你查看',
-      tone: 'orange',
-    },
-    {
-      label: '最近一次刷新',
-      value: state.meta.lastRefreshAt ? formatTime(state.meta.lastRefreshAt) : '—',
-      suffix: '',
-      hint: state.meta.lastRefreshSummary
-        ? '成功 ' +
-          state.meta.lastRefreshSummary.succeeded +
-          ' / ' +
-          state.meta.lastRefreshSummary.checked +
-          ' · ' +
-          formatDuration(state.meta.lastRefreshSummary.durationMs)
-        : '点击刷新开始',
-      tone: 'green',
-    },
-  ];
-
-  elements.stats.innerHTML = cards
-    .map(
-      (card) =>
-        '<article class="stat-card tone-' +
-        card.tone +
-        '">' +
-        '<div class="stat-label">' +
-        escapeHtml(card.label) +
-        '</div>' +
-        '<div class="stat-value">' +
-        escapeHtml(card.value) +
-        '<small>' +
-        escapeHtml(card.suffix) +
-        '</small></div>' +
-        '<div class="stat-hint">' +
-        escapeHtml(card.hint) +
-        '</div>' +
-        '</article>',
-    )
-    .join('');
 }
 
 function stateLabel(account) {
@@ -1103,58 +1060,6 @@ function renderMonitoringInsights() {
   }
 }
 
-function renderOverview() {
-  if (!elements.overviewHighlights) {
-    return;
-  }
-  const attentionCount = state.accounts.filter((account) => account.state === 'error').length;
-  const xhsCount = state.stats.platformCounts?.xhs || 0;
-  const douyinCount = state.stats.platformCounts?.douyin || 0;
-  const channelsCount = state.stats.platformCounts?.channels || 0;
-  const unseen = state.stats.unseenWorkCount || 0;
-  const rows = [
-    {
-      icon: unseen ? '!' : '✓',
-      label: unseen ? '有新作品待查看' : '暂无未读作品',
-      value: unseen ? unseen + ' 条' : '已清空',
-      tone: unseen ? 'orange' : 'green',
-      detail: unseen ? '进入监控中心查看封面和链接' : '刷新后会自动建立新作品基线',
-    },
-    {
-      icon: attentionCount ? '!' : '✓',
-      label: attentionCount ? '有账号需要处理' : '账号状态正常',
-      value: attentionCount ? attentionCount + ' 个' : '已连接',
-      tone: attentionCount ? 'red' : 'blue',
-      detail: attentionCount
-        ? '查看账号卡片里的具体失败原因'
-        : '小红书 ' + xhsCount + ' · 抖音 ' + douyinCount + ' · 视频号 ' + channelsCount,
-    },
-    {
-      icon: '↗',
-      label: '下一步工作台动作',
-      value: '先监控，再沉淀',
-      tone: 'ink',
-      detail: '进入内容编辑，把素材整理成可审核任务',
-    },
-  ];
-  elements.overviewHighlights.innerHTML = rows
-    .map(
-      (row) =>
-        '<div class=\"highlight-row\"><span class=\"highlight-icon tone-' +
-        row.tone +
-        '\">' +
-        escapeHtml(row.icon) +
-        '</span><div><strong>' +
-        escapeHtml(row.label) +
-        '</strong><small>' +
-        escapeHtml(row.detail) +
-        '</small></div><b>' +
-        escapeHtml(row.value) +
-        '</b></div>',
-    )
-    .join('');
-}
-
 function renderWorkPlatformTabs() {
   if (!elements.workPlatformTabs) {
     return;
@@ -1281,25 +1186,33 @@ function renderAccountHealth() {
           unreadCount +
           ' 条新作品待查看">!</span>'
         : '') +
-      '<div class="monitor-account-actions"><span class="health-status ' +
+      '<div class="monitor-account-actions"><a href="' +
+      escapeHtml(profileUrl) +
+      '" target="_blank" rel="noreferrer" class="row-act" title="打开 ' +
+      escapeHtml(account.name) +
+      ' 的主页" aria-label="打开 ' +
+      escapeHtml(account.name) +
+      ' 的主页">↗</a>' +
+      (needsBrowserRefresh
+        ? '<button class="monitor-browser-refresh row-act" type="button" data-browser-refresh-account="' +
+          escapeHtml(account.id) +
+          '" title="浏览器补采 ' +
+          escapeHtml(account.name) +
+          '" aria-label="浏览器补采 ' +
+          escapeHtml(account.name) +
+          '">↻</button>'
+        : '') +
+      '<button class="monitor-delete-account row-act is-danger" type="button" data-delete-account="' +
+      escapeHtml(account.id) +
+      '" title="删除 ' +
+      escapeHtml(account.name) +
+      '" aria-label="删除 ' +
+      escapeHtml(account.name) +
+      '">✕</button><span class="health-status ' +
       statusClass +
       '">' +
       statusText +
-      '</span><a href="' +
-      escapeHtml(profileUrl) +
-      '" target="_blank" rel="noreferrer">打开主页 ↗</a>' +
-      (needsBrowserRefresh
-        ? '<button class="monitor-browser-refresh" type="button" data-browser-refresh-account="' +
-          escapeHtml(account.id) +
-          '" aria-label="浏览器补采 ' +
-          escapeHtml(account.name) +
-          '">补采</button>'
-        : '') +
-      '<button class="monitor-delete-account" type="button" data-delete-account="' +
-      escapeHtml(account.id) +
-      '" aria-label="删除 ' +
-      escapeHtml(account.name) +
-      '">删除</button></div></div></article>'
+      '</span></div></div></article>'
     );
   });
   elements.accountHealth.innerHTML = rows.length
@@ -1432,10 +1345,66 @@ function renderNavigationBadges() {
   });
 }
 
+/**
+ * 动作条 + 检视器的数值回填。
+ * 只使用 state 中已经存在的真实数据，不引入任何示例指标。
+ */
+function renderMonitorStrip() {
+  const accounts = state.accounts || [];
+  const works = state.works || [];
+  const linkedCount = accounts.filter((account) => account.state === 'active').length;
+  const errorCount = accounts.filter((account) => account.state === 'error').length;
+  const unseenCount = state.stats.unseenWorkCount ?? works.filter((work) => !work.seen).length;
+  const totalCount = state.stats.accountCount ?? accounts.length;
+
+  const pairs = [
+    [elements.stripAccountCount, totalCount],
+    [elements.stripLinkedCount, linkedCount],
+    [elements.stripUnreadCount, unseenCount],
+    [elements.stripErrorCount, errorCount],
+    [elements.inspectorAccountTotal, totalCount],
+    [elements.inspectorWorkTotal, state.stats.workCount ?? works.length],
+  ];
+  pairs.forEach(([node, value]) => {
+    if (node) {
+      node.textContent = String(value ?? 0);
+    }
+  });
+
+  if (elements.inspectorCurrentAccount) {
+    const selected = accounts.find((account) => account.id === selectedAccountId);
+    elements.inspectorCurrentAccount.textContent = selected ? selected.name : '全部账号';
+  }
+
+  if (elements.inspectorPlatformTags) {
+    const counts = new Map();
+    accounts.forEach((account) => {
+      const key = platformFor(account.platform).label;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const tones = ['tone-indigo', 'tone-mint', 'tone-amber', 'tone-rose'];
+    elements.inspectorPlatformTags.innerHTML = counts.size
+      ? Array.from(counts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(
+            ([label, count], index) =>
+              '<span class="tag ' +
+              tones[index % tones.length] +
+              '">' +
+              escapeHtml(label) +
+              ' ' +
+              count +
+              '</span>',
+          )
+          .join('')
+      : '<span class="tag">暂无账号</span>';
+  }
+}
+
 function routeStateFromHash(hash = window.location.hash) {
   const [rawView = '', rawSection = ''] = hash.replace(/^#/, '').split('/');
   const isAudioAlias = rawView === 'insights' || rawView === 'dashboard';
-  const view = VIEW_ALIASES[rawView] || rawView || 'overview';
+  const view = VIEW_ALIASES[rawView] || rawView || 'monitor';
   return {
     view,
     monitorSection: view === 'monitor' && (isAudioAlias || rawSection === 'audio' || rawSection === 'insights') ? 'insights' : 'monitor',
@@ -1444,7 +1413,7 @@ function routeStateFromHash(hash = window.location.hash) {
 
 function setView(view, options = {}) {
   const requestedView = VIEW_ALIASES[view] || view;
-  const nextView = VIEW_META[requestedView] ? requestedView : 'overview';
+  const nextView = VIEW_META[requestedView] ? requestedView : 'monitor';
   const viewChanged = currentView !== nextView;
   if (nextView === 'monitor') {
     const requestedSection = options.monitorSection || (view === 'insights' || view === 'dashboard' ? 'insights' : '');
@@ -1465,7 +1434,11 @@ function setView(view, options = {}) {
     currentRole = options.role || (currentRole === '内容编辑云员工' ? '账号运营' : currentRole);
   }
   currentView = nextView;
-  const meta = VIEW_META[nextView];
+  document.body.dataset.activeView = nextView;
+  /* VIS-04：数据看板是监控中心下的子页面，页头文案要跟着子页走，不能一直写“监控中心”。 */
+  document.body.dataset.monitorSection = nextView === 'monitor' ? monitorSection : '';
+  const meta =
+    nextView === 'monitor' && monitorSection === 'insights' ? VIEW_META.insights : VIEW_META[nextView];
   const plannedMeta = PLANNED_ROLE_META[currentRole] || PLANNED_ROLE_META['账号运营'];
   elements.currentViewEyebrow.textContent = nextView === 'planned' ? '云员工 / 规划中' : meta.eyebrow;
   elements.currentViewTitle.textContent = nextView === 'planned' ? currentRole + '云员工' : meta.title;
@@ -1489,10 +1462,14 @@ function setView(view, options = {}) {
   });
   elements.navItems.forEach((item) => {
     const isRoleMatch = !item.dataset.role || item.dataset.role === currentRole;
-    item.classList.toggle('is-active', item.dataset.view === nextView && isRoleMatch);
+    /* F5-01：AI 数字人口播生产中心从属于内容编辑云员工，进入后保持“内容编辑”导航高亮。 */
+    const isViewMatch =
+      item.dataset.view === nextView ||
+      (nextView === 'digital-human' && item.dataset.view === 'content');
+    item.classList.toggle('is-active', isViewMatch && isRoleMatch);
   });
   if (elements.refreshButton) {
-    const canRefresh = ['overview', 'monitor'].includes(nextView);
+    const canRefresh = ['monitor'].includes(nextView);
     elements.refreshButton.classList.toggle('is-hidden', !canRefresh);
     if (elements.refreshLabel && !state.meta.refreshInProgress && !isRefreshing) {
       elements.refreshLabel.textContent = nextView === 'monitor' && monitorSection === 'insights' ? '刷新数据' : '刷新监控';
@@ -1512,10 +1489,7 @@ function setView(view, options = {}) {
   }
   if (nextView === 'monitor') {
     window.requestAnimationFrame(() => {
-      const savedWidth = Number(
-        window.localStorage.getItem(MONITOR_SPLIT_STORAGE_KEY),
-      );
-      applyMonitorSplitWidth(Number.isFinite(savedWidth) ? savedWidth : MONITOR_SPLIT_DEFAULT);
+      applyMonitorSplitWidth(readSavedMonitorSplitWidth());
     });
   }
 }
@@ -1524,7 +1498,7 @@ function renderFeedbackContext(view = currentView) {
   if (!elements.feedbackContextLabel || !elements.feedbackContextDetail) {
     return;
   }
-  const meta = VIEW_META[view] || VIEW_META.overview;
+  const meta = VIEW_META[view] || VIEW_META.monitor;
   elements.feedbackContextLabel.textContent = meta.title;
   elements.feedbackContextDetail.textContent =
     '当前路由 #' + view + ' · 只发送页面名称，不包含 Cookie、密钥或本地完整路径。';
@@ -1874,17 +1848,16 @@ async function handleUpdaterClick() {
 
 function render() {
   renderAuth();
-  renderStats();
   renderWorkPlatformTabs();
   renderGroupFilter();
   renderWorks();
   renderMonitoringInsights();
-  renderOverview();
   renderAccountHealth();
   renderSettings();
   renderRuntime();
   renderAdmin();
   renderNavigationBadges();
+  renderMonitorStrip();
   setView(currentView, { updateHash: false });
   renderUpdater();
 }
@@ -2411,6 +2384,17 @@ async function loadSession() {
   }
 }
 
+/**
+ * VIS-04：读取本地存储的分栏宽度。
+ * 缺值时 getItem 返回 null，Number(null) === 0 会被旧逻辑当成“存档宽度 0”，
+ * 于是分栏永远被 clamp 到 MONITOR_SPLIT_MIN，默认值从未生效。
+ */
+function readSavedMonitorSplitWidth() {
+  const raw = window.localStorage.getItem(MONITOR_SPLIT_STORAGE_KEY);
+  const saved = raw === null || raw === '' ? Number.NaN : Number(raw);
+  return Number.isFinite(saved) && saved > 0 ? saved : MONITOR_SPLIT_DEFAULT;
+}
+
 function monitorSplitBounds() {
   const layoutWidth = elements.monitorLayout?.getBoundingClientRect().width || 0;
   return {
@@ -2419,8 +2403,13 @@ function monitorSplitBounds() {
   };
 }
 
-function applyMonitorSplitWidth(value) {
+function applyMonitorSplitWidth(value, attempt = 0) {
   if (!elements.monitorLayout) {
+    return;
+  }
+  /* VIS-04：首帧可能还没完成布局，此时宽度为 0 会把分栏压到最小值并写回本地存储。 */
+  if (elements.monitorLayout.getBoundingClientRect().width < MONITOR_SPLIT_MIN * 2 && attempt < 4) {
+    window.requestAnimationFrame(() => applyMonitorSplitWidth(value, attempt + 1));
     return;
   }
   const bounds = monitorSplitBounds();
@@ -2441,6 +2430,63 @@ function applyMonitorSplitWidth(value) {
   );
   elements.monitorSplitter?.setAttribute('aria-valuenow', String(width));
   window.localStorage.setItem(MONITOR_SPLIT_STORAGE_KEY, String(width));
+}
+
+/**
+ * 添加账号抽屉（VIS-03 骨架层）。
+ * 低频创建不再常驻首屏，改为抽屉；成功后自动收起。
+ */
+function initAddAccountDrawer() {
+  const drawer = elements.addAccountDrawer;
+  const backdrop = elements.addAccountBackdrop;
+  const opener = elements.openAddAccount;
+  if (!drawer || !opener) {
+    return;
+  }
+
+  const openDrawer = () => {
+    backdrop?.classList.add('is-open');
+    drawer.classList.add('is-open');
+    if (elements.addMessage) {
+      elements.addMessage.textContent = '';
+      elements.addMessage.className = 'form-message';
+    }
+    window.setTimeout(() => {
+      drawer.querySelector('#account-name')?.focus();
+    }, 220);
+  };
+
+  const closeDrawer = () => {
+    backdrop?.classList.remove('is-open');
+    drawer.classList.remove('is-open');
+    opener.focus();
+  };
+
+  opener.addEventListener('click', openDrawer);
+  elements.closeAddAccount?.addEventListener('click', closeDrawer);
+  backdrop?.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && drawer.classList.contains('is-open')) {
+      closeDrawer();
+    }
+  });
+
+  /* 加入成功后 app.js 会给提示打上 is-success，据此收起抽屉 */
+  if (elements.addMessage) {
+    new MutationObserver(() => {
+      if (
+        elements.addMessage.classList.contains('is-success') &&
+        drawer.classList.contains('is-open')
+      ) {
+        window.setTimeout(closeDrawer, 700);
+      }
+    }).observe(elements.addMessage, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  /* 检视器里的"立即刷新"复用页头主按钮，避免两套刷新逻辑 */
+  elements.inspectorRefresh?.addEventListener('click', () => {
+    elements.refreshButton?.click();
+  });
 }
 
 function initMonitorSplitter() {
@@ -2576,6 +2622,7 @@ function init() {
   });
 
   elements.refreshButton.addEventListener('click', refreshAll);
+  initAddAccountDrawer();
   [elements.updateButton, elements.settingsUpdateButton]
     .filter(Boolean)
     .forEach((button) => button.addEventListener('click', handleUpdaterClick));

@@ -48,6 +48,11 @@ import {
   transitionContentBatch,
   transitionContentBatchItem,
 } from './src/digital-human-domain.mjs';
+import {
+  projectCenterSummary,
+  projectCopyCandidates,
+  projectAssetCatalog,
+} from './src/digital-human-projection.mjs';
 import { ContentBatchRunner, FakeMediaGenerationConnector } from './src/content-batch-runner.mjs';
 import { ContentBatchStore } from './src/content-batch-store.mjs';
 import { buildContentBatchAudit } from './src/content-batch-audit.mjs';
@@ -4369,6 +4374,133 @@ async function handleRequest(request, response) {
     try {
       const { plan } = batchPlanFor(user, await readRequestBody(request));
       return sendJson(response, { ok: true, plan });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* ---------------------------------------------------------------------------
+     F5-02：AI 数字人口播生产中心的最小数据源。
+     只读派生，不写批次、不调用模型。页面上的所有数字都必须能反查到
+     /api/content/batches、/api/content/tasks、/api/content/batches/catalog 三个真实来源。
+     --------------------------------------------------------------------------- */
+
+  if (requestUrl.pathname === '/api/content/digital-human/summary' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      if (taskId && !task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const projectId = task?.projectId || requestUrl.searchParams.get('projectId');
+      const scopedTaskId = task?.id || taskId;
+      const batches = contentBatchStore
+        ? contentBatchStore.listBatches(user, projectId, scopedTaskId).map((batch) => contentBatchResponse(batch, user))
+        : [];
+      const tasks = visibleContentTasks(user).map(contentTaskSummary);
+      const catalog = contentBatchCatalogFor(user, projectId, scopedTaskId);
+      return sendJson(response, {
+        ok: true,
+        summary: projectCenterSummary({ batches, tasks, catalog, readAt: nowIso() }),
+      });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  if (requestUrl.pathname === '/api/content/digital-human/draft' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      if (taskId && !task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const draft = contentBatchStore
+        ? contentBatchStore.getDraft(user, task?.projectId || requestUrl.searchParams.get('projectId'), task?.id || taskId)
+        : null;
+      return sendJson(response, { ok: true, draft });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  if (requestUrl.pathname === '/api/content/digital-human/draft' && request.method === 'PUT') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const task = contentTaskById(String(body.taskId || ''), user);
+      if (!task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const draft = contentBatchStore.saveDraft(user, {
+        projectId: task.projectId,
+        taskId: task.id,
+        mode: body.mode,
+        title: body.title,
+        note: body.note,
+        plannedItemCount: body.plannedItemCount,
+        selectedScriptVersionId: body.selectedScriptVersionId,
+        selectedAvatarVersionId: body.selectedAvatarVersionId,
+        selectedVoiceVersionId: body.selectedVoiceVersionId,
+        selectedTemplateVersionId: body.selectedTemplateVersionId,
+        contextSnapshot: {
+          projectName: task.projectId,
+          taskTitle: task.title,
+          savedFrom: 'DH-P01',
+        },
+      });
+      await recordActivity(user, 'digital_human_draft_saved', '保存口播生产草稿：' + draft.title);
+      return sendJson(response, { ok: true, draft });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* F5-03：P02 项目与文案的最小数据源。只读，复用 listCatalog 的 script_versions。 */
+  if (requestUrl.pathname === '/api/content/digital-human/copy' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      if (taskId && !task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const projectId = task?.projectId || requestUrl.searchParams.get('projectId');
+      const scopedTaskId = task?.id || taskId;
+      const catalog = contentBatchCatalogFor(user, projectId, scopedTaskId);
+      const draft = contentBatchStore ? contentBatchStore.getDraft(user, projectId, scopedTaskId) : null;
+      const copy = projectCopyCandidates(catalog.scripts || [], draft?.selectedScriptVersionId || null);
+      return sendJson(response, {
+        ok: true,
+        copy: {
+          ...copy,
+          source: {
+            endpoints: ['/api/content/batches/catalog'],
+            readAt: nowIso(),
+            projectId: catalog.project?.id || null,
+            projectName: catalog.project?.name || null,
+            real: true,
+          },
+        },
+      });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* F5-04：生产资产的最小数据源（P03 形象/声音、P04 已有视频、P05 模板）。只读。 */
+  if (requestUrl.pathname === '/api/content/digital-human/assets' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      if (taskId && !task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const projectId = task?.projectId || requestUrl.searchParams.get('projectId');
+      const scopedTaskId = task?.id || taskId;
+      const catalog = contentBatchCatalogFor(user, projectId, scopedTaskId);
+      const draft = contentBatchStore ? contentBatchStore.getDraft(user, projectId, scopedTaskId) : null;
+      const assets = projectAssetCatalog(catalog, draft);
+      assets.source.readAt = nowIso();
+      return sendJson(response, { ok: true, assets });
     } catch (error) {
       return sendJson(response, { ok: false, error: safeError(error) }, 409);
     }

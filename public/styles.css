@@ -1,20 +1,57 @@
+/* ---------------------------------------------------------------------------
+   云员工视觉系统 V2 — Token 基线
+   权威来源（颜色）：docs/视觉参考资产/云员工工作台视觉参考-V1/README.md 第 3.3 节，
+        对齐云员工官网 src/app/globals.css。
+   结构来源（骨架）：同目录 01-内容编辑.png、02-账号运营.png、03-私域跟单.png。
+
+   事实分层说明：
+   - 文字规范 README 给出品牌的权威色值，参考图由生图模型产出、颜色会有偏移，
+     因此颜色以 README/官网为准，参考图只用于确定骨架与模块关系。这是本轮的
+     事实修正——上一轮误把参考图的粉彩观感当成色值来源，方向错了。
+   - 参考图实测取样（用于交叉校验，非权威）：
+     画布 #F6F4F1~#F8F6F3、侧栏 #F9F8F5、面板 #FFFFFF、主靛蓝 #4F52D7/#4E58EB、
+     四色动作条 #F3F5FE(靛蓝) / #EDF9F4(薄荷) / #FEF1F1(玫红) / #FEF8F0(琥珀)。
+     均在 README 色值的生成噪声范围内，不冲突。
+
+   变量名保持稳定，使既有样式继续生效。
+   --------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
-  --paper: #f5f6f8;
+  --paper: #f4f2ec;
   --white: #ffffff;
-  --ink: #171b24;
-  --muted: #7d8492;
-  --soft: #aeb4bf;
-  --line: #e7e9ee;
-  --blue: #316dff;
-  --blue-soft: #edf3ff;
-  --orange: #f08a3c;
-  --orange-soft: #fff3e8;
-  --green: #2ba876;
-  --green-soft: #eaf8f1;
-  --red: #d95a62;
-  --red-soft: #fff0f1;
-  --shadow: 0 16px 48px rgba(28, 36, 52, 0.06);
+  --ink: #17181c;
+  --muted: #6d717a;
+  --soft: #9a9ea7;
+  --line: #dddcd7;
+  --blue: #4d52c9;
+  --blue-soft: #e8e8f8;
+  --orange: #c47a1f;
+  --orange-soft: #fdf4e7;
+  --green: #1f9d63;
+  --green-soft: #e8f6ef;
+  --red: #d04545;
+  --red-soft: #fdecec;
+  --shadow: 0 1px 2px rgba(20, 24, 32, 0.04), 0 8px 24px rgba(20, 24, 32, 0.05);
+
+  /* --- 四色动作条 / 状态底（参考图 02、03 实测） ------------------------- */
+  --tone-indigo: #f3f5fe;
+  --tone-indigo-strong: #e4e5fb;
+  --tone-mint: #edf9f4;
+  --tone-mint-strong: #d5f0e6;
+  --tone-rose: #fef1f1;
+  --tone-rose-strong: #fbdcdc;
+  --tone-amber: #fef8f0;
+  --tone-amber-strong: #fae9d2;
+  --tone-slate: #f2f2f3;
+  --tone-slate-strong: #e6e6e8;
+
+  /* --- 骨架尺寸（参考图 03 三栏比例） ------------------------------------ */
+  --rail-w: 236px;
+  --gap: 14px;
+  --pad: 26px;
+  --radius-panel: 14px;
+  --radius-card: 12px;
+  --radius-control: 9px;
 }
 
 * {
@@ -30,9 +67,8 @@ body {
   min-width: 320px;
   margin: 0;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 88% 4%, rgba(49, 109, 255, 0.08), transparent 25rem),
-    var(--paper);
+  /* VIS-01：移除首页营销式蓝紫光晕，画布统一为暖象牙纯色。 */
+  background: var(--paper);
   font-family:
     Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -88,22 +124,13 @@ a {
   font-weight: 700;
 }
 
-.brand strong,
-.brand small {
+.brand strong {
   display: block;
 }
 
 .brand strong {
   font-size: 15px;
   letter-spacing: -0.02em;
-}
-
-.brand small {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
 }
 
 .topbar-actions {
@@ -332,38 +359,10 @@ h1 em {
   background: var(--blue-soft);
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.stat-card,
-.panel,
-.next-phase {
+.panel, .next-phase {
   border: 1px solid rgba(228, 231, 237, 0.96);
   background: rgba(255, 255, 255, 0.89);
   box-shadow: var(--shadow);
-}
-
-.stat-card {
-  position: relative;
-  min-height: 138px;
-  padding: 20px 21px;
-  overflow: hidden;
-  border-radius: 16px;
-}
-
-.stat-card::after {
-  position: absolute;
-  right: -25px;
-  bottom: -38px;
-  width: 110px;
-  height: 110px;
-  border: 17px solid currentColor;
-  border-radius: 99px;
-  opacity: 0.06;
-  content: "";
 }
 
 .tone-blue {
@@ -380,37 +379,6 @@ h1 em {
 
 .tone-green {
   color: var(--green);
-}
-
-.stat-label,
-.stat-hint {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.stat-label {
-  margin-bottom: 14px;
-}
-
-.stat-value {
-  position: relative;
-  z-index: 1;
-  color: var(--ink);
-  font-size: 31px;
-  font-weight: 720;
-  letter-spacing: -0.055em;
-}
-
-.stat-value small {
-  margin-left: 4px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-
-.stat-hint {
-  margin-top: 8px;
 }
 
 .control-strip {
@@ -1018,19 +986,6 @@ input::placeholder {
     font-size: 37px;
   }
 
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .stat-card {
-    min-height: 120px;
-    padding: 15px;
-  }
-
-  .stat-value {
-    font-size: 26px;
-  }
-
   .control-strip,
   .footer {
     align-items: flex-start;
@@ -1331,38 +1286,6 @@ input::placeholder {
   padding: 0 8px;
 }
 
-.workspace-identity {
-  margin: 37px 8px 21px;
-  padding: 15px 14px 16px;
-  border: 1px solid rgba(49, 109, 255, 0.14);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.7);
-}
-
-.workspace-kicker,
-.sidebar-section-label {
-  display: block;
-  color: var(--blue);
-  font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.workspace-identity strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 17px;
-  letter-spacing: -0.045em;
-}
-
-.workspace-identity p {
-  margin: 7px 0 0;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.65;
-}
-
 .main-nav {
   display: grid;
   gap: 3px;
@@ -1447,12 +1370,6 @@ input::placeholder {
   border-top: 1px solid var(--line);
 }
 
-.sidebar-section-label {
-  margin-bottom: 3px;
-  color: var(--muted);
-  letter-spacing: 0.1em;
-}
-
 .platform-status-row {
   display: flex;
   align-items: center;
@@ -1487,9 +1404,7 @@ input::placeholder {
   opacity: 0.56;
 }
 
-.platform-logo,
-.settings-icon,
-.hero-card-icon {
+.platform-logo, .settings-icon {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -1603,77 +1518,11 @@ input::placeholder {
   }
 }
 
-.overview-hero,
 .section-banner {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 28px;
-}
-
-.overview-hero {
-  padding: 8px 0 30px;
-}
-
-.overview-hero-copy {
-  max-width: 760px;
-}
-
-.overview-hero h2 {
-  max-width: 760px;
-  margin: 12px 0 12px;
-  font-size: clamp(29px, 3.6vw, 50px);
-  font-weight: 730;
-  letter-spacing: -0.065em;
-  line-height: 1.08;
-}
-
-.overview-hero h2 em {
-  color: var(--blue);
-  font-style: normal;
-}
-
-.overview-hero-copy > p {
-  max-width: 620px;
-  margin-bottom: 17px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.75;
-}
-
-.overview-hero-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 245px;
-  padding: 14px;
-  border: 1px solid rgba(49, 109, 255, 0.15);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.hero-card-icon {
-  width: 31px;
-  height: 31px;
-  color: var(--blue);
-  background: var(--blue-soft);
-  font-size: 17px;
-}
-
-.overview-hero-card strong,
-.overview-hero-card p {
-  display: block;
-}
-
-.overview-hero-card strong {
-  margin-bottom: 3px;
-  font-size: 11px;
-}
-
-.overview-hero-card p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
 }
 
 .section-banner {
@@ -1704,62 +1553,6 @@ input::placeholder {
   color: var(--blue);
   background: var(--blue-soft);
   font-size: 22px;
-}
-
-.overview-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
-  gap: 13px;
-  margin-top: 13px;
-}
-
-.overview-focus,
-.overview-map {
-  min-height: 245px;
-  padding: 21px;
-}
-
-.overview-highlights {
-  display: grid;
-  gap: 8px;
-  padding-top: 16px;
-}
-
-.highlight-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 11px;
-  border: 1px solid #eef0f4;
-  border-radius: 10px;
-  background: #fbfcfd;
-}
-
-.highlight-icon {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--blue);
-  background: var(--blue-soft);
-  font-size: 12px;
-}
-
-.highlight-row strong,
-.highlight-row small {
-  display: block;
-}
-
-.highlight-row strong {
-  font-size: 11px;
-}
-
-.highlight-row small {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 10px;
 }
 
 .highlight-value {
@@ -2471,19 +2264,8 @@ input::placeholder {
 }
 
 @media (max-width: 860px) {
-  .overview-grid,
-  .monitor-layout,
-  .settings-grid {
+  .monitor-layout, .settings-grid {
     grid-template-columns: 1fr;
-  }
-
-  .overview-hero {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .overview-hero-card {
-    width: min(100%, 330px);
   }
 
   .roadmap-grid,
@@ -2508,10 +2290,6 @@ input::placeholder {
     padding: 17px 16px 14px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
-  }
-
-  .workspace-identity {
-    display: none;
   }
 
   .main-nav {
@@ -2543,10 +2321,6 @@ input::placeholder {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-top: 13px;
     padding: 12px 0 0;
-  }
-
-  .platform-stack .sidebar-section-label {
-    grid-column: 1 / -1;
   }
 
   .platform-status-row small,
@@ -3381,15 +3155,6 @@ body.is-resizing * {
 }
 
 .account-card-actions a {
-  white-space: nowrap;
-}
-
-.highlight-row > b {
-  margin-left: auto;
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 720;
-  text-align: right;
   white-space: nowrap;
 }
 
@@ -5052,30 +4817,11 @@ body {
   padding: 0 9px;
 }
 
-.workspace-identity {
-  margin: 26px 7px 17px;
-  padding: 14px 13px;
-  border-color: rgba(49, 109, 255, 0.14);
-  background: rgba(255, 255, 255, 0.78);
-}
-
-.workspace-kicker,
 .nav-section-label {
   color: var(--muted);
   font-size: 9px;
   letter-spacing: 0.08em;
   text-transform: none;
-}
-
-.workspace-identity strong {
-  margin-top: 7px;
-  font-size: 16px;
-}
-
-.workspace-identity p {
-  margin-top: 6px;
-  font-size: 10px;
-  line-height: 1.55;
 }
 
 .main-nav {
@@ -5329,109 +5075,8 @@ body {
   display: none !important;
 }
 
-.overview-hero {
-  align-items: center;
-  gap: 26px;
-  padding: 9px 0 24px;
-}
-
-.overview-hero-copy {
-  max-width: 710px;
-}
-
-.overview-hero h2 {
-  max-width: 700px;
-  margin: 9px 0 10px;
-  font-size: clamp(31px, 3.2vw, 45px);
-  line-height: 1.1;
-}
-
-.overview-hero-copy > p {
-  max-width: 620px;
-  margin-bottom: 15px;
-  font-size: 12px;
-  line-height: 1.7;
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.overview-hero-card {
-  min-width: 255px;
-  max-width: 290px;
-  padding: 15px;
-  box-shadow: 0 10px 30px rgba(49, 109, 255, 0.05);
-}
-
-.stats-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 11px;
-  margin-bottom: 13px;
-}
-
-.stat-card {
-  min-height: 104px;
-  padding: 15px 16px;
-}
-
-.stat-value {
-  margin-top: 7px;
-  font-size: 25px;
-}
-
-.overview-grid {
-  grid-template-columns: minmax(0, 1.06fr) minmax(330px, 0.94fr);
-  gap: 13px;
-  margin-top: 0;
-}
-
-.overview-focus,
-.overview-next {
-  min-height: 0;
-  padding: 19px;
-}
-
-.overview-highlights {
-  padding-top: 13px;
-}
-
 .overview-next .panel-heading {
   padding-bottom: 1px;
-}
-
-.workflow-steps {
-  display: grid;
-  gap: 0;
-  margin: 12px 0 10px;
-  padding: 0;
-  list-style: none;
-}
-
-.workflow-steps li {
-  display: grid;
-  grid-template-columns: 31px minmax(0, 1fr);
-  gap: 9px;
-  padding: 10px 0;
-  border-bottom: 1px solid #f0f1f4;
-}
-
-.workflow-steps li:last-child {
-  border-bottom: 0;
-}
-
-.workflow-steps li > span {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  place-items: center;
-  border-radius: 8px;
-  color: #77839c;
-  background: #f1f3f7;
-  font-size: 9px;
-  font-weight: 750;
 }
 
 .workflow-steps li.is-done > span {
@@ -5442,23 +5087,6 @@ body {
 .workflow-steps li.is-current > span {
   color: var(--blue);
   background: var(--blue-soft);
-}
-
-.workflow-steps strong,
-.workflow-steps small {
-  display: block;
-}
-
-.workflow-steps strong {
-  padding-top: 2px;
-  font-size: 11px;
-}
-
-.workflow-steps small {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.45;
 }
 
 .text-action {
@@ -5474,10 +5102,6 @@ body {
 .text-action:hover,
 .text-action:focus-visible {
   color: var(--ink);
-}
-
-.roles-section {
-  margin-top: 22px;
 }
 
 .section-heading {
@@ -5500,84 +5124,9 @@ body {
   font-size: 10px;
 }
 
-.role-card-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.role-card {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 76px;
-  padding: 11px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-}
-
-.role-card:hover,
-.role-card:focus-visible {
-  border-color: #b9cbf7;
-  background: #f7f9ff;
-  transform: translateY(-1px);
-}
-
 .role-card.is-ready {
   border-color: #b9cbf7;
   background: var(--blue-soft);
-}
-
-.role-card-icon {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--blue);
-  background: rgba(255, 255, 255, 0.8);
-  font-size: 15px;
-}
-
-.role-card-copy {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.role-card-copy strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.role-card-copy small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.role-card-status {
-  align-self: start;
-  padding: 4px 6px;
-  border-radius: 99px;
-  color: #8a93a1;
-  background: #f0f2f5;
-  font-size: 8px;
-  font-weight: 700;
-  white-space: nowrap;
 }
 
 .role-card.is-ready .role-card-status {
@@ -6606,14 +6155,6 @@ textarea:focus-visible {
     padding-right: 26px;
     padding-left: 26px;
   }
-
-  .role-card-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .overview-hero-card {
-    min-width: 220px;
-  }
 }
 
 @media (max-width: 860px) {
@@ -6628,10 +6169,6 @@ textarea:focus-visible {
     border-right: 0;
     border-bottom: 1px solid #e4e7ed;
     padding: 15px 18px 13px;
-  }
-
-  .workspace-identity {
-    margin: 14px 0 12px;
   }
 
   .main-nav {
@@ -6661,18 +6198,6 @@ textarea:focus-visible {
 
   .sidebar-footnote {
     display: none;
-  }
-
-  .overview-hero {
-    align-items: flex-start;
-  }
-
-  .overview-hero-card {
-    min-width: 210px;
-  }
-
-  .overview-grid {
-    grid-template-columns: 1fr;
   }
 
   .settings-shell {
@@ -6770,32 +6295,8 @@ textarea:focus-visible {
     align-self: flex-start;
   }
 
-  .overview-hero {
-    display: grid;
-    gap: 16px;
-    padding-top: 2px;
-  }
-
-  .overview-hero h2 {
-    font-size: 31px;
-  }
-
-  .overview-hero-card {
-    width: 100%;
-    max-width: none;
-  }
-
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .role-card-grid,
   .planned-view-grid {
     grid-template-columns: 1fr;
-  }
-
-  .role-card {
-    min-height: 64px;
   }
 
   .monitor-add-panel .add-account-form {
@@ -6874,22 +6375,6 @@ textarea:focus-visible {
 
   .auth-area {
     margin-left: auto;
-  }
-
-  .stats-grid {
-    gap: 8px;
-  }
-
-  .stat-card {
-    padding: 12px;
-  }
-
-  .stat-value {
-    font-size: 21px;
-  }
-
-  .highlight-row > b {
-    font-size: 11px;
   }
 }
 

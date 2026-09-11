@@ -1,0 +1,1874 @@
+/* ===========================================================================
+   AI 数字人口播生产中心 · 页面样式（F5-01 切片）
+   ---------------------------------------------------------------------------
+   归属：内容编辑云员工
+   范围：只作用于 #view-digital-human，以及注入到 #view-content 顶部的入口卡。
+        不修改 styles.css / shell-v2.css，不影响监控中心、下载中心、设置等页面。
+
+   设计令牌沿用壳层已有变量（styles.css :root + shell-v2.css :root）：
+     浅色 --paper / --white      文本 --ink / --muted / --soft
+     主色 --blue / --blue-soft   状态 --green / --orange / --red 及 soft 变体
+     圆角 --radius-panel / --radius-card / --radius-control
+   状态一律“文字 + 颜色”双表达，不出现只有颜色的状态。
+   =========================================================================== */
+
+#view-digital-human {
+  --dh-hairline: #e6e4de;
+  --dh-hairline-soft: #f1efea;
+  --dh-status-draft: #6d717a;
+  --dh-status-draft-soft: #f2f2f3;
+  --dh-status-running: var(--green);
+  --dh-status-running-soft: var(--green-soft);
+  --dh-status-review: var(--blue);
+  --dh-status-review-soft: var(--blue-soft);
+  --dh-status-failed: var(--red);
+  --dh-status-failed-soft: var(--red-soft);
+  --dh-status-done: var(--green);
+  --dh-status-done-soft: var(--green-soft);
+  --dh-status-planned: var(--orange);
+  --dh-status-planned-soft: var(--orange-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap, 14px);
+}
+
+/* ---------------------------------------------------------------------------
+   0. 面板基线
+   ---------------------------------------------------------------------------
+   styles.css 的 .panel 只提供边框/底色/阴影，内边距由各页面自己声明；
+   shell-v2.css 的面板重制刻意排除了 #view-content，所以这里自带内边距。
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+#view-digital-human .panel-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#view-digital-human .panel-heading h2 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+#view-digital-human .panel-heading p {
+  margin: 4px 0 0;
+  max-width: 720px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+#view-digital-human .phase-label {
+  flex: 0 0 auto;
+}
+
+/* ---------------------------------------------------------------------------
+   1. 演示数据横幅
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-demo-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px dashed var(--dh-status-planned);
+  border-radius: var(--radius-control, 9px);
+  background: var(--dh-status-planned-soft);
+}
+
+#view-digital-human .dh-demo-banner strong {
+  flex: 0 0 auto;
+  color: #8a5410;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+#view-digital-human .dh-demo-banner span {
+  color: #8a5410;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+/* ---------------------------------------------------------------------------
+   2. 工具条：行业/项目上下文 + 主操作
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#view-digital-human .dh-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#view-digital-human .dh-context > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  padding: 8px 12px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 12px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-context small {
+  color: var(--soft);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+#view-digital-human .dh-context strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#view-digital-human .dh-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   3. 待处理摘要
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+#view-digital-human .dh-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--dh-hairline);
+  border-left-width: 3px;
+  border-radius: var(--radius-card, 12px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-summary-value {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+#view-digital-human .dh-summary-label {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#view-digital-human .dh-summary-hint {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   4. 状态色（文字 + 颜色对）
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-tone-draft {
+  border-left-color: var(--dh-status-draft);
+}
+#view-digital-human .dh-tone-running {
+  border-left-color: var(--dh-status-running);
+}
+#view-digital-human .dh-tone-review {
+  border-left-color: var(--dh-status-review);
+}
+#view-digital-human .dh-tone-failed {
+  border-left-color: var(--dh-status-failed);
+}
+#view-digital-human .dh-tone-done {
+  border-left-color: var(--dh-status-done);
+}
+#view-digital-human .dh-tone-indigo {
+  border-left-color: var(--blue);
+}
+#view-digital-human .dh-tone-amber {
+  border-left-color: var(--orange);
+}
+#view-digital-human .dh-tone-mint {
+  border-left-color: var(--green);
+}
+#view-digital-human .dh-tone-slate {
+  border-left-color: var(--dh-status-draft);
+}
+
+#view-digital-human .dh-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+#view-digital-human .dh-badge::before {
+  content: '●';
+  font-size: 7px;
+  line-height: 1;
+}
+
+#view-digital-human .dh-badge-draft {
+  border-color: #dcdad5;
+  background: var(--dh-status-draft-soft);
+  color: #4d5158;
+}
+#view-digital-human .dh-badge-running {
+  border-color: #bfe3d2;
+  background: var(--dh-status-running-soft);
+  color: #146b44;
+}
+#view-digital-human .dh-badge-review {
+  border-color: #c9caf1;
+  background: var(--dh-status-review-soft);
+  color: #3a3fa8;
+}
+#view-digital-human .dh-badge-failed {
+  border-color: #f2c9c9;
+  background: var(--dh-status-failed-soft);
+  color: #a52f2f;
+}
+#view-digital-human .dh-badge-done {
+  border-color: #bfe3d2;
+  background: var(--dh-status-done-soft);
+  color: #146b44;
+}
+
+#view-digital-human .dh-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#view-digital-human .dh-chip-demo {
+  border-color: #f0d9b5;
+  background: var(--dh-status-planned-soft);
+  color: #8a5410;
+}
+
+#view-digital-human .dh-chip-planned {
+  border-color: #f0d9b5;
+  background: var(--dh-status-planned-soft);
+  color: #8a5410;
+}
+
+/* ---------------------------------------------------------------------------
+   5. 提示块（待实现 / 阻塞说明）
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #c9caf1;
+  border-radius: var(--radius-panel, 14px);
+  background: var(--blue-soft);
+}
+
+#view-digital-human .dh-notice-icon {
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#view-digital-human .dh-notice-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#view-digital-human .dh-notice-body strong {
+  display: block;
+  color: #2c3170;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#view-digital-human .dh-notice-body p {
+  margin: 4px 0 2px;
+  color: #3a3fa8;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+#view-digital-human .dh-notice-body small {
+  color: #5b5fb0;
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   6. 继续处理
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-continue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left: 3px solid var(--blue);
+}
+
+#view-digital-human .dh-continue-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#view-digital-human .dh-continue-head h2 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+#view-digital-human .dh-continue-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#view-digital-human .dh-continue-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+#view-digital-human .dh-progress {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  overflow: hidden;
+}
+
+#view-digital-human .dh-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--blue);
+}
+
+#view-digital-human .dh-continue-foot small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-continue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   7. 开始新的生产流程
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-start-head h2,
+#view-digital-human .dh-scenario-head h2 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+#view-digital-human .dh-start-head p,
+#view-digital-human .dh-scenario-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-start {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#view-digital-human .dh-start-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+#view-digital-human .dh-start-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+  padding: 13px 15px;
+  border: 1px solid var(--dh-hairline);
+  border-left-width: 3px;
+  border-radius: var(--radius-card, 12px);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+#view-digital-human .dh-start-card:hover,
+#view-digital-human .dh-start-card:focus-visible {
+  border-color: #c3c4e6;
+  box-shadow: var(--shell-shadow-panel, 0 1px 2px rgba(23, 24, 28, 0.04));
+}
+
+#view-digital-human .dh-start-card:focus-visible {
+  outline: none;
+  box-shadow: var(--shell-focus, 0 0 0 2px #fff, 0 0 0 4px rgba(77, 82, 201, 0.5));
+}
+
+#view-digital-human .dh-start-index {
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+#view-digital-human .dh-start-card strong {
+  font-size: 12px;
+}
+
+#view-digital-human .dh-start-card small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-start-slice {
+  margin-top: 2px;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+   8. 模式 A / B 说明
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+#view-digital-human .dh-mode-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 13px 15px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 12px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-mode-key {
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-control, 9px);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+#view-digital-human .dh-mode-card strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-mode-card p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+#view-digital-human .dh-mode-note {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--radius-control, 9px);
+  background: var(--blue-soft);
+  color: #3a3fa8;
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+/* ---------------------------------------------------------------------------
+   9. 任务队列
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-queue .panel-heading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#view-digital-human .dh-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#view-digital-human .dh-filter {
+  padding: 5px 11px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#view-digital-human .dh-filter.is-active {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 700;
+}
+
+#view-digital-human .dh-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#view-digital-human .dh-task {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left-width: 3px;
+}
+
+#view-digital-human .dh-task-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#view-digital-human .dh-task-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+#view-digital-human .dh-task-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-task-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+#view-digital-human .dh-task-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 11px 13px;
+  border-radius: var(--radius-card, 12px);
+  background: var(--paper);
+}
+
+#view-digital-human .dh-task-meta dt {
+  color: var(--soft);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-task-meta dd {
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#view-digital-human .dh-task-items {
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 12px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-task-items > summary {
+  padding: 10px 13px;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#view-digital-human .dh-task-items ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#view-digital-human .dh-item {
+  display: grid;
+  grid-template-columns: 44px repeat(3, minmax(120px, 1fr)) minmax(150px, 1.2fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 13px;
+  border-top: 1px solid var(--dh-hairline-soft);
+}
+
+#view-digital-human .dh-item-index {
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#view-digital-human .dh-item-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+#view-digital-human .dh-item-cell small {
+  color: var(--soft);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-item-cell strong {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#view-digital-human .dh-item-status {
+  align-items: flex-start;
+}
+
+#view-digital-human .dh-task-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#view-digital-human .dh-is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#view-digital-human .dh-footnote {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 0 2px 4px;
+  color: var(--soft);
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   10. 空状态
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 42px 24px;
+  border: 1px dashed var(--dh-hairline);
+  border-radius: var(--radius-card, 12px);
+  background: var(--paper);
+  text-align: center;
+}
+
+#view-digital-human .dh-empty > span {
+  color: var(--blue);
+  font-size: 24px;
+}
+
+#view-digital-human .dh-empty strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+#view-digital-human .dh-empty p {
+  max-width: 460px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+#view-digital-human .dh-empty-filter {
+  min-height: 140px;
+  padding: 28px 24px;
+}
+
+/* ---------------------------------------------------------------------------
+   11. 演示状态切换
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-scenario {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#view-digital-human .dh-scenario-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#view-digital-human .dh-scenario-tab {
+  padding: 7px 13px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-control, 9px);
+  background: var(--white);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#view-digital-human .dh-scenario-tab.is-active {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 700;
+}
+
+#view-digital-human .dh-scenario-tab:focus-visible,
+#view-digital-human .dh-filter:focus-visible {
+  outline: none;
+  box-shadow: var(--shell-focus, 0 0 0 2px #fff, 0 0 0 4px rgba(77, 82, 201, 0.5));
+}
+
+/* ---------------------------------------------------------------------------
+   12. 内容编辑工作区内的入口卡
+   --------------------------------------------------------------------------- */
+
+#view-content .dh-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border: 1px solid #c9caf1;
+  border-radius: var(--radius-panel, 14px);
+  background: linear-gradient(180deg, #f7f8ff 0%, var(--white) 100%);
+}
+
+#view-content .dh-entry-mark {
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-control, 9px);
+  background: var(--white);
+  color: var(--blue);
+  font-size: 17px;
+}
+
+#view-content .dh-entry-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#view-content .dh-entry-context {
+  display: block;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+#view-content .dh-entry-body h2 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+#view-content .dh-entry-body p {
+  margin: 5px 0 0;
+  max-width: 640px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+#view-content .dh-entry-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+#view-content .dh-entry .dh-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border: 1px solid #dcdcf3;
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#view-content .dh-entry .dh-chip-planned {
+  border-color: #f0d9b5;
+  background: var(--orange-soft);
+  color: #8a5410;
+}
+
+#view-content .dh-entry-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+#view-content .dh-entry-actions small {
+  max-width: 190px;
+  color: var(--soft);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+   12. F5-02：真实数据读取与状态投影
+   ---------------------------------------------------------------------------
+   真实数据用蓝色系标识，演示数据用橙色系标识，两者在视觉上不可混淆。
+   状态一律“文字 + 颜色”双表达。
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-real-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--blue-soft);
+  border-left: 3px solid var(--blue);
+  border-radius: var(--radius-card, 10px);
+  background: linear-gradient(180deg, var(--blue-soft), var(--white));
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-real-banner strong {
+  flex: none;
+  color: var(--blue);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ---- 数据源证据条 ---- */
+
+#view-digital-human .dh-source {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-panel, 12px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-source-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#view-digital-human .dh-source-head strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-source-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+#view-digital-human .dh-source-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 18px;
+  margin: 0;
+}
+
+#view-digital-human .dh-source-list div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+#view-digital-human .dh-source-list dt {
+  flex: none;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-source-list dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+#view-digital-human .dh-source-list code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dh-hairline-soft);
+  color: var(--ink);
+  font-size: 10px;
+}
+
+/* ---- 资产就绪度 ---- */
+
+#view-digital-human .dh-ready-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#view-digital-human .dh-ready-row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 10px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-ready-row.is-gap {
+  border-color: var(--orange-soft, #f4d7bd);
+  background: #fdf8f3;
+}
+
+#view-digital-human .dh-ready-mark {
+  grid-row: span 2;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+#view-digital-human .dh-ready-row.is-ok .dh-ready-mark {
+  color: var(--green);
+}
+
+#view-digital-human .dh-ready-row.is-gap .dh-ready-mark {
+  color: var(--orange);
+}
+
+#view-digital-human .dh-ready-label {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+#view-digital-human .dh-ready-value {
+  color: var(--ink);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+#view-digital-human .dh-ready-row small {
+  grid-column: 2 / -1;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* ---- 状态闸门 ---- */
+
+#view-digital-human .dh-gate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+#view-digital-human .dh-gate-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 10px);
+  background: var(--dh-hairline-soft);
+}
+
+#view-digital-human .dh-gate-col h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#view-digital-human .dh-gate-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#view-digital-human .dh-gate-issues li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--orange-soft, #f4d7bd);
+  border-radius: 8px;
+  background: var(--white);
+}
+
+#view-digital-human .dh-gate-issues code {
+  color: var(--orange);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+#view-digital-human .dh-gate-issues span {
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#view-digital-human .dh-gate-issues small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#view-digital-human .dh-gate-actions .button small,
+#view-digital-human .dh-item-actions .button small {
+  margin-left: 3px;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+#view-digital-human .dh-gate-empty,
+#view-digital-human .dh-gate-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-axis-note {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dh-hairline);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* ---- 所属内容任务 ---- */
+
+#view-digital-human .dh-ctx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#view-digital-human .dh-ctx-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 10px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-ctx-list strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-ctx-list small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* ---- 最小任务草稿 ---- */
+
+#view-digital-human .dh-draft-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+#view-digital-human .dh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+#view-digital-human .dh-field-wide {
+  grid-column: 1 / -1;
+}
+
+#view-digital-human .dh-field > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-field select,
+#view-digital-human .dh-field input,
+#view-digital-human .dh-field textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-control, 8px);
+  background: var(--white);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+#view-digital-human .dh-field textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-field select:focus,
+#view-digital-human .dh-field input:focus,
+#view-digital-human .dh-field textarea:focus {
+  border-color: var(--blue);
+  outline: 2px solid var(--blue-soft);
+}
+
+#view-digital-human .dh-draft-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+#view-digital-human .dh-draft-foot small {
+  flex: 1 1 260px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-draft-message {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-draft-message.is-error {
+  background: var(--red-soft);
+}
+
+#view-digital-human .dh-draft-record {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-draft-record strong {
+  color: var(--ink);
+}
+
+#view-digital-human .dh-draft-record-empty {
+  font-style: italic;
+}
+
+/* ---- 读取中 / 读取失败 ---- */
+
+#view-digital-human .dh-loading,
+#view-digital-human .dh-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-panel, 12px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-loading {
+  border: 1px solid var(--dh-hairline);
+}
+
+#view-digital-human .dh-error {
+  border: 1px solid var(--red-soft);
+  border-left: 3px solid var(--red);
+  background: #fdf6f6;
+}
+
+#view-digital-human .dh-loading > span,
+#view-digital-human .dh-error-mark {
+  flex: none;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+#view-digital-human .dh-loading > span {
+  color: var(--blue);
+}
+
+#view-digital-human .dh-error-mark {
+  color: var(--red);
+  font-weight: 700;
+}
+
+#view-digital-human .dh-loading strong,
+#view-digital-human .dh-error strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-loading p,
+#view-digital-human .dh-error p {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-loading small,
+#view-digital-human .dh-error small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-error > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---- 三轴明细与真实批次 ---- */
+
+#view-digital-human .dh-chip-real {
+  border-color: var(--blue-soft);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+#view-digital-human .dh-axis-badge {
+  font-size: 10px;
+}
+
+#view-digital-human .dh-item-real {
+  grid-template-columns: 36px repeat(3, minmax(120px, 1fr));
+}
+
+#view-digital-human .dh-item-real .dh-item-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+#view-digital-human .dh-item-actions {
+  grid-column: 2 / -1;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#view-digital-human .dh-item-blockers {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--dh-hairline);
+}
+
+#view-digital-human .dh-item-blockers small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#view-digital-human .dh-item-blockers code {
+  color: var(--red);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+#view-digital-human .dh-task-foot-note {
+  flex: 1 1 240px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* ---- F5-03：P02 文案候选 ---- */
+
+#view-digital-human .dh-copy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#view-digital-human .dh-copy-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 10px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-copy-card.is-selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue-soft);
+}
+
+#view-digital-human .dh-copy-card.is-gap {
+  background: #fbfaf8;
+}
+
+#view-digital-human .dh-copy-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#view-digital-human .dh-copy-title strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-copy-title small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-copy-summary {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+#view-digital-human .dh-copy-full {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--dh-hairline);
+  border-radius: 8px;
+  background: var(--dh-hairline-soft);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#view-digital-human .button-link {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+#view-digital-human .dh-copy-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+#view-digital-human .dh-copy-foot small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-copy-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+#view-digital-human .dh-copy-check input {
+  width: auto;
+}
+
+#view-digital-human .dh-copy-check span {
+  color: var(--ink);
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------------------------
+   12b. F5-04：流程导航条 + 双栏布局（信息架构重排）
+   ---------------------------------------------------------------------------
+   目的：让人一眼看清「我在流程的哪一步、还差什么」。
+   主栏只放流程位置和当前要做的事；参考信息（数据源、说明、演示）全部降级到侧栏。
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px;
+  align-items: start;
+}
+
+#view-digital-human .dh-layout-main,
+#view-digital-human .dh-layout-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ---- 流程导航条 ---- */
+
+#view-digital-human .dh-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-panel, 12px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-flow-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+#view-digital-human .dh-flow-title {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+#view-digital-human .dh-flow-current {
+  color: var(--blue);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+#view-digital-human .dh-flow-step-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 10px);
+  background: var(--dh-hairline-soft);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+#view-digital-human li.is-here > .dh-flow-step-btn,
+#view-digital-human .dh-flow-step.is-here .dh-flow-step-btn {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  box-shadow: inset 0 0 0 1px var(--blue-soft);
+}
+
+#view-digital-human button.dh-flow-step-btn {
+  cursor: pointer;
+}
+
+#view-digital-human button.dh-flow-step-btn:hover {
+  border-color: var(--blue);
+}
+
+#view-digital-human .dh-flow-step.is-done .dh-flow-step-btn {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+}
+
+#view-digital-human .dh-flow-no {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+#view-digital-human .dh-flow-label {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+#view-digital-human .dh-flow-metric {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+#view-digital-human .dh-flow-state {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+#view-digital-human .dh-flow-badge {
+  font-size: 9px;
+}
+
+#view-digital-human .dh-flow-unwired {
+  color: var(--orange);
+  font-size: 9px;
+}
+
+/* ---- 下一步行动卡（整页唯一主行动） ---- */
+
+#view-digital-human .card-primary,
+#view-digital-human .dh-next {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--blue-soft);
+  border-left: 3px solid var(--blue);
+  border-radius: var(--radius-panel, 12px);
+  background: linear-gradient(180deg, var(--blue-soft), var(--white));
+}
+
+#view-digital-human .dh-next-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+#view-digital-human .dh-next-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+#view-digital-human .dh-next h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+#view-digital-human .dh-next p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+#view-digital-human .dh-next-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#view-digital-human .dh-next-issues li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-next-issues code {
+  color: var(--orange);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+#view-digital-human .dh-next .button {
+  align-self: flex-start;
+}
+
+/* ---- 侧栏参考块 ---- */
+
+#view-digital-human .dh-side-block {
+  padding: 14px;
+}
+
+#view-digital-human .dh-side-details {
+  padding: 10px 14px;
+  border: 1px dashed var(--dh-hairline);
+  border-radius: var(--radius-card, 10px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-side-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#view-digital-human .dh-side-details[open] > summary {
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+
+#view-digital-human .dh-side-note {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+/* ---- 资产卡 ---- */
+
+#view-digital-human .dh-asset-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+#view-digital-human .dh-asset-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#view-digital-human .dh-asset-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#view-digital-human .dh-asset-group-head h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-asset-count {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-asset-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+
+#view-digital-human .dh-asset-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--dh-hairline);
+  border-radius: var(--radius-card, 10px);
+  background: var(--white);
+}
+
+#view-digital-human .dh-asset-card.is-selected {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue-soft);
+}
+
+#view-digital-human .dh-asset-card.is-gap {
+  background: #fbfaf8;
+}
+
+#view-digital-human .dh-asset-main strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+#view-digital-human .dh-asset-main small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+#view-digital-human .dh-asset-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+#view-digital-human .dh-asset-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--dh-hairline);
+}
+
+#view-digital-human .dh-asset-actions small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------------------------
+   13. 窄屏回退（客户端窗口缩小时明细不横向溢出）
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 1080px) {
+  #view-digital-human .dh-item {
+    grid-template-columns: 36px repeat(2, minmax(110px, 1fr));
+  }
+
+  #view-digital-human .dh-item-status {
+    grid-column: 2 / -1;
+  }
+
+  #view-digital-human .dh-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #view-digital-human .dh-flow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #view-content .dh-entry {
+    flex-wrap: wrap;
+  }
+
+  #view-content .dh-entry-actions {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  #view-content .dh-entry-actions small {
+    max-width: none;
+    text-align: left;
+  }
+}
