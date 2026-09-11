@@ -3749,3 +3749,89 @@ body {
   #view-content .cw-main-cols { grid-template-columns: minmax(0, 1fr); }
   #view-content .cw-main-cols .content-task-list-card { position: static; max-height: none; overflow-y: visible; }
 }
+
+/* ===========================================================================
+   VIS-08：监控中心观感放大（用户反馈：内容太小、数据显示太少、概览/刷新
+   设置不该占右栏）
+   1. 右栏检视器（监控概览/刷新设置/平台分布）移出三栏，改为页面下方横排面板区
+   2. 作品流占满剩余宽度；账号列加宽 336→380
+   3. 全局密度放大：账号行、作品卡、KPI 数值、kv 字号
+   依据：README §3.2（结构层按岗位任务调整）与用户 2026-09-11 反馈。
+   =========================================================================== */
+
+/* ---- 右栏移除：workspace-cols 改单列，作品流通栏 -------------------- */
+#view-monitor .workspace-cols {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ---- 下方面板区：三个 panel 横排，解除 2.10b 的收敛压缩 ------------ */
+#view-monitor .ws-inspector.ws-lower {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap, 14px);
+  align-items: stretch;
+  max-height: none;
+  overflow-y: visible;
+  margin-top: var(--gap, 14px);
+}
+#view-monitor .ws-lower > .panel { height: 100%; }
+#view-monitor .ws-lower .panel-bar { padding: 12px 16px; }
+#view-monitor .ws-lower .panel-bar h2 { margin: 0; font-size: 14.5px; }
+#view-monitor .ws-lower .kv-list { gap: 8px; padding: 12px 16px; }
+#view-monitor .ws-lower .kv-row > span { font-size: 12.5px; }
+#view-monitor .ws-lower .kv-row > strong { font-size: 14px; font-weight: 650; }
+#view-monitor .ws-lower .callout { padding: 12px 14px; font-size: 12.5px; line-height: 1.6; }
+#view-monitor .ws-lower .icon-grid { padding: 12px 16px; }
+#view-monitor .ws-lower .icon-grid > button,
+#view-monitor .ws-lower .icon-grid > a { min-height: 60px; gap: 6px; font-size: 12.5px; }
+#view-monitor .ws-lower .tag-row { padding: 12px 16px; }
+
+/* ---- 账号列加宽 + 行放大 ------------------------------------------- */
+#view-monitor {
+  --monitor-accounts-width: 380px;
+}
+#view-monitor .monitor-account-row {
+  padding: 12px 13px;
+  gap: 12px;
+}
+#view-monitor .monitor-account-row + .monitor-account-row { margin-top: 8px; }
+#view-monitor .monitor-account-copy strong { font-size: 14.5px; font-weight: 650; }
+#view-monitor .monitor-account-copy small,
+#view-monitor .monitor-account-subtitle { font-size: 12px; line-height: 1.5; }
+#view-monitor .monitor-account-row .select-control,
+#view-monitor .monitor-account-group-select { min-height: 26px; font-size: 12px; }
+#view-monitor .health-list { gap: 0; }
+
+/* ---- 作品流放大 ----------------------------------------------------- */
+#view-monitor .work-card {
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 14px;
+  padding: 13px 15px;
+}
+#view-monitor .work-card + .work-card { margin-top: 6px; }
+#view-monitor .work-card h3 {
+  font-size: 15.5px;
+  font-weight: 650;
+  line-height: 1.42;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+#view-monitor .work-topline { font-size: 12.5px; gap: 9px; }
+#view-monitor .work-card-body { gap: 5px; }
+#view-monitor .work-cover.is-placeholder span { font-size: 17px; }
+#view-monitor .work-filter-row {
+  padding: 10px 14px;
+  font-size: 12.5px;
+}
+
+/* ---- KPI 动作条数值放大 -------------------------------------------- */
+#view-monitor .action-strip .action-body strong { font-size: 26px; font-weight: 700; }
+#view-monitor .action-strip .action-body span { font-size: 12.5px; }
+#view-monitor .action-strip .action-icon { font-size: 18px; }
+
+/* ---- 窄屏回退 ------------------------------------------------------ */
+@media (max-width: 1080px) {
+  #view-monitor .ws-inspector.ws-lower { grid-template-columns: minmax(0, 1fr); }
+}

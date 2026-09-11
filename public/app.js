@@ -142,9 +142,9 @@ let updaterCheckTimer = null;
 let updaterVersion = '';
 let updaterAutomaticCheck = false;
 /* VIS-04：键名升级到 v3。v2 历史值可能已被“空存档被当成 0”的旧逻辑污染成最小值。 */
-const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v3';
+const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v4';
 const MONITOR_SPLIT_MIN = 300;
-const MONITOR_SPLIT_DEFAULT = 336;
+const MONITOR_SPLIT_DEFAULT = 380;
 const MONITOR_SPLIT_MIN_FEED = 420;
 
 const elements = {
@@ -2403,13 +2403,17 @@ function monitorSplitBounds() {
   };
 }
 
-function applyMonitorSplitWidth(value, attempt = 0) {
+function applyMonitorSplitWidth(value, attempt = 0, persist = false) {
   if (!elements.monitorLayout) {
     return;
   }
-  /* VIS-04：首帧可能还没完成布局，此时宽度为 0 会把分栏压到最小值并写回本地存储。 */
-  if (elements.monitorLayout.getBoundingClientRect().width < MONITOR_SPLIT_MIN * 2 && attempt < 4) {
-    window.requestAnimationFrame(() => applyMonitorSplitWidth(value, attempt + 1));
+  /* VIS-04：首帧可能还没完成布局，此时宽度为 0 会把分栏压到最小值并写回本地存储。
+     VIS-08：仅防 0 不够——窗口约 756px 的半就绪状态下 layout 宽 ~720，
+     max = 720-420 = 300 会把默认 380 clamp 成 300 并污染存档；
+     因此改为「宽到足以容纳默认分栏 + 最小作品流」才放行。 */
+  const splitReadyMin = MONITOR_SPLIT_DEFAULT + MONITOR_SPLIT_MIN + MONITOR_SPLIT_MIN_FEED;
+  if (elements.monitorLayout.getBoundingClientRect().width < splitReadyMin && attempt < 8) {
+    window.requestAnimationFrame(() => applyMonitorSplitWidth(value, attempt + 1, persist));
     return;
   }
   const bounds = monitorSplitBounds();
@@ -2429,7 +2433,12 @@ function applyMonitorSplitWidth(value, attempt = 0) {
     String(bounds.max ?? Math.max(width, MONITOR_SPLIT_DEFAULT)),
   );
   elements.monitorSplitter?.setAttribute('aria-valuenow', String(width));
-  window.localStorage.setItem(MONITOR_SPLIT_STORAGE_KEY, String(width));
+  /* VIS-08：存档只在用户真实交互（拖动/键盘）时写入。
+     初始化与 resize 路径不写档——否则窄视口首帧的 clamp 值（如 300）
+     会覆盖默认 380，用户拉宽窗口后永远回不到默认。 */
+  if (persist) {
+    window.localStorage.setItem(MONITOR_SPLIT_STORAGE_KEY, String(width));
+  }
 }
 
 /**
@@ -2512,6 +2521,15 @@ function initMonitorSplitter() {
     dragging = false;
     pointerId = null;
     document.body.classList.remove('is-resizing');
+    applyMonitorSplitWidth(
+      Number.parseFloat(
+        getComputedStyle(elements.monitorLayout).getPropertyValue(
+          '--monitor-accounts-width',
+        ),
+      ) || MONITOR_SPLIT_DEFAULT,
+      0,
+      true,
+    );
   };
 
   splitter.addEventListener('pointerdown', (event) => {
@@ -2550,7 +2568,7 @@ function initMonitorSplitter() {
         ),
       ) || MONITOR_SPLIT_DEFAULT;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      applyMonitorSplitWidth(current + (event.key === 'ArrowRight' ? 20 : -20));
+      applyMonitorSplitWidth(current + (event.key === 'ArrowRight' ? 20 : -20), 0, true);
       event.preventDefault();
     }
     if (event.key === 'Home' || event.key === 'End') {
@@ -2558,7 +2576,7 @@ function initMonitorSplitter() {
       const current = Number.parseFloat(
         getComputedStyle(elements.monitorLayout).getPropertyValue('--monitor-accounts-width'),
       ) || MONITOR_SPLIT_DEFAULT;
-      applyMonitorSplitWidth(event.key === 'Home' ? bounds.min : bounds.max ?? current);
+      applyMonitorSplitWidth(event.key === 'Home' ? bounds.min : bounds.max ?? current, 0, true);
       event.preventDefault();
     }
   });
