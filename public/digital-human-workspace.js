@@ -753,7 +753,8 @@ async function dhLoadStage8() {
   try {
     const results = await dhApi('/api/content/digital-human/results/items?batchId=' + encodeURIComponent(batchId));
     const packages = await dhApi('/api/content/digital-human/packages').catch(() => ({ packages: [] }));
-    dhStage8.data = { batchId, batchStatus: results.batchStatus, items: results.items || [], packages: packages.packages || [] };
+    const usage = await dhApi('/api/content/digital-human/usage').catch(() => null);
+    dhStage8.data = { batchId, batchStatus: results.batchStatus, items: results.items || [], packages: packages.packages || [], usage: usage?.summary || null };
     dhStage8.status = 'ready';
   } catch (error) {
     dhStage8.status = 'ready';
@@ -837,6 +838,7 @@ function dhRenderStage8() {
         '<button class="button-link" type="button" data-dh-stage8-retry="' + dhEscape(item.itemId) + '">重试</button>' +
         '</span></li>';
     }).join('') + '</ul>' : '<p class="dh-muted">该批次没有条目。</p>') +
+    (data.usage ? '<p class="dh-muted">用量：条目 ' + Number(data.usage.itemCount || 0) + ' · 真实文件 ' + Number(data.usage.realFiles || 0) + ' · 模拟 ' + Number(data.usage.simulated || 0) + ' · 已通过 ' + Number(data.usage.approved || 0) + ' · 最大尝试 ' + Number(data.usage.maxAttempts || 0) + ' 次</p>' : '') +
     '<p class="dh-muted">内容包：' + ((data.packages || []).length ? dhEscape((data.packages || []).map((item) => item.packageId + '(' + item.includedCount + '条)').join('、')) : '尚无') + '</p>' +
     '</section>';
 }

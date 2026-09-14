@@ -5110,6 +5110,56 @@ async function handleRequest(request, response) {
     }
   }
 
+  /* S8-06：用量与产出统计——批次/条目/成败/模拟占比/人工验收/内容包/按提供方 */
+  if (requestUrl.pathname === '/api/content/digital-human/usage' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const batches = contentBatchStore ? contentBatchStore.listBatches(user) : [];
+      const summary = { batchCount: batches.length, itemCount: 0, succeeded: 0, failed: 0, queued: 0, approved: 0, changesRequested: 0, simulated: 0, realFiles: 0, blockedNoFile: 0, attemptsTotal: 0, maxAttempts: 0 };
+      const byProvider = {};
+      const byStatus = {};
+      for (const batch of batches) {
+        for (const item of batch.items || []) {
+          summary.itemCount += 1;
+          summary.attemptsTotal += Number(item.attempt) || 0;
+          summary.maxAttempts = Math.max(summary.maxAttempts, Number(item.attempt) || 0);
+          byStatus[item.status] = (byStatus[item.status] || 0) + 1;
+          if (item.status === 'succeeded') summary.succeeded += 1;
+          if (item.status === 'failed' || item.status === 'blocked') summary.failed += 1;
+          if (item.status === 'queued' || item.status === 'planned') summary.queued += 1;
+          if (item.status === 'approved') summary.approved += 1;
+          if (item.status === 'changes_requested') summary.changesRequested += 1;
+          const output = item.output || null;
+          if (output?.simulated === true) summary.simulated += 1;
+          if (output?.videoRef && output.simulated !== true) summary.realFiles += 1;
+          if (output && !output.videoRef) summary.blockedNoFile += 1;
+          const provider = output?.provider || output?.modelVersion || null;
+          if (provider) byProvider[provider] = (byProvider[provider] || 0) + 1;
+        }
+      }
+      const packageRoot = join(process.cwd(), 'data', 'content-packages');
+      const packageDirs = fs.existsSync(packageRoot) ? fs.readdirSync(packageRoot).filter((name) => fs.existsSync(join(packageRoot, name, 'manifest.json'))) : [];
+      let packagedItems = 0;
+      for (const name of packageDirs) {
+        try {
+          const manifest = JSON.parse(fs.readFileSync(join(packageRoot, name, 'manifest.json'), 'utf-8'));
+          packagedItems += Number(manifest.includedCount) || 0;
+        } catch { /* 单个清单解析失败不影响整体统计 */ }
+      }
+      return sendJson(response, {
+        ok: true,
+        summary: { ...summary, simulatedRatio: summary.itemCount ? Number((summary.simulated / summary.itemCount).toFixed(3)) : 0 },
+        byProvider,
+        byStatus,
+        packages: { count: packageDirs.length, items: packagedItems },
+        note: '统计口径：成败以条目最终状态为准；模拟输出单独计数且不计入真实文件；内容包只含人工通过且真实可用的条目。',
+      });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
   /* S7：HeyGem 云 Worker 健康检查 */
   if (requestUrl.pathname === '/api/content/digital-human/heygem-health' && request.method === 'GET') {
     const user = authorizedUser(request, response);

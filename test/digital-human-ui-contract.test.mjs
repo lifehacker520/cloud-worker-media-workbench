@@ -111,6 +111,7 @@ test('P01/P02 只允许调用数字人口播自己的端点 + 现有文案登记
     '/api/content/digital-human/results/items',
     '/api/content/digital-human/package',
     '/api/content/digital-human/packages',
+    '/api/content/digital-human/usage',
     '/api/content/digital-human/heygem-health',
     '/api/content/batches/',
     '/api/content/script-sets',
