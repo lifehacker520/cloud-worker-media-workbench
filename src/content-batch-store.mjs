@@ -175,6 +175,103 @@ CREATE INDEX IF NOT EXISTS idx_content_batch_items_ready ON content_batch_items(
 CREATE INDEX IF NOT EXISTS idx_model_runs_item ON model_runs(item_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_quality_reports_item ON quality_reports(item_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_digital_human_drafts_project ON digital_human_drafts(project_id, updated_at);
+-- S6-01：N01 项目/行业上下文档案。每一行是一个不可变版本；编辑产生新版本行，
+-- 旧任务引用旧版本 id，不会随编辑漂移（N17 要求输入可冻结）。
+CREATE TABLE IF NOT EXISTS project_contexts (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  context_key TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  industry TEXT,
+  product TEXT,
+  audience TEXT,
+  selling_points_json TEXT,
+  content_goal TEXT,
+  status TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_contexts_project ON project_contexts(project_id, context_key, version);
+-- S6-02：N05 员工数字人档案（形象与声音的绑定主体）。
+CREATE TABLE IF NOT EXISTS digital_human_profiles (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  subject_role TEXT,
+  avatar_version_id TEXT,
+  voice_version_id TEXT,
+  status TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dh_profiles_project ON digital_human_profiles(project_id);
+-- S6-03：N11 已有视频（模式 B）。
+CREATE TABLE IF NOT EXISTS source_videos (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  subject_id TEXT,
+  name TEXT NOT NULL,
+  file_ref TEXT,
+  duration_seconds INTEGER,
+  aspect TEXT,
+  status TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+-- S7-01：N18 Provider Registry（能力登记，候选/首选/阻塞/模拟四种状态）。
+CREATE TABLE IF NOT EXISTS n18_providers (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  capability TEXT NOT NULL,
+  provider_key TEXT NOT NULL,
+  transport TEXT NOT NULL,
+  endpoint TEXT,
+  status TEXT NOT NULL,
+  license_code TEXT,
+  license_weights TEXT,
+  notes TEXT,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_n18_providers_capability ON n18_providers(capability, status);
+-- S6-03：N12 视频素材映射（视频 + 文案 + 声音来源 + 模板）。
+CREATE TABLE IF NOT EXISTS video_mappings (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  video_id TEXT NOT NULL,
+  script_version_id TEXT,
+  voice_source TEXT,
+  voice_version_id TEXT,
+  template_version_id TEXT,
+  status TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+-- S6-01：N02 文案生成需求。
+CREATE TABLE IF NOT EXISTS copy_generation_requests (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  context_id TEXT,
+  count INTEGER,
+  direction TEXT,
+  platform TEXT,
+  duration_seconds INTEGER,
+  status TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 function text(value, fallback = '') {
@@ -394,6 +491,8 @@ export class ContentBatchStore {
       const versionId = text(raw?.id, `script_version_${randomUUID()}`);
       const scriptText = text(raw?.text);
       if (!scriptText) throw new Error('脚本正文不能为空');
+      if (scriptText.length > 5000) throw new Error('脚本正文超过 5000 字上限（S6-01 长度控制），请拆分或精简后再登记');
+      const scriptSummary = scriptText.replace(/\s+/g, ' ').trim().slice(0, 120);
       const versionExisting = this.db.prepare('SELECT tenant_id, project_id, created_at FROM script_versions WHERE id = ?').get(versionId);
       if (versionExisting && (versionExisting.tenant_id !== context.tenantId || versionExisting.project_id !== context.project.id)) {
         throw new Error('脚本版本已经属于其他项目或客户工作区');
@@ -401,6 +500,8 @@ export class ContentBatchStore {
       const payload = {
         title: text(raw?.title, `脚本 ${index + 1}`),
         text: scriptText,
+        summary: scriptSummary,
+        textLength: scriptText.length,
         platform: text(raw?.platform, null),
         language: text(raw?.language, 'zh-CN'),
         estimatedDurationSeconds: Number(raw?.estimatedDurationSeconds) || null,
@@ -770,15 +871,38 @@ export class ContentBatchStore {
       if (value === undefined) return previous ?? null;
       return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
     };
+    /* F5-05：显式明细行。一行对应一个输出，系统不会自动全组合。 */
+    const pickRows = (value, previous) => {
+      if (value === undefined) return previous ?? null;
+      if (!Array.isArray(value)) return null;
+      return value.slice(0, 300).map((row, index) => ({
+        rowNo: index + 1,
+        mode: text(row?.mode, 'A') === 'B' ? 'B' : 'A',
+        scriptVersionId: text(row?.scriptVersionId, null),
+        avatarVersionId: text(row?.avatarVersionId, null),
+        voiceVersionId: text(row?.voiceVersionId, null),
+        templateVersionId: text(row?.templateVersionId, null),
+        sourceVideoAssetId: text(row?.sourceVideoAssetId, null),
+        mappingVersionId: text(row?.mappingVersionId, null),
+        outputName: text(row?.outputName, null),
+        outputSubdirectory: text(row?.outputSubdirectory, null),
+      }));
+    };
     const payload = {
       note: pickText(input.note, existing?.note),
       plannedItemCount: pickCount(input.plannedItemCount, existing?.plannedItemCount),
+      plannedItems: pickRows(input.plannedItems, existing?.plannedItems),
+      outputPolicy: pickObject(input.outputPolicy, existing?.outputPolicy),
+      preflightResult: pickObject(input.preflightResult, existing?.preflightResult),
+      preflightHistory: (function (value, previous) { if (value === undefined) return previous ?? null; if (!Array.isArray(value)) return previous ?? null; return value.slice(-20); })(input.preflightHistory, existing?.preflightHistory),
       /* F5-03/F5-04：P02 选定的文案版本、P03/P05 选定的形象/声音/模板版本。
          这里只做存储，不做业务判定（判定在投影层 + buildBatchPlan）。 */
       selectedScriptVersionId: pickText(input.selectedScriptVersionId, existing?.selectedScriptVersionId),
       selectedAvatarVersionId: pickText(input.selectedAvatarVersionId, existing?.selectedAvatarVersionId),
       selectedVoiceVersionId: pickText(input.selectedVoiceVersionId, existing?.selectedVoiceVersionId),
       selectedTemplateVersionId: pickText(input.selectedTemplateVersionId, existing?.selectedTemplateVersionId),
+      createdBatchId: pickText(input.createdBatchId, existing?.createdBatchId),
+      selectedContextId: pickText(input.selectedContextId, existing?.selectedContextId),
       contextSnapshot: pickObject(input.contextSnapshot, existing?.contextSnapshot),
     };
     this.db.prepare(`
@@ -872,5 +996,291 @@ export class ContentBatchStore {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
+  }
+
+  /* -------------------------------------------------------------------------
+     S6-01：N01 项目上下文（带版本）与 N02 文案生成需求
+     版本语义：同一 context_key 每次保存产生新版本行；旧行永不改写，
+     所以旧任务/旧草稿引用的 context id 永远可以回溯（N17 输入冻结）。
+     ------------------------------------------------------------------------- */
+
+  publicProjectContext(row) {
+    return {
+      id: row.id,
+      contextKey: row.context_key,
+      version: row.version,
+      name: row.name,
+      industry: row.industry || null,
+      product: row.product || null,
+      audience: row.audience || null,
+      sellingPoints: parse(row.selling_points_json, []),
+      contentGoal: row.content_goal || null,
+      status: row.status,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  listProjectContexts(actor, projectId) {
+    const context = this.context(actor, projectId);
+    return this.db.prepare('SELECT * FROM project_contexts WHERE project_id = ? ORDER BY context_key, version DESC').all(context.project.id)
+      .map((row) => this.publicProjectContext(row));
+  }
+
+  getProjectContext(actor, projectId, contextId) {
+    const context = this.context(actor, projectId);
+    const row = this.db.prepare('SELECT * FROM project_contexts WHERE project_id = ? AND id = ?').get(context.project.id, text(contextId));
+    return row ? this.publicProjectContext(row) : null;
+  }
+
+  saveProjectContext(actor, input = {}) {
+    const context = this.context(actor, input.projectId);
+    const timestamp = now();
+    const existingKey = text(input.contextKey, null);
+    let contextKey = existingKey;
+    let version = 1;
+    if (contextKey) {
+      const latest = this.db.prepare('SELECT version, status FROM project_contexts WHERE project_id = ? AND context_key = ? ORDER BY version DESC LIMIT 1').get(context.project.id, contextKey);
+      if (!latest) throw new Error('项目上下文版本不存在：' + contextKey);
+      version = latest.version + 1;
+    } else {
+      contextKey = 'ctx_' + randomUUID();
+    }
+    const id = 'pctx_' + randomUUID();
+    const sellingPoints = Array.isArray(input.sellingPoints) ? input.sellingPoints.map((point) => text(point)).filter(Boolean).slice(0, 20) : [];
+    this.db.prepare(`
+      INSERT INTO project_contexts (id, tenant_id, project_id, context_key, version, name, industry, product, audience, selling_points_json, content_goal, status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, context.tenantId, context.project.id, contextKey, version,
+      text(input.name, '未命名项目档案'),
+      text(input.industry, null), text(input.product, null), text(input.audience, null),
+      json(sellingPoints), text(input.contentGoal, null),
+      text(input.status, 'active'), actorName(actor), timestamp, timestamp,
+    );
+    return this.publicProjectContext(this.db.prepare('SELECT * FROM project_contexts WHERE id = ?').get(id));
+  }
+
+  listCopyRequests(actor, projectId) {
+    const context = this.context(actor, projectId);
+    return this.db.prepare('SELECT * FROM copy_generation_requests WHERE project_id = ? ORDER BY updated_at DESC LIMIT 20').all(context.project.id)
+      .map((row) => ({
+        id: row.id,
+        contextId: row.context_id || null,
+        count: row.count || null,
+        direction: row.direction || null,
+        platform: row.platform || null,
+        durationSeconds: row.duration_seconds || null,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+  }
+
+  saveCopyRequest(actor, input = {}) {
+    const context = this.context(actor, input.projectId);
+    const timestamp = now();
+    const existing = this.db.prepare('SELECT id FROM copy_generation_requests WHERE project_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1').get(context.project.id, 'ready');
+    const id = existing?.id || 'copyreq_' + randomUUID();
+    const count = Number.isInteger(Number(input.count)) && Number(input.count) > 0 && Number(input.count) <= 50 ? Number(input.count) : null;
+    const duration = Number.isInteger(Number(input.durationSeconds)) && Number(input.durationSeconds) > 0 ? Number(input.durationSeconds) : null;
+    this.db.prepare(`
+      INSERT INTO copy_generation_requests (id, tenant_id, project_id, context_id, count, direction, platform, duration_seconds, status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET context_id = excluded.context_id, count = excluded.count, direction = excluded.direction,
+        platform = excluded.platform, duration_seconds = excluded.duration_seconds, updated_at = excluded.updated_at
+    `).run(
+      id, context.tenantId, context.project.id, text(input.contextId, null),
+      count, text(input.direction, null), text(input.platform, null), duration,
+      'ready', actorName(actor), existing?.created_at || timestamp, timestamp,
+    );
+    return this.listCopyRequests(actor, input.projectId)[0] || null;
+  }
+
+  /* -------------------------------------------------------------------------
+     S6-02：N05–N10 数字人档案（绑定形象/声音版本）；S6-03：N11–N12 已有视频与映射。
+     没有真实训练提供方时，处理状态停在 pending_provider（待处理-提供方未配置），
+     绝不伪装成已训练。可用性由绑定版本的 approved/batchAllowed 推导。
+     ------------------------------------------------------------------------- */
+
+  listDigitalHumanProfiles(actor, projectId) {
+    const context = this.context(actor, projectId);
+    return this.db.prepare('SELECT * FROM digital_human_profiles WHERE project_id = ? ORDER BY updated_at DESC').all(context.project.id)
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        subjectRole: row.subject_role || null,
+        avatarVersionId: row.avatar_version_id || null,
+        voiceVersionId: row.voice_version_id || null,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+  }
+
+  saveDigitalHumanProfile(actor, input = {}) {
+    const context = this.context(actor, input.projectId);
+    const timestamp = now();
+    const id = text(input.id, text(input.id, null) || 'dhp_' + randomUUID());
+    const existing = this.db.prepare('SELECT id, created_at FROM digital_human_profiles WHERE id = ?').get(id);
+    if (existing && existing.id && text(input.id) !== id) throw new Error('档案 ID 冲突');
+    this.db.prepare(`
+      INSERT INTO digital_human_profiles (id, tenant_id, project_id, name, subject_role, avatar_version_id, voice_version_id, status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, subject_role = excluded.subject_role,
+        avatar_version_id = excluded.avatar_version_id, voice_version_id = excluded.voice_version_id,
+        status = excluded.status, updated_at = excluded.updated_at
+    `).run(
+      id, context.tenantId, context.project.id,
+      text(input.name, '未命名员工'),
+      text(input.subjectRole, null),
+      text(input.avatarVersionId, null),
+      text(input.voiceVersionId, null),
+      text(input.status, 'draft'),
+      actorName(actor), existing?.created_at || timestamp, timestamp,
+    );
+    return this.listDigitalHumanProfiles(actor, input.projectId).find((item) => item.id === id) || null;
+  }
+
+  listSourceVideos(actor, projectId) {
+    const context = this.context(actor, projectId);
+    return this.db.prepare('SELECT * FROM source_videos WHERE project_id = ? ORDER BY updated_at DESC').all(context.project.id)
+      .map((row) => ({
+        id: row.id,
+        subjectId: row.subject_id || null,
+        name: row.name,
+        fileRef: row.file_ref || null,
+        durationSeconds: row.duration_seconds || null,
+        aspect: row.aspect || null,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+  }
+
+  saveSourceVideo(actor, input = {}) {
+    const context = this.context(actor, input.projectId);
+    const timestamp = now();
+    const id = 'srcvid_' + randomUUID();
+    this.db.prepare(`
+      INSERT INTO source_videos (id, tenant_id, project_id, subject_id, name, file_ref, duration_seconds, aspect, status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, context.tenantId, context.project.id,
+      text(input.subjectId, null), text(input.name, '未命名视频'), text(input.fileRef, null),
+      Number.isInteger(Number(input.durationSeconds)) && Number(input.durationSeconds) > 0 ? Number(input.durationSeconds) : null,
+      text(input.aspect, null),
+      text(input.status, text(input.fileRef, null) ? 'usable' : 'pending_check'), actorName(actor), timestamp, timestamp,
+    );
+    return this.listSourceVideos(actor, input.projectId).find((item) => item.id === id) || null;
+  }
+
+  listVideoMappings(actor, projectId) {
+    const context = this.context(actor, projectId);
+    return this.db.prepare('SELECT * FROM video_mappings WHERE project_id = ? ORDER BY updated_at DESC').all(context.project.id)
+      .map((row) => ({
+        id: row.id,
+        videoId: row.video_id || null,
+        scriptVersionId: row.script_version_id || null,
+        voiceSource: row.voice_source || null,
+        voiceVersionId: row.voice_version_id || null,
+        templateVersionId: row.template_version_id || null,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+  }
+
+  saveVideoMapping(actor, input = {}) {
+    const context = this.context(actor, input.projectId);
+    const timestamp = now();
+    if (!text(input.videoId)) throw new Error('映射必须关联一个已有视频');
+    const id = text(input.id, null) || 'vmap_' + randomUUID();
+    const existing = this.db.prepare('SELECT id, created_at FROM video_mappings WHERE id = ?').get(id);
+    this.db.prepare(`
+      INSERT INTO video_mappings (id, tenant_id, project_id, video_id, script_version_id, voice_source, voice_version_id, template_version_id, status, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET video_id = excluded.video_id, script_version_id = excluded.script_version_id,
+        voice_source = excluded.voice_source, voice_version_id = excluded.voice_version_id,
+        template_version_id = excluded.template_version_id, status = excluded.status, updated_at = excluded.updated_at
+    `).run(
+      id, context.tenantId, context.project.id,
+      text(input.videoId), text(input.scriptVersionId, null),
+      text(input.voiceSource, 'original'), text(input.voiceVersionId, null), text(input.templateVersionId, null),
+      text(input.status, 'draft'), actorName(actor), existing?.created_at || timestamp, timestamp,
+    );
+
+    return this.listVideoMappings(actor, input.projectId).find((item) => item.id === id) || null;
+  }
+
+  /* -------------------------------------------------------------------------
+     S7-01：N18 Provider Registry。
+     status: candidate（候选，只登记不接入）| preferred（首选，通过验证）|
+             blocked（许可/硬件/质量任一不过）| simulation（模拟占位）。
+     N17 闸门只认 preferred；simulation/candidate 一律如实阻塞。
+     ------------------------------------------------------------------------- */
+
+  listN18Providers(actor) {
+    const context = this.context(actor, null);
+    return this.db.prepare('SELECT * FROM n18_providers WHERE tenant_id = ? ORDER BY capability, status').all(context.tenantId)
+      .map((row) => ({
+        id: row.id,
+        capability: row.capability,
+        providerKey: row.provider_key,
+        transport: row.transport,
+        endpoint: row.endpoint || null,
+        status: row.status,
+        licenseCode: row.license_code || null,
+        licenseWeights: row.license_weights || null,
+        notes: row.notes || null,
+        updatedAt: row.updated_at,
+      }));
+  }
+
+  saveN18Provider(actor, input = {}) {
+    const context = this.context(actor, null);
+    const timestamp = now();
+    if (!['tts', 'talking_head', 'lipsync'].includes(input.capability)) throw new Error('未知的 N18 能力类型：' + input.capability);
+    if (!['candidate', 'preferred', 'blocked', 'simulation'].includes(input.status)) throw new Error('未知的 Provider 状态：' + input.status);
+    const id = text(input.id, 'n18p_' + randomUUID());
+    const existing = this.db.prepare('SELECT id, created_at FROM n18_providers WHERE id = ?').get(id);
+    this.db.prepare(`
+      INSERT INTO n18_providers (id, tenant_id, capability, provider_key, transport, endpoint, status, license_code, license_weights, notes, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET capability = excluded.capability, provider_key = excluded.provider_key,
+        transport = excluded.transport, endpoint = excluded.endpoint, status = excluded.status,
+        license_code = excluded.license_code, license_weights = excluded.license_weights,
+        notes = excluded.notes, updated_at = excluded.updated_at
+    `).run(
+      id, context.tenantId, input.capability, text(input.providerKey, 'unknown'),
+      text(input.transport, 'http-worker'), text(input.endpoint, null), input.status,
+      text(input.licenseCode, null), text(input.licenseWeights, null), text(input.notes, null),
+      actorName(actor), existing?.created_at || timestamp, timestamp,
+    );
+    return this.listN18Providers(actor).find((item) => item.id === id) || null;
+  }
+
+  seedN18Providers(actor) {
+    const existing = this.listN18Providers(actor);
+    const knownKeys = new Set(existing.map((item) => item.providerKey));
+    const seed = [
+      { capability: 'tts', providerKey: 'fake-tts', transport: 'simulation', status: 'simulation', notes: 'fake adapter：只验证协议与队列' },
+      { capability: 'talking_head', providerKey: 'fake-avatar', transport: 'simulation', status: 'simulation', notes: 'fake adapter：只验证协议与队列' },
+      { capability: 'talking_head', providerKey: 'musetalk-1.5', transport: 'command', status: 'candidate', licenseCode: 'NOASSERTION（仓库许可需逐字核对）', notes: '受控 wrapper 已存在于 wrappers/musetalk_talking_head.py；需外部 NVIDIA Worker' },
+      { capability: 'talking_head', providerKey: 'duix-avatar', transport: 'http-worker', status: 'candidate', licenseCode: 'DUIX Community License（署名/披露/MAU 条款）', notes: '模式 A 主候选；需外部 NVIDIA Worker + ~32GB 内存' },
+      { capability: 'tts', providerKey: 'qwen3-tts', transport: 'command', status: 'candidate', licenseCode: 'Apache-2.0（代码）；权重按模型卡', notes: '声音首选；本机 MPS/MLX 可行性待验证（已有 mlx_audio wrapper）' },
+      { capability: 'tts', providerKey: 'cosyvoice', transport: 'command', status: 'candidate', licenseCode: 'Apache-2.0（代码）；权重按模型卡', notes: '声音备用；CUDA 优先' },
+      { capability: 'lipsync', providerKey: 'latentsync', transport: 'command', status: 'candidate', licenseCode: 'Apache-2.0（代码）', notes: 'LatentSync 质量对比候选；CUDA 重' },
+      { capability: 'tts', providerKey: 'doubao-voice-clone-2.0', transport: 'http-worker', status: 'preferred', licenseCode: '商用 API（火山引擎声音复刻2.0，免费额度+按量）', notes: 'S7-02 真实样片验收通过（2026-09-14 负责人试听认可）。复刻走控制台/上传 wrapper，合成走 v3 unidirectional seed-icl-2.0。' },
+      { capability: 'tts', providerKey: 'doubao-tts-api', transport: 'http-worker', status: 'candidate', licenseCode: '商用 API（火山引擎，按量 1.3 元/千字）', notes: 'S7-02 调研首选：抖音同款中文情感顶级；按量付费无需 GPU；需 API Key' },
+      { capability: 'tts', providerKey: 'minimax-audio', transport: 'http-worker', status: 'candidate', licenseCode: '商用 API（MiniMax，约 $0.10/1K）', notes: '口碑最佳开箱自然度（听不出 AI）；需 API Key' },
+      { capability: 'talking_head', providerKey: 'guiji-avatar-api', transport: 'http-worker', status: 'candidate', licenseCode: '商用 API（硅基智能官方，HeyGem 同厂云端版，按条/套餐计费）', notes: '零部署替代：与 HeyGem 同厂同技术栈的云端 API；适合低频阶段或不想管 GPU' },
+      { capability: 'talking_head', providerKey: 'shanjian-api', transport: 'http-worker', status: 'candidate', licenseCode: '商用 API（闪剪，299 元/月起）', notes: '批量短视频友好；效果对比候选' },
+    ];
+    for (const item of seed) {
+      if (!knownKeys.has(item.providerKey)) this.saveN18Provider(actor, item);
+    }
+    return this.listN18Providers(actor);
   }
 }

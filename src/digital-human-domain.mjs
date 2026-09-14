@@ -104,6 +104,270 @@ function budgetFor(count, input) {
   };
 }
 
+/* ---------------------------------------------------------------------------
+   显式批次计划（F5-05/F5-06 结构性调整，负责人 2026-09-11 确认采用 A 方案）
+   ---------------------------------------------------------------------------
+   与 buildBatchPlan（全组合）并存：
+     - buildBatchPlan：avatarVersionIds × scriptVersionIds 全组合，保持兼容；
+     - buildExplicitBatchPlan：按显式明细行逐行生成 item，一行对应一个输出，
+       绝不做隐藏的笛卡尔积（N15）。
+   两者的校验规则一致：资产 approved + batchAllowed、文案 approved + 有正文、
+   连接器具备口播能力、超过 M7 小批次必须先确认预算。
+   --------------------------------------------------------------------------- */
+
+export function buildExplicitBatchPlan(input = {}) {
+  const rows = Array.isArray(input.rows) ? input.rows.slice(0, 300) : [];
+  if (!rows.length) throw new Error('显式明细至少要有 1 行');
+
+  const templateVersionId = text(input.templateVersionId);
+  const connectorId = text(input.connectorId);
+  if (!connectorId) throw new Error('视频连接器不能为空');
+
+  const avatars = recordMap(input.avatars, '数字人');
+  const scripts = recordMap(input.scripts, '文案');
+  const templates = recordMap(input.templates, '模板');
+  const connectors = recordMap(input.connectors, '连接器');
+  const voices = recordMap(input.voices, '声音');
+
+  const connector = connectors.get(connectorId);
+  if (!connector || !['ready', 'simulation'].includes(connector.status)) {
+    throw new Error('连接器不可用：' + connectorId);
+  }
+  if (!Array.isArray(connector.capabilities) || !connector.capabilities.includes('talking_head')) {
+    throw new Error('连接器缺少数字人口播能力：' + connectorId);
+  }
+  const globalTemplate = templateVersionId ? templates.get(templateVersionId) : null;
+  if (templateVersionId && (!globalTemplate || !['approved', 'active'].includes(globalTemplate.status) || globalTemplate.batchAllowed === false)) {
+    throw new Error('模板版本不可用于批量生产：' + templateVersionId);
+  }
+
+  const maxItems = Number.isInteger(input.maxItems) && input.maxItems > 0 ? input.maxItems : 300;
+  if (rows.length > maxItems) throw new Error(`显式明细 ${rows.length} 行超过批次上限 ${maxItems} 行`);
+  const budget = budgetFor(rows.length, input);
+
+  const items = [];
+  const seenKeys = new Set();
+  for (const [index, row] of rows.entries()) {
+    const rowMode = text(row.mode, 'A') === 'B' ? 'B' : 'A';
+    if (rowMode !== 'A') {
+      throw new Error(`第 ${index + 1} 行：模式 B 的已有视频目录尚未接入，不能创建批次`);
+    }
+    const rowTemplateId = text(row.templateVersionId, templateVersionId);
+    if (!rowTemplateId) throw new Error(`第 ${index + 1} 行：模板版本不能为空`);
+    const rowTemplate = templates.get(rowTemplateId);
+    if (!rowTemplate || !['approved', 'active'].includes(rowTemplate.status) || rowTemplate.batchAllowed === false) {
+      throw new Error(`第 ${index + 1} 行：模板版本不可用于批量生产：` + rowTemplateId);
+    }
+
+    const scriptId = text(row.scriptVersionId);
+    const script = scripts.get(scriptId);
+    if (!script) throw new Error(`第 ${index + 1} 行：文案版本不存在：` + scriptId);
+    if (script.status !== 'approved') throw new Error(`第 ${index + 1} 行：文案版本必须审核通过：` + scriptId);
+    if (!text(script.text)) throw new Error(`第 ${index + 1} 行：文案版本缺少正文：` + scriptId);
+
+    const avatarId = text(row.avatarVersionId);
+    const avatar = avatars.get(avatarId);
+    ensureApprovedAsset(avatar, `第 ${index + 1} 行数字人版本 ` + avatarId);
+    const effectiveVoiceVersionId = text(row.voiceVersionId, text(avatar?.voiceVersionId, null));
+    if (!effectiveVoiceVersionId) throw new Error(`第 ${index + 1} 行：声音版本不能为空`);
+    ensureApprovedAsset(voices.get(effectiveVoiceVersionId), `第 ${index + 1} 行声音版本 ` + effectiveVoiceVersionId);
+
+    const voice = voices.get(effectiveVoiceVersionId);
+    const key = [avatarId, effectiveVoiceVersionId, scriptId, rowTemplateId, connectorId].join('|');
+    if (seenKeys.has(key)) throw new Error(`第 ${index + 1} 行与前面的行完全重复（幂等键冲突）：` + key);
+    seenKeys.add(key);
+
+    items.push({
+      id: 'batch_item_' + hash(key),
+      idempotencyKey: key,
+      avatarVersionId: avatarId,
+      voiceVersionId: effectiveVoiceVersionId,
+      scriptVersionId: scriptId,
+      templateVersionId: rowTemplateId,
+      connectorId,
+      status: 'planned',
+      attempt: 0,
+      maxAttempts: Number.isInteger(input.maxAttempts) && input.maxAttempts > 0 ? input.maxAttempts : 3,
+      stage: 'planned',
+      rowNo: index + 1,
+      outputName: text(row.outputName, null),
+      outputSubdirectory: text(row.outputSubdirectory, null),
+      input: {
+        avatarVersionId: avatarId,
+        voiceVersionId: effectiveVoiceVersionId,
+        scriptVersionId: scriptId,
+        templateVersionId: rowTemplateId,
+        avatar: inputSnapshot(avatar, [
+          'displayName', 'canonicalImageRef', 'baseVideoRef', 'referenceImageRefs', 'modelAssetRef', 'authorizationRef',
+        ]),
+        voice: inputSnapshot(voice, [
+          'displayName', 'referenceAudioRef', 'referenceTranscript', 'voiceName', 'provider', 'modelVersion', 'licenseRef', 'weightsHash', 'modelAssetRef', 'authorizationRef',
+        ]),
+        script: inputSnapshot(script, [
+          'title', 'text', 'platform', 'language', 'estimatedDurationSeconds',
+        ]),
+        template: inputSnapshot(rowTemplate, [
+          'displayName', 'width', 'height', 'fps', 'durationLimitSeconds', 'captionPreset',
+          'safeArea', 'backgroundRef', 'logoRef', 'introRef', 'outroRef', 'musicRef',
+        ]),
+      },
+      output: null,
+      error: null,
+      review: null,
+      queuedAt: null,
+      leaseUntil: null,
+      createdAt: null,
+      updatedAt: null,
+    });
+  }
+
+  return {
+    version: 'content-batch-plan-explicit-v1',
+    combinationMode: 'explicit',
+    /* 兼容 createContentBatch 需要的字段：从显式行汇总，不代表全组合语义。 */
+    avatarVersionIds: [...new Set(items.map((item) => item.avatarVersionId))],
+    scriptVersionIds: [...new Set(items.map((item) => item.scriptVersionId))],
+    voiceVersionId: null,
+    templateVersionId: templateVersionId || null,
+    connectorId,
+    count: items.length,
+    maxItems,
+    budget,
+    items,
+  };
+}
+
+/* ---------------------------------------------------------------------------
+   S7-01：N18 稳定契约（第七阶段规划 §7.1）与 Provider 能力闸门
+   契约原则：客户端只提交业务级输入；模型差异（Python/CUDA/权重路径）只存在于
+   provider 配置与运行记录，绝不进入页面字段或批次数据。
+   --------------------------------------------------------------------------- */
+
+export const N18_SCHEMA_VERSION = 'content-digital-human-n18-v1';
+
+function n18Issue(code, field, message, extra = {}) {
+  return { code, field, message, retryable: extra.retryable === true };
+}
+
+
+export function buildN18Request(input = {}) {
+  const mode = text(input.mode, 'A') === 'B' ? 'B' : 'A';
+  const errors = [];
+  const script = input.script || null;
+  if (!script || script.confirmed !== true) {
+    errors.push(n18Issue('N18_SCRIPT_NOT_CONFIRMED', 'script_version_id', 'N18 请求必须引用已确认（confirmed）的文案版本', { retryable: false }));
+  }
+  if (!text(input.templateVersionId)) {
+    errors.push(n18Issue('N18_TEMPLATE_MISSING', 'scene_template_version_id', 'N18 请求必须引用场景模板版本', { retryable: false }));
+  }
+
+  const digitalHuman = mode === 'A'
+    ? {
+        profile_id: text(input.profileId, null),
+        avatar_version_id: text(input.avatarVersionId, null),
+        voice_version_id: text(input.voiceVersionId, null),
+      }
+    : { profile_id: text(input.profileId, null) || null, avatar_version_id: null, voice_version_id: text(input.voiceVersionId, null) };
+
+  if (mode === 'A') {
+    if (!digitalHuman.profile_id || !digitalHuman.avatar_version_id || !digitalHuman.voice_version_id) {
+      errors.push(n18Issue('N18_DIGITAL_HUMAN_INCOMPLETE', 'digital_human', '模式 A 必须提供完整的数字人档案：profile_id + avatar_version_id + voice_version_id', { retryable: false }));
+    }
+  }
+
+  const sourceVideoAssetId = mode === 'B' ? text(input.sourceVideoAssetId, null) || null : null;
+  if (mode === 'B' && !sourceVideoAssetId) {
+    errors.push(n18Issue('N18_SOURCE_VIDEO_MISSING', 'source_video_asset_id', '模式 B 必须提供已有视频资产', { retryable: false }));
+  }
+
+  const targetAudioAssetId = text(input.targetAudioAssetId, null) || null;
+  const hasVoice = mode === 'A' ? Boolean(digitalHuman.voice_version_id) : Boolean(digitalHuman.voice_version_id) && !targetAudioAssetId;
+  if (mode === 'B' && targetAudioAssetId && digitalHuman.voice_version_id) {
+    errors.push(n18Issue('N18_DUAL_AUDIO_SOURCE', 'target_audio_asset_id', '模式 B 的目标配音只能二选一：已有目标音频 或 声音版本，不允许同时传入', { retryable: false }));
+  }
+  if (mode === 'B' && !targetAudioAssetId && !digitalHuman.voice_version_id) {
+    errors.push(n18Issue('N18_AUDIO_SOURCE_MISSING', 'target_audio_asset_id', '模式 B 必须二选一提供：目标音频 或 声音版本', { retryable: false }));
+  }
+
+  const output = input.outputPolicy && typeof input.outputPolicy === 'object' ? input.outputPolicy : {};
+  if (!text(output.directory)) {
+    errors.push(n18Issue('N18_OUTPUT_DIRECTORY_MISSING', 'output_policy_snapshot', 'N18 请求必须携带输出目录快照（受控目录内）', { retryable: false }));
+  }
+
+  return {
+    schema_version: N18_SCHEMA_VERSION,
+    task_id: text(input.taskId, null),
+    item_id: text(input.itemId, null),
+    mode,
+    project_context_version_id: text(input.projectContextVersionId, null),
+    script_version_id: text(input.scriptVersionId, null),
+    script_text: script ? text(script.text, null) : text(input.scriptText, null),
+    digital_human: digitalHuman,
+    source_video_asset_id: sourceVideoAssetId,
+    target_audio_asset_id: targetAudioAssetId,
+    has_voice_source: hasVoice,
+    scene_template_version_id: text(input.templateVersionId, null),
+    output_policy_snapshot: {
+      directory: text(output.directory, null),
+      folder: text(output.folder, null),
+      file_name: text(output.fileName, null),
+      container: text(output.container, 'mp4'),
+    },
+    blocking_issues: errors,
+    buildable: errors.length === 0,
+  };
+}
+
+export const N18_CAPABILITIES = Object.freeze({
+  A: ['tts', 'talking_head'],
+  B: ['lipsync'],
+});
+
+export function projectN18Providers(providers = [], mode = 'A') {
+  const list = Array.isArray(providers) ? providers : [];
+  const required = N18_CAPABILITIES[mode] || [];
+  const byCapability = {};
+  for (const capability of ['tts', 'talking_head', 'lipsync']) {
+    byCapability[capability] = list.filter((item) => item.capability === capability);
+  }
+  const blockingIssues = [];
+  const readiness = {};
+  for (const capability of required) {
+    const candidates = byCapability[capability] || [];
+    const preferred = candidates.find((item) => item.status === 'preferred');
+    const blocked = candidates.filter((item) => item.status === 'blocked');
+    readiness[capability] = {
+      required: true,
+      preferred: preferred || null,
+      candidateCount: candidates.filter((item) => item.status === 'candidate').length,
+      blockedCount: blocked.length,
+      simulationCount: candidates.filter((item) => item.status === 'simulation').length,
+      ready: Boolean(preferred),
+    };
+    if (!preferred) {
+      blockingIssues.push(n18Issue(
+        'N18_PROVIDER_NOT_READY_' + capability.toUpperCase(),
+        'n18_providers',
+        capability === 'tts'
+          ? '还没有通过验证（preferred）的 TTS 提供方：当前只有候选/模拟登记，不能开始真实生成（N18）'
+          : capability === 'talking_head'
+            ? '还没有通过验证（preferred）的数字人视频提供方：Duix.Avatar 等候选需要先在 NVIDIA GPU Worker 上完成真实样片验收'
+            : '还没有通过验证（preferred）的口型同步提供方：MuseTalk 等候选需要先在 NVIDIA GPU Worker 上完成真实样片验收',
+        { retryable: false },
+      ));
+    }
+  }
+  return {
+    mode,
+    required,
+    byCapability,
+    readiness,
+    blockingIssues,
+    allReady: required.every((capability) => readiness[capability] && readiness[capability].ready),
+    note: 'Provider 状态只允许负责人在真实样片验收后由 candidate 升级为 preferred；任何模拟结果都不能触发升级。',
+  };
+}
+
 export function buildBatchPlan(input = {}) {
   if (input.combinationMode && input.combinationMode !== 'cartesian') {
     throw new Error('当前只支持全组合批次');
@@ -252,8 +516,13 @@ export function createContentBatch(input, actor, options = {}) {
   const plan = input?.plan;
   if (!plan || !Array.isArray(plan.items) || !plan.items.length) throw new Error('批次计划不能为空');
   const timestamp = options.now || new Date().toISOString();
+  /* 修复：item id 必须绑定批次。此前 id = hash(组合) 全局唯一，
+     同一组合第二次建批次时 upsert 会命中旧批次的条目（batch_id 不迁移），
+     导致新批次 0 条、旧批次条目被复用。现在 id = 批次前缀 + 组合哈希，
+     幂等语义由 (batch_id, idempotency_key) 唯一约束承担。 */
+  const batchId = text(input.id);
   const batch = {
-    id: text(input.id),
+    id: batchId,
     taskId: text(input.taskId),
     tenantId: text(input.tenantId),
     projectId: text(input.projectId),
@@ -270,7 +539,12 @@ export function createContentBatch(input, actor, options = {}) {
     budget: plan.budget?.required
       ? { ...clone(plan.budget), confirmedBy: actorSnapshot(actor), confirmedAt: timestamp }
       : clone(plan.budget || { required: false, confirmed: false, estimate: null }),
-    items: plan.items.map((item) => ({ ...clone(item), createdAt: timestamp, updatedAt: timestamp })),
+    items: plan.items.map((item) => ({
+      ...clone(item),
+      id: batchId ? batchId + '::' + item.id : item.id,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })),
     history: [],
     createdBy: actorSnapshot(actor),
     approvedBy: null,

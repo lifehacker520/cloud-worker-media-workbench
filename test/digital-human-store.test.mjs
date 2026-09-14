@@ -201,3 +201,94 @@ test('batch records stay inside the project tenant boundary', async () => {
     await closeFixture(fixture);
   }
 });
+
+/* ---------------------------------------------------------------------------
+   S6-01：N01 项目上下文版本化 + N02 文案生成需求 + 文案长度控制
+   --------------------------------------------------------------------------- */
+
+test('N01 项目上下文：编辑产生新版本，旧版本 id 仍可回溯（输入冻结）', async () => {
+  const fixture = await openFixture();
+  try {
+    const v1 = fixture.batches.saveProjectContext(actor, {
+      projectId: 'project_content_editor',
+      name: '职业技能培训 · 秋季课程',
+      industry: '职业教育',
+      product: '秋季训练营',
+      audience: '大学生与转行者',
+      sellingPoints: ['小班直播', '就业辅导'],
+      contentGoal: '让用户理解课程与求职的关系',
+    });
+    assert.equal(v1.version, 1);
+    assert.deepEqual(v1.sellingPoints, ['小班直播', '就业辅导']);
+
+    /* 模拟客户端刷新后编辑：同一 contextKey 产生 v2，v1 仍可读取 */
+    const dataDir = fixture.dataDir;
+    fixture.workbench.close();
+    const reopened = await WorkbenchStore.open(dataDir);
+    const batches = new ContentBatchStore(reopened);
+    batches.ensureSchema();
+    const v2 = batches.saveProjectContext(actor, {
+      projectId: 'project_content_editor',
+      contextKey: v1.contextKey,
+      name: '职业技能培训 · 秋季课程（改）',
+      industry: '职业教育',
+      audience: '大学生',
+    });
+    assert.equal(v2.version, 2);
+    assert.equal(v2.contextKey, v1.contextKey);
+    const stillV1 = batches.getProjectContext(actor, 'project_content_editor', v1.id);
+    assert.ok(stillV1, '旧版本必须仍可读取（旧任务引用不漂移）');
+    assert.equal(stillV1.name, '职业技能培训 · 秋季课程', '旧版本内容不被改写');
+    const list = batches.listProjectContexts(actor, 'project_content_editor');
+    assert.equal(list.filter((item) => item.contextKey === v1.contextKey).length, 2);
+    reopened.close();
+  } finally {
+    await rm(fixture.dataDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('N02 文案生成需求：保存后可读，数量与时长做范围校验', async () => {
+  const fixture = await openFixture();
+  try {
+    const saved = fixture.batches.saveCopyRequest(actor, {
+      projectId: 'project_content_editor',
+      count: 5,
+      direction: '破除发手机是福利的误解',
+      platform: '抖音',
+      durationSeconds: 45,
+    });
+    assert.equal(saved.count, 5);
+    const again = fixture.batches.saveCopyRequest(actor, {
+      projectId: 'project_content_editor', count: 8, direction: '换方向', platform: 'B 站', durationSeconds: 60,
+    });
+    assert.equal(again.id, saved.id, '同一项目重复保存是更新同一条活跃需求');
+    const list = fixture.batches.listCopyRequests(actor, 'project_content_editor');
+    assert.equal(list.length, 1);
+    assert.equal(list[0].count, 8);
+    const bad = fixture.batches.saveCopyRequest(actor, { projectId: 'project_content_editor', count: 999 });
+    assert.equal(bad.count, null, '超出范围的数量的判为缺失，不落脏数据');
+  } finally {
+    await rm(fixture.dataDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test('S6-01 文案登记：超长正文被拦截，合法正文自动带摘要与字数', async () => {
+  const fixture = await openFixture();
+  try {
+    assert.throws(
+      () => fixture.batches.createScriptSet(actor, {
+        projectId: 'project_content_editor', taskId: 't', name: '超长', approved: true,
+        versions: [{ title: '超长', text: '长'.repeat(5001) }],
+      }),
+      /5000 字上限/,
+    );
+    const ok = fixture.batches.createScriptSet(actor, {
+      projectId: 'project_content_editor', taskId: 't', name: '正常', approved: true,
+      versions: [{ title: '正常', text: '这是正文。'.repeat(40) }],
+    });
+    assert.equal(ok.versions[0].textLength, 200);
+    assert.ok(ok.versions[0].summary.length <= 121 && ok.versions[0].summary.length > 0, '登记时必须生成摘要');
+  } finally {
+    await rm(fixture.dataDir, { recursive: true, force: true }).catch(() => {});
+  }
+});

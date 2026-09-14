@@ -3,6 +3,9 @@ import { test } from 'node:test';
 
 import {
   buildBatchPlan,
+  buildExplicitBatchPlan,
+  buildN18Request,
+  projectN18Providers,
   createContentBatch,
   summarizeBatch,
   transitionContentBatch,
@@ -297,4 +300,135 @@ test('returned items can be regenerated and retry limits fail closed', () => {
     () => transitionContentBatchItem(limited, limited.items[0].id, 'retry', { username: 'tester' }),
     /最大重试次数/,
   );
+});
+
+/* ---------------------------------------------------------------------------
+   F5-05/A 方案：buildExplicitBatchPlan（显式行 → 批次，不做全组合）
+   --------------------------------------------------------------------------- */
+
+const explicitCatalog = {
+  avatars: [{ id: 'a1', status: 'approved', batchAllowed: true, canonicalImageRef: 'x', authorizationStatus: 'approved' }],
+  voices: [{ id: 'v1', status: 'approved', batchAllowed: true, referenceAudioRef: 'y', authorizationStatus: 'approved' }],
+  scripts: [
+    { id: 's1', status: 'approved', text: '正文一', title: 'A 版' },
+    { id: 's2', status: 'approved', text: '正文二', title: 'B 版' },
+  ],
+  templates: [{ id: 't1', status: 'approved', batchAllowed: true }],
+  connectors: [{ id: 'cx', status: 'simulation', capabilities: ['talking_head'] }],
+};
+
+test('显式批次计划：一行一个 item，绝不隐式相乘', () => {
+  const plan = buildExplicitBatchPlan({
+    ...explicitCatalog,
+    connectorId: 'cx',
+    rows: [
+      { mode: 'A', scriptVersionId: 's1', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'row-01' },
+      { mode: 'A', scriptVersionId: 's2', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'row-02' },
+    ],
+  });
+  assert.equal(plan.combinationMode, 'explicit');
+  assert.equal(plan.count, 2);
+  assert.deepEqual(plan.items.map((item) => item.outputName), ['row-01', 'row-02']);
+  assert.equal(new Set(plan.items.map((item) => item.idempotencyKey)).size, 2);
+});
+
+test('显式批次计划：拒绝重复行、未审核资产与模式 B 行', () => {
+  const base = { ...explicitCatalog, connectorId: 'cx' };
+  assert.throws(
+    () => buildExplicitBatchPlan({ ...base, rows: [
+      { mode: 'A', scriptVersionId: 's1', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1' },
+      { mode: 'A', scriptVersionId: 's1', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1' },
+    ] }),
+    /幂等键冲突/,
+  );
+  /* 未审核的形象版本必须被拒 */
+  const draftAvatarCatalog = {
+    ...explicitCatalog,
+    avatars: [{ id: 'a2', status: 'draft', batchAllowed: true, canonicalImageRef: 'x' }],
+  };
+  assert.throws(
+    () => buildExplicitBatchPlan({ ...draftAvatarCatalog, connectorId: 'cx', rows: [
+      { mode: 'A', scriptVersionId: 's1', avatarVersionId: 'a2', voiceVersionId: 'v1', templateVersionId: 't1' },
+    ] }),
+    /必须审核通过/,
+  );
+  assert.throws(
+    () => buildExplicitBatchPlan({ ...base, rows: [{ mode: 'B', scriptVersionId: 's1', sourceVideoAssetId: 'sv' }] }),
+    /模式 B/,
+  );
+});
+
+test('显式批次计划：超过 M7 小批次必须先确认预算（与全组合同一规则）', () => {
+  /* 预算用例需要 7 行互不相同的组合，否则会先被幂等键拦截（那是另一条规则）。 */
+  const manyScripts = {
+    ...explicitCatalog,
+    scripts: Array.from({ length: 7 }, (_, index) => ({ id: 's' + (index + 1), status: 'approved', text: '正文' + (index + 1), title: '第' + (index + 1) + '版' })),
+  };
+  const rows = Array.from({ length: 7 }, (_, index) => ({
+    mode: 'A', scriptVersionId: 's' + (index + 1), avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'row-' + String(index + 1).padStart(2, '0'),
+  }));
+  assert.throws(
+    () => buildExplicitBatchPlan({ ...manyScripts, connectorId: 'cx', rows }),
+    /预算/,
+  );
+  const ok = buildExplicitBatchPlan({
+    ...manyScripts, connectorId: 'cx', rows,
+    budgetConfirmed: true, budgetEstimate: { amount: 10, currency: 'CNY', basis: '验证' },
+  });
+  assert.equal(ok.count, 7);
+  assert.equal(ok.budget.required, true);
+});
+
+/* ---------------------------------------------------------------------------
+   S7-01：N18 稳定契约与 Provider 能力闸门
+   --------------------------------------------------------------------------- */
+
+test('N18 契约：模式 A 必须携带完整数字人档案，输出快照必须存在', () => {
+  const ok = buildN18Request({
+    mode: 'A', taskId: 't1', itemId: 'i1', scriptVersionId: 's1',
+    script: { confirmed: true, text: '正文' }, profileId: 'p1', avatarVersionId: 'a1', voiceVersionId: 'v1',
+    templateVersionId: 't1', projectContextVersionId: 'ctx', outputPolicy: { directory: '/out', folder: 'f', fileName: 'x.mp4' },
+  });
+  assert.equal(ok.buildable, true);
+  assert.equal(ok.schema_version, 'content-digital-human-n18-v1');
+  assert.deepEqual(ok.digital_human, { profile_id: 'p1', avatar_version_id: 'a1', voice_version_id: 'v1' });
+  assert.equal(ok.output_policy_snapshot.container, 'mp4');
+
+  const broken = buildN18Request({ mode: 'A', script: { confirmed: true, text: 'x' }, templateVersionId: 't1', outputPolicy: { directory: '/out' } });
+  assert.ok(broken.blocking_issues.some((issue) => issue.code === 'N18_DIGITAL_HUMAN_INCOMPLETE'));
+  assert.equal(broken.buildable, false);
+});
+
+test('N18 契约：模式 B 目标配音二选一，双来源必须拒绝', () => {
+  const base = { mode: 'B', scriptVersionId: 's1', script: { confirmed: true, text: '正文' }, sourceVideoAssetId: 'sv1', templateVersionId: 't1', outputPolicy: { directory: '/out' } };
+  const dual = buildN18Request({ ...base, targetAudioAssetId: 'au1', voiceVersionId: 'v1' });
+  assert.ok(dual.blocking_issues.some((issue) => issue.code === 'N18_DUAL_AUDIO_SOURCE'));
+  const byVoice = buildN18Request({ ...base, voiceVersionId: 'v1' });
+  assert.equal(byVoice.buildable, true);
+  assert.equal(byVoice.digital_human.voice_version_id, 'v1');
+  const byAudio = buildN18Request({ ...base, targetAudioAssetId: 'au1' });
+  assert.equal(byAudio.buildable, true);
+  const none = buildN18Request({ ...base });
+  assert.ok(none.blocking_issues.some((issue) => issue.code === 'N18_AUDIO_SOURCE_MISSING'));
+});
+
+test('N18 Provider 闸门：只有 preferred 放行；候选/模拟一律如实阻塞', () => {
+  const providers = [
+    { capability: 'tts', providerKey: 'qwen3', status: 'preferred' },
+    { capability: 'talking_head', providerKey: 'duix', status: 'preferred' },
+    { capability: 'lipsync', providerKey: 'latentsync', status: 'candidate' },
+  ];
+  const gateA = projectN18Providers(providers, 'A');
+  assert.equal(gateA.allReady, true);
+  const gateB = projectN18Providers(providers, 'B');
+  assert.equal(gateB.allReady, false);
+  assert.equal(gateB.blockingIssues[0].code, 'N18_PROVIDER_NOT_READY_LIPSYNC');
+  const sim = projectN18Providers([
+    { capability: 'tts', status: 'simulation' },
+    { capability: 'talking_head', status: 'simulation' },
+  ], 'A');
+  assert.equal(sim.allReady, false);
+  assert.deepEqual(sim.blockingIssues.map((issue) => issue.code), [
+    'N18_PROVIDER_NOT_READY_TTS', 'N18_PROVIDER_NOT_READY_TALKING_HEAD',
+  ]);
 });

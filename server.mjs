@@ -1,8 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { createServer } from 'node:http';
+import fs from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { heygemGenerate, checkHeygemWorker, loadSshConfig } from './src/autodl-worker.mjs';
 import { homedir } from 'node:os';
+import path from 'node:path';
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -43,6 +46,9 @@ import {
 } from './src/content-workflow.mjs';
 import {
   buildBatchPlan,
+  buildExplicitBatchPlan,
+  buildN18Request,
+  projectN18Providers,
   createContentBatch,
   summarizeBatch,
   transitionContentBatch,
@@ -50,8 +56,15 @@ import {
 } from './src/digital-human-domain.mjs';
 import {
   projectCenterSummary,
+  projectResultBoard,
+  projectPackageView,
+  projectContextStage,
+  projectDigitalHumanProfiles,
+  projectModeBStage,
   projectCopyCandidates,
   projectAssetCatalog,
+  projectTaskWorkspace,
+  preflightGate,
 } from './src/digital-human-projection.mjs';
 import { ContentBatchRunner, FakeMediaGenerationConnector } from './src/content-batch-runner.mjs';
 import { ContentBatchStore } from './src/content-batch-store.mjs';
@@ -1619,6 +1632,18 @@ function batchPlanFor(user, body = {}) {
     connectors: catalog.connectors,
   });
   return { task, catalog, plan };
+}
+
+async function probePackageDirWritable() {
+  try {
+    await mkdir(PACKAGE_DIR, { recursive: true });
+    const probe = join(PACKAGE_DIR, '.write-probe-' + Date.now());
+    await writeFile(probe, 'probe');
+    await rm(probe, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function runContentBatch(user, batch) {
@@ -4438,10 +4463,14 @@ async function handleRequest(request, response) {
         title: body.title,
         note: body.note,
         plannedItemCount: body.plannedItemCount,
+        plannedItems: body.plannedItems,
+        outputPolicy: body.outputPolicy,
+        preflightResult: body.preflightResult,
         selectedScriptVersionId: body.selectedScriptVersionId,
         selectedAvatarVersionId: body.selectedAvatarVersionId,
         selectedVoiceVersionId: body.selectedVoiceVersionId,
         selectedTemplateVersionId: body.selectedTemplateVersionId,
+        selectedContextId: body.selectedContextId,
         contextSnapshot: {
           projectName: task.projectId,
           taskTitle: task.title,
@@ -4501,6 +4530,463 @@ async function handleRequest(request, response) {
       const assets = projectAssetCatalog(catalog, draft);
       assets.source.readAt = nowIso();
       return sendJson(response, { ok: true, assets });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* F5-05：P06 五步任务工作区（显式明细 + 输出设置 + N17 生成前检查）。只读投影。 */
+  if (requestUrl.pathname === '/api/content/digital-human/workspace' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      if (taskId && !task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const projectId = task?.projectId || requestUrl.searchParams.get('projectId');
+      const scopedTaskId = task?.id || taskId;
+      const draft = contentBatchStore ? contentBatchStore.getDraft(user, projectId, scopedTaskId) : null;
+      const catalog = contentBatchCatalogFor(user, projectId, scopedTaskId);
+      const copy = projectCopyCandidates(catalog.scripts || [], draft?.selectedScriptVersionId || null);
+      const assets = projectAssetCatalog(catalog, draft);
+      const mappings = contentBatchStore ? contentBatchStore.listVideoMappings(user, task?.projectId || projectId) : [];
+      const sourceVideos = contentBatchStore ? contentBatchStore.listSourceVideos(user, task?.projectId || projectId) : [];
+      const workspace = projectTaskWorkspace({ draft, copy, assets, mappings, sourceVideos });
+      workspace.source.readAt = nowIso();
+      workspace.outputWriteable = await probePackageDirWritable();
+      workspace.outputPolicy.writeable = workspace.outputWriteable;
+      workspace.providers = projectN18Providers(contentBatchStore ? contentBatchStore.seedN18Providers(user) : [], workspace.mode);
+      workspace.project = { id: catalog.project?.id || null, name: catalog.project?.name || null };
+      workspace.contentTask = task ? contentTaskSummary(task) : null;
+      return sendJson(response, { ok: true, workspace });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* N17 生成前检查：只判定、不执行、不产生任何视频文件；结果写入草稿以便刷新后保留。 */
+  if (requestUrl.pathname === '/api/content/digital-human/preflight' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const task = contentTaskById(String(body.taskId || ''), user);
+      if (!task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const draft = contentBatchStore
+        ? contentBatchStore.saveDraft(user, {
+            projectId: task.projectId,
+            taskId: task.id,
+            plannedItems: body.plannedItems,
+          })
+        : null;
+      const catalog = contentBatchCatalogFor(user, task.projectId, task.id);
+      const copy = projectCopyCandidates(catalog.scripts || [], draft?.selectedScriptVersionId || null);
+      const assets = projectAssetCatalog(catalog, draft);
+      const mappings = contentBatchStore ? contentBatchStore.listVideoMappings(user, task.projectId) : [];
+      const sourceVideos = contentBatchStore ? contentBatchStore.listSourceVideos(user, task.projectId) : [];
+      const workspace = projectTaskWorkspace({ draft, copy, assets, mappings, sourceVideos, outputWriteable: await probePackageDirWritable() });
+      const gate0 = preflightGate(workspace);
+      const providers = contentBatchStore ? contentBatchStore.seedN18Providers(user) : [];
+      const providerGate = projectN18Providers(providers, workspace.mode);
+      const combinedIssues = gate0.blocking_issues.concat(providerGate.blockingIssues);
+      const gate = {
+        ...gate0,
+        success: combinedIssues.length === 0,
+        blocking_issues: combinedIssues,
+        allowed_actions: combinedIssues.length === 0 ? ['start_execution'] : ['fix_blockers'],
+        next_action: combinedIssues.length === 0 ? 'start_execution' : 'fix_blockers',
+        provider_readiness: providerGate.readiness,
+      };
+      if (contentBatchStore) {
+        const history = Array.isArray(draft?.preflightHistory) ? draft.preflightHistory : [];
+        history.push({ at: nowIso(), passed: gate.success, rows: workspace.rowCount, blocking: gate.blocking_issues.map((item) => item.code) });
+        contentBatchStore.saveDraft(user, {
+          projectId: task.projectId,
+          taskId: task.id,
+          preflightResult: { ...gate, checkedAt: nowIso() },
+          preflightHistory: history.slice(-20),
+        });
+      }
+      await recordActivity(user, gate.success ? 'dh_preflight_passed' : 'dh_preflight_blocked',
+        (gate.success ? '生成前检查通过：' : '生成前检查被阻塞：') + workspace.title);
+      return sendJson(response, { ok: true, gate, workspace });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* F5-06：P07 结果验收看板。只读投影，复用 /api/content/batches 的真实批次。 */
+  if (requestUrl.pathname === '/api/content/digital-human/results' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const batches = contentBatchStore ? contentBatchStore.listBatches(user, requestUrl.searchParams.get('projectId') || null, null) : [];
+      const board = projectResultBoard(batches.map((batch) => contentBatchResponse(batch, user)));
+      board.source.readAt = nowIso();
+      return sendJson(response, { ok: true, board });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* F5-07：P08 内容包资格投影。导出动作仍走既有 /api/content/batches/:id/export。 */
+  if (requestUrl.pathname === '/api/content/digital-human/package' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const batches = contentBatchStore ? contentBatchStore.listBatches(user, requestUrl.searchParams.get('projectId') || null, null) : [];
+      const view = projectPackageView(batches.map((batch) => contentBatchResponse(batch, user)));
+      view.source.readAt = nowIso();
+      return sendJson(response, { ok: true, package: view });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-01：N01 项目上下文（带版本）——只读列表 + 投影 */
+  if (requestUrl.pathname === '/api/content/digital-human/contexts' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const projectId = requestUrl.searchParams.get('projectId');
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      const draft = contentBatchStore ? contentBatchStore.getDraft(user, task?.projectId || projectId, task?.id || null) : null;
+      const contexts = contentBatchStore ? contentBatchStore.listProjectContexts(user, task?.projectId || projectId) : [];
+      const requests = contentBatchStore ? contentBatchStore.listCopyRequests(user, task?.projectId || projectId) : [];
+      const stage = projectContextStage(contexts, requests[0] || null, draft?.selectedContextId || null);
+      stage.source = { endpoints: ['/api/content/digital-human/contexts'], readAt: nowIso(), real: true };
+      return sendJson(response, { ok: true, stage });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-01：N01 创建新版本（新建或编辑）。编辑不改旧行，产生 version+1。 */
+  if (requestUrl.pathname === '/api/content/digital-human/contexts' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      if (!String(body.name || '').trim()) return sendJson(response, { ok: false, error: '项目档案名称不能为空' }, 409);
+      const created = contentBatchStore.saveProjectContext(user, {
+        projectId: body.projectId,
+        contextKey: body.contextKey,
+        name: body.name,
+        industry: body.industry,
+        product: body.product,
+        audience: body.audience,
+        sellingPoints: body.sellingPoints,
+        contentGoal: body.contentGoal,
+      });
+      await recordActivity(user, 'project_context_saved', '保存项目上下文版本 v' + created.version + '：' + created.name);
+      return sendJson(response, { ok: true, context: created }, 201);
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-01：N02 文案生成需求——读取 */
+  if (requestUrl.pathname === '/api/content/digital-human/copy-request' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const projectId = requestUrl.searchParams.get('projectId');
+      const requests = contentBatchStore ? contentBatchStore.listCopyRequests(user, projectId) : [];
+      return sendJson(response, { ok: true, request: requests[0] || null });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-01：N02 文案生成需求——保存 */
+  if (requestUrl.pathname === '/api/content/digital-human/copy-request' && request.method === 'PUT') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const saved = contentBatchStore.saveCopyRequest(user, {
+        projectId: body.projectId,
+        contextId: body.contextId,
+        count: body.count,
+        direction: body.direction,
+        platform: body.platform,
+        durationSeconds: body.durationSeconds,
+      });
+      await recordActivity(user, 'copy_request_saved', '保存文案生成需求');
+      return sendJson(response, { ok: true, request: saved });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-02：N05–N10 数字人档案（列表 + 投影） */
+  if (requestUrl.pathname === '/api/content/digital-human/profiles' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const projectId = requestUrl.searchParams.get('projectId');
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      const catalog = contentBatchCatalogFor(user, task?.projectId || projectId, task?.id || null);
+      const assets = projectAssetCatalog(catalog, null);
+      const profiles = contentBatchStore ? contentBatchStore.listDigitalHumanProfiles(user, task?.projectId || projectId) : [];
+      const stage = projectDigitalHumanProfiles(profiles, assets);
+      stage.source.readAt = nowIso();
+      return sendJson(response, { ok: true, stage });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-02：N05 创建/更新档案（绑定形象与声音版本） */
+  if (requestUrl.pathname === '/api/content/digital-human/profiles' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const saved = contentBatchStore.saveDigitalHumanProfile(user, body);
+      await recordActivity(user, 'dh_profile_saved', '保存数字人档案：' + saved.name);
+      return sendJson(response, { ok: true, profile: saved }, 201);
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-03：N11–N12 模式 B（已有视频 + 映射，列表 + 投影） */
+  if (requestUrl.pathname === '/api/content/digital-human/modeb' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const projectId = requestUrl.searchParams.get('projectId');
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      const catalog = contentBatchCatalogFor(user, task?.projectId || projectId, task?.id || null);
+      const copy = projectCopyCandidates(catalog.scripts || [], null);
+      const assets = projectAssetCatalog(catalog, null);
+      const videos = contentBatchStore ? contentBatchStore.listSourceVideos(user, task?.projectId || projectId) : [];
+      const mappings = contentBatchStore ? contentBatchStore.listVideoMappings(user, task?.projectId || projectId) : [];
+      const stage = projectModeBStage(videos, mappings, copy, assets);
+      stage.source.readAt = nowIso();
+      return sendJson(response, { ok: true, stage });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-03：N11 导入已有视频（登记元信息，不解析真实文件） */
+  if (requestUrl.pathname === '/api/content/digital-human/source-videos' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const saved = contentBatchStore.saveSourceVideo(user, body);
+      await recordActivity(user, 'source_video_imported', '导入已有视频（元信息）：' + saved.name);
+      return sendJson(response, { ok: true, video: saved }, 201);
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S6-03：N12 保存映射 */
+  if (requestUrl.pathname === '/api/content/digital-human/video-mappings' && request.method === 'PUT') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const saved = contentBatchStore.saveVideoMapping(user, body);
+      await recordActivity(user, 'video_mapping_saved', '保存视频映射：' + saved.id);
+      return sendJson(response, { ok: true, mapping: saved });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S7-01：N18 Provider Registry（读取，首次自动播种候选登记）。 */
+  if (requestUrl.pathname === '/api/content/digital-human/n18-providers' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const providers = contentBatchStore ? contentBatchStore.seedN18Providers(user) : [];
+      const taskId = requestUrl.searchParams.get('taskId');
+      const task = taskId ? contentTaskById(taskId, user) : null;
+      const draft = task && contentBatchStore ? contentBatchStore.getDraft(user, task.projectId, task.id) : null;
+      const mode = requestUrl.searchParams.get('mode') || (draft ? (String(draft.mode) === 'B' ? 'B' : 'A') : 'A');
+      const projection = projectN18Providers(providers, mode);
+      return sendJson(response, { ok: true, providers, projection });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S7-01：N18 Provider 状态登记/升级（负责人在真实样片验收后操作）。 */
+  if (requestUrl.pathname === '/api/content/digital-human/n18-providers' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const saved = contentBatchStore.saveN18Provider(user, body);
+      await recordActivity(user, 'n18_provider_updated', '更新 N18 Provider：' + saved.providerKey + ' → ' + saved.status);
+      return sendJson(response, { ok: true, provider: saved });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S7-01：N18 请求预览——按草稿明细构建业务级请求，不执行生成。 */
+  if (requestUrl.pathname === '/api/content/digital-human/n18-request' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const taskId = requestUrl.searchParams.get('taskId');
+      const rowNo = Number(requestUrl.searchParams.get('rowNo')) || 1;
+      const task = contentTaskById(String(taskId || ''), user);
+      if (!task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const draft = contentBatchStore ? contentBatchStore.getDraft(user, task.projectId, task.id) : null;
+      const row = (draft?.plannedItems || [])[rowNo - 1] || null;
+      if (!row) return sendJson(response, { ok: false, error: '草稿里没有第 ' + rowNo + ' 行明细' }, 404);
+      const catalog = contentBatchCatalogFor(user, task.projectId, task.id);
+      const context = draft?.selectedContextId ? contentBatchStore.getProjectContext(user, task.projectId, draft.selectedContextId) : null;
+      const scriptRow = (catalog.scripts || []).find((item) => item.id === row.scriptVersionId) || null;
+      const script = scriptRow ? { ...scriptRow, confirmed: scriptRow.status === 'approved' && Boolean(scriptRow.text) } : null;
+      const profile = (draft && contentBatchStore.listDigitalHumanProfiles(user, task.projectId) || []).find((item) => item.avatarVersionId === row.avatarVersionId) || null;
+      const video = row.mappingVersionId ? (contentBatchStore.listVideoMappings(user, task.projectId).find((item) => item.id === row.mappingVersionId) || null) : null;
+      const sourceVideo = video && video.videoId ? (contentBatchStore.listSourceVideos(user, task.projectId).find((item) => item.id === video.videoId) || null) : null;
+      const request = buildN18Request({
+        mode: row.mode, taskId: task.id, itemId: draft.id + '::' + row.rowNo,
+        scriptVersionId: row.scriptVersionId, script,
+        profileId: profile?.id, avatarVersionId: row.avatarVersionId, voiceVersionId: row.voiceVersionId,
+        sourceVideoAssetId: sourceVideo?.id, targetAudioAssetId: null,
+        templateVersionId: row.templateVersionId || (video ? video.templateVersionId : null),
+        projectContextVersionId: draft.selectedContextId,
+        outputPolicy: { directory: PACKAGE_DIR, folder: String(draft.title || task.title), fileName: row.outputName, container: 'mp4' },
+      });
+      return sendJson(response, { ok: true, n18Request: request });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S7 集成：真实生成（豆包克隆音色 + HeyGem 云 GPU）。N18 契约的直接执行端。 */
+  if (requestUrl.pathname === '/api/content/digital-human/generate-real' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const taskId = String(body.taskId || '');
+      const rowNo = Number(body.rowNo) || 1;
+      const task = contentTaskById(taskId, user);
+      if (!task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const draft = contentBatchStore ? contentBatchStore.getDraft(user, task.projectId, task.id) : null;
+      const row = (draft?.plannedItems || [])[rowNo - 1] || null;
+      if (!row) return sendJson(response, { ok: false, error: '草稿里没有第 ' + rowNo + ' 行明细' }, 404);
+      const catalog = contentBatchCatalogFor(user, task.projectId, task.id);
+      const script = (catalog.scripts || []).find((item) => item.id === row.scriptVersionId) || null;
+      if (!script || script.status !== 'approved' || !script.text) return sendJson(response, { ok: false, error: 'N18：引用的文案未确认或缺正文' }, 409);
+      const ttsConfig = JSON.parse(fs.readFileSync(join(process.cwd(), 'data', 'secrets', 'doubao-tts.json'), 'utf-8'));
+      const speaker = ttsConfig.clonedSpeakerId || null;
+      if (!speaker) return sendJson(response, { ok: false, error: 'N18：尚未配置克隆音色（S_ ID）' }, 409);
+      const voiceSource = body.voiceVersionId || speaker;
+      /* 1. TTS：豆包 v3 单向流式（克隆音色） */
+      const ttsPayload = {
+        user: { uid: 'cloud-worker-content-editor' },
+        req_params: {
+          model: 'seed-tts-2.0-standard',
+          text: script.text,
+          speaker: voiceSource,
+          audio_params: { format: 'mp3', sample_rate: 24000 },
+        },
+      };
+      const ttsResponse = await fetch('https://openspeech.bytedance.com/api/v3/tts/unidirectional', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': ttsConfig.token, 'X-Api-Resource-Id': 'seed-icl-2.0', 'X-Api-Request-Id': randomUUID() },
+        body: JSON.stringify(ttsPayload),
+      });
+      const ttsRaw = Buffer.from(await ttsResponse.arrayBuffer());
+      const ttsParts = [...ttsRaw.toString('utf-8').matchAll(/"data":"([^"]*)"/g)].map((m) => m[1]);
+      if (!ttsParts.length) return sendJson(response, { ok: false, error: 'TTS 失败：' + ttsRaw.toString('utf-8').slice(0, 200) }, 502);
+      const audioFile = join(process.cwd(), 'data', 'media-output', task.id + '-r' + rowNo + '-voice.mp3');
+      fs.mkdirSync(path.dirname(audioFile), { recursive: true });
+      fs.writeFileSync(audioFile, Buffer.from(ttsParts.join(''), 'base64'));
+      /* 2. 形象视频：干净无字幕源（去烧录字幕裁剪） */
+      const avatarVideo = body.videoLocal || [join(process.cwd(), 'data', 'media-output', '侯云龙-形象源-无字幕.mp4')].find((p) => fs.existsSync(p));
+      if (!avatarVideo || !fs.existsSync(avatarVideo)) return sendJson(response, { ok: false, error: 'N18：缺少形象视频（干净无字幕素材）' }, 409);
+      /* 3. HeyGem 云 GPU 合成 */
+      const result = await heygemGenerate({
+        audioLocal: audioFile,
+        videoLocal: avatarVideo,
+        outName: (task.id + '-r' + rowNo).replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 60),
+        timeoutMs: 25 * 60_000,
+      });
+      if (!result.ok) return sendJson(response, { ok: false, error: 'HeyGem 生成失败：' + (result.error || '超时'), log: result.log }, 502);
+      await recordActivity(user, 'real_video_generated', '真实数字人视频生成成功：' + result.localFile);
+      return sendJson(response, { ok: true, file: result.localFile, audio: audioFile, n18: { schema_version: 'content-digital-human-n18-v1', mode: row.mode, script_version_id: row.scriptVersionId, speaker: voiceSource } });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 502);
+    }
+  }
+
+  /* S7：HeyGem 云 Worker 健康检查 */
+  if (requestUrl.pathname === '/api/content/digital-human/heygem-health' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      return sendJson(response, { ok: true, worker: await checkHeygemWorker() });
+    } catch (error) {
+      return sendJson(response, { ok: true, worker: { ok: false, error: safeError(error) } });
+    }
+  }
+
+  /* F5-05/A 方案：把显式明细行转成真批次。要求 N17 已通过；只创建批次，不执行生成（N18 未接入）。 */
+  if (requestUrl.pathname === '/api/content/digital-human/batches' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const task = contentTaskById(String(body.taskId || ''), user);
+      if (!task) return sendJson(response, { ok: false, error: '内容任务不存在' }, 404);
+      const draft = contentBatchStore ? contentBatchStore.getDraft(user, task.projectId, task.id) : null;
+      if (!draft?.plannedItems?.length) return sendJson(response, { ok: false, error: '生产草稿里没有任何显式明细行' }, 409);
+      const catalog = contentBatchCatalogFor(user, task.projectId, task.id);
+      const copy = projectCopyCandidates(catalog.scripts || [], draft.selectedScriptVersionId || null);
+      const assets = projectAssetCatalog(catalog, draft);
+      const workspace = projectTaskWorkspace({ draft, copy, assets });
+      const gate = preflightGate(workspace);
+      if (!gate.success) {
+        return sendJson(response, { ok: false, error: '生成前检查未通过，不能创建批次', gate }, 409);
+      }
+      const connector = (catalog.connectors || []).find((item) => ['ready', 'simulation'].includes(item.status) && Array.isArray(item.capabilities) && item.capabilities.includes('talking_head'));
+      if (!connector) return sendJson(response, { ok: false, error: '没有具备口播能力的可用连接器' }, 409);
+      const plan = buildExplicitBatchPlan({
+        rows: draft.plannedItems,
+        avatars: catalog.avatars,
+        voices: catalog.voices,
+        scripts: catalog.scripts,
+        templates: catalog.templates,
+        connectors: catalog.connectors,
+        connectorId: connector.id,
+      });
+      const batch = createContentBatch({
+        id: body.id || 'content_batch_' + randomUUID(),
+        taskId: task.id,
+        tenantId: task.tenantId,
+        projectId: task.projectId,
+        plan,
+        title: draft.title || task.title,
+      }, user);
+      const saved = contentBatchStore.saveBatch(user, batch);
+      contentBatchStore.saveDraft(user, {
+        projectId: task.projectId,
+        taskId: task.id,
+        createdBatchId: saved.id,
+      });
+      await recordActivity(user, 'content_batch_created_from_explicit_rows',
+        '按显式明细创建数字人批次：' + saved.title + '（' + plan.count + ' 行，未执行生成）');
+      return sendJson(response, {
+        ok: true,
+        batch: contentBatchResponse(saved, user),
+        note: '批次已创建，状态 waiting_approval。生成执行（N18）尚未接入：不会开始生成，也不会产生任何视频文件。',
+      }, 201);
     } catch (error) {
       return sendJson(response, { ok: false, error: safeError(error) }, 409);
     }

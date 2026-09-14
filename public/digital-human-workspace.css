@@ -1872,3 +1872,34 @@
     text-align: left;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   12c. F5-05：五步工作区 + 显式明细行编辑
+   --------------------------------------------------------------------------- */
+
+#view-digital-human .dh-steps-panel { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+
+#view-digital-human .dh-wsteps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+#view-digital-human .dh-wstep { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border: 1px solid var(--dh-hairline); border-radius: var(--radius-card, 10px); background: var(--white); }
+#view-digital-human .dh-wstep.is-done, #view-digital-human .dh-wstep.is-passed { border-color: var(--green-soft); background: var(--green-soft); }
+#view-digital-human .dh-wstep.is-blocked { border-color: var(--red-soft); background: #fdf6f6; }
+#view-digital-human .dh-wstep.is-unwired { background: var(--dh-hairline-soft); }
+#view-digital-human .dh-wstep-no { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; }
+#view-digital-human .dh-wstep strong { color: var(--ink); font-size: 11px; }
+
+#view-digital-human .dh-row-editor { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--dh-hairline); border-radius: var(--radius-card, 10px); background: var(--white); }
+#view-digital-human .dh-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+#view-digital-human .dh-row-head strong { color: var(--ink); font-size: 12px; }
+#view-digital-human .dh-row-output { flex: 1 1 200px; min-width: 0; }
+#view-digital-human .dh-row-output code { display: block; padding: 3px 7px; border-radius: 5px; background: var(--dh-hairline-soft); color: var(--ink); font-size: 10px; overflow-wrap: anywhere; }
+#view-digital-human .dh-row-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+#view-digital-human .dh-row-fields .dh-field select, #view-digital-human .dh-row-fields .dh-field input { font-size: 10px; }
+#view-digital-human .dh-row-issues { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 8px 10px; border: 1px solid var(--red-soft); border-radius: 8px; background: #fdf6f6; list-style: none; }
+#view-digital-human .dh-row-issues li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--ink); font-size: 10px; line-height: 1.5; }
+#view-digital-human .dh-row-issues code { color: var(--red); font-size: 10px; font-weight: 600; }
+#view-digital-human .dh-row-ok { margin: 0; color: var(--muted); font-size: 10px; }
+
+@media (max-width: 1080px) {
+  #view-digital-human .dh-wsteps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

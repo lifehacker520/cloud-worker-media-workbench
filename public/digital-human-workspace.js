@@ -34,13 +34,28 @@ const DH_SUMMARY_ENDPOINT = '/api/content/digital-human/summary';
 const DH_DRAFT_ENDPOINT = '/api/content/digital-human/draft';
 const DH_COPY_ENDPOINT = '/api/content/digital-human/copy';
 const DH_ASSETS_ENDPOINT = '/api/content/digital-human/assets';
+const DH_WORKSPACE_ENDPOINT = '/api/content/digital-human/workspace';
+const DH_PREFLIGHT_ENDPOINT = '/api/content/digital-human/preflight';
+const DH_BATCH_CREATE_ENDPOINT = '/api/content/digital-human/batches';
+const DH_RESULTS_ENDPOINT = '/api/content/digital-human/results';
+const DH_CONTEXTS_ENDPOINT = '/api/content/digital-human/contexts';
+const DH_COPY_REQUEST_ENDPOINT = '/api/content/digital-human/copy-request';
+const DH_PACKAGE_ENDPOINT = '/api/content/digital-human/package';
+const DH_PROFILES_ENDPOINT = '/api/content/digital-human/profiles';
+const DH_MODEB_ENDPOINT = '/api/content/digital-human/modeb';
+const DH_SOURCE_VIDEO_ENDPOINT = '/api/content/digital-human/source-videos';
+const DH_MAPPING_ENDPOINT = '/api/content/digital-human/video-mappings';
+const DH_BATCH_ACTIONS_BASE = '/api/content/batches/';
 const DH_SCRIPT_SETS_ENDPOINT = '/api/content/script-sets';
 
-/* 子页面：P01 生产中心 / P02 项目与文案 / P03–P05 生产资产（模式 A/B 分区）。 */
+/* 子页面：P01 生产中心 / P02 项目与文案 / P03–P05 生产资产 / P06 生产任务。 */
 const DH_PAGE_KEY = 'cloud-worker-digital-human-page';
 const DH_PAGE_P01 = 'p01';
 const DH_PAGE_P02 = 'p02';
 const DH_PAGE_ASSETS = 'assets';
+const DH_PAGE_TASK = 'task';
+const DH_PAGE_RESULTS = 'results';
+const DH_PAGE_PACKAGE = 'package';
 
 const dhRoot = document.querySelector('#view-digital-human');
 const dhContentRoot = document.querySelector('#view-content');
@@ -199,7 +214,7 @@ function dhReadStoredPage() {
 }
 
 function dhIsValidPage(page) {
-  return page === DH_PAGE_P01 || page === DH_PAGE_P02 || page === DH_PAGE_ASSETS;
+  return ['p01','p02','assets','task','results','package'].includes(page);
 }
 
 function dhWriteStoredPage(page) {
@@ -262,6 +277,30 @@ const dhState = {
 const dhAssets = {
   status: 'idle', /* idle | loading | ready | error */
   data: null,
+  error: null,
+};
+
+/* F5-05：P06 任务工作区状态。 */
+const dhWorkspace = {
+  status: 'idle', /* idle | loading | ready | error */
+  data: null,
+  error: null,
+};
+
+/* 明细行的本地编辑副本；「保存明细」才写入草稿。 */
+const dhTaskRows = [];
+const dhResults = { status: 'idle', data: null, error: null };
+const dhContexts = { status: 'idle', data: null, error: null };
+const dhContextForm = { contextKey: '', name: '', industry: '', product: '', audience: '', sellingPoints: '', contentGoal: '' };
+const dhCopyRequestForm = { count: 3, direction: '', platform: '抖音', durationSeconds: 45 };
+const dhPackage = { status: 'idle', data: null, error: null, lastError: null };
+const dhModeB = { status: 'idle', data: null, error: null };
+const dhProfileForm = { name: '', subjectRole: '', avatarVersionId: '', voiceVersionId: '' };
+const dhVideoForm = { name: '', fileRef: '', durationSeconds: '', aspect: '9:16' };
+const dhMappingForm = { videoId: '', scriptVersionId: '', voiceSource: 'original', templateVersionId: '' };
+const dhPreflight = {
+  running: false,
+  gate: null,
   error: null,
 };
 
@@ -538,6 +577,23 @@ async function dhRegisterCopy() {
   dhRender();
 }
 
+function dhSyncAssetFormsFromDom() {
+  if (!dhRoot) return;
+  dhRoot.querySelectorAll('[data-dh-profile-field]').forEach((el) => { dhProfileForm[el.dataset.dhProfileField] = el.value; });
+  dhRoot.querySelectorAll('[data-dh-video-field]').forEach((el) => { dhVideoForm[el.dataset.dhVideoField] = el.value; });
+  dhRoot.querySelectorAll('[data-dh-map-field]').forEach((el) => { dhMappingForm[el.dataset.dhMapField] = el.value; });
+}
+
+function dhSyncContextFormsFromDom() {
+  if (!dhRoot) return;
+  dhRoot.querySelectorAll('[data-dh-ctx-field]').forEach((el) => {
+    const key = el.dataset.dhCtxField;
+    if (key === 'count' || key === 'durationSeconds') dhCopyRequestForm[key] = Number(el.value) || 0;
+    else if (key === 'direction' || key === 'platform') dhCopyRequestForm[key] = el.value;
+    else dhContextForm[key] = el.value;
+  });
+}
+
 function dhSyncCopyFormFromDom() {
   if (!dhRoot) {
     return;
@@ -550,6 +606,403 @@ function dhSyncCopyFormFromDom() {
   if (body) dhCopyForm.text = body.value;
   if (approved) dhCopyForm.approved = approved.checked === true;
   if (platform) dhCopyForm.platform = platform.value;
+}
+
+/* ---------------------------------------------------------------------------
+   F5-05：P06 生产任务工作区（显式明细 + 输出设置 + N17 生成前检查）
+   --------------------------------------------------------------------------- */
+
+function dhSyncRowsFromDraft(draft) {
+  dhTaskRows.length = 0;
+  const rows = Array.isArray(draft?.plannedItems) ? draft.plannedItems : [];
+  for (const row of rows) {
+    dhTaskRows.push({
+      mode: row.mode || 'A',
+      scriptVersionId: row.scriptVersionId || null,
+      avatarVersionId: row.avatarVersionId || null,
+      voiceVersionId: row.voiceVersionId || null,
+      templateVersionId: row.templateVersionId || null,
+      sourceVideoAssetId: row.sourceVideoAssetId || null,
+      outputName: row.outputName || '',
+      outputSubdirectory: row.outputSubdirectory || '',
+    });
+  }
+}
+
+async function dhLoadWorkspace() {
+  dhWorkspace.status = 'loading';
+  dhWorkspace.error = null;
+  dhRender();
+  try {
+    /* 行编辑器需要文案候选和资产选项，先保证它们已加载。 */
+    if (dhCopy.status !== 'ready') {
+      await dhLoadCopy();
+    }
+    if (dhAssets.status !== 'ready') {
+      await dhLoadAssets();
+    }
+    /* 明细行的权威来源是服务端草稿：每次进入工作区都重读，不能用页面初始化时的旧副本。 */
+    await dhLoadDraft();
+    const payload = await dhApi(DH_WORKSPACE_ENDPOINT);
+    dhWorkspace.data = payload.workspace || null;
+    dhWorkspace.status = 'ready';
+    dhSyncRowsFromDraft(dhDraft.record);
+  } catch (error) {
+    dhWorkspace.data = null;
+    dhWorkspace.status = 'error';
+    dhWorkspace.error = { message: error.message, httpStatus: error.httpStatus || null };
+  }
+  dhRender();
+}
+
+function dhAddTaskRow() {
+  const mode = dhWorkspace.data?.mode || 'A';
+  const used = new Set(dhTaskRows.map((row) => row.outputName));
+  let index = dhTaskRows.length + 1;
+  let name = 'row-' + String(index).padStart(2, '0');
+  while (used.has(name)) {
+    index += 1;
+    name = 'row-' + String(index).padStart(2, '0');
+  }
+  dhTaskRows.push({
+    mode,
+    scriptVersionId: dhCopy.data?.selectedScriptVersionId || dhDraft.record?.selectedScriptVersionId || null,
+    avatarVersionId: dhDraft.record?.selectedAvatarVersionId || null,
+    voiceVersionId: dhDraft.record?.selectedVoiceVersionId || null,
+    templateVersionId: dhDraft.record?.selectedTemplateVersionId || null,
+    sourceVideoAssetId: null,
+    outputName: name,
+    outputSubdirectory: '',
+  });
+  dhRender();
+}
+
+function dhRemoveTaskRow(index) {
+  if (index >= 0 && index < dhTaskRows.length) {
+    dhTaskRows.splice(index, 1);
+    dhRender();
+  }
+}
+
+function dhSyncTaskRowsFromDom() {
+  if (!dhRoot) {
+    return;
+  }
+  /* 遍历的是字段（data-dh-row-field），行号从最近的行容器（data-dh-row）上取。
+     之前遍历容器本身导致所有编辑都被丢弃——这是被验收抓出来的真实缺陷。 */
+  dhRoot.querySelectorAll('[data-dh-row-field]').forEach((element) => {
+    const container = element.closest('[data-dh-row]');
+    if (!container) {
+      return;
+    }
+    const index = Number(container.dataset.dhRow);
+    if (!Number.isInteger(index) || !dhTaskRows[index]) {
+      return;
+    }
+    const field = element.dataset.dhRowField;
+    if (element.type === 'checkbox') {
+      dhTaskRows[index][field] = element.checked === true;
+      return;
+    }
+    dhTaskRows[index][field] = element.value && element.value.trim ? element.value : element.value || null;
+    if (dhTaskRows[index][field] === '') {
+      dhTaskRows[index][field] = null;
+    }
+  });
+}
+
+
+async function dhRunRealGenerate(rowNo) {
+  const taskId = dhDraft.record?.taskId || dhDraftForm.taskId;
+  if (!taskId) {
+    dhWorkspace.error = { message: '请先在 P01 选择关联的内容任务。' };
+    dhRender();
+    return;
+  }
+  if (!window.confirm('真实生成会调用豆包克隆音色 + HeyGem 云 GPU（约 2-4 分钟，消耗少量额度），确定开始？')) return;
+  dhWorkspace.status = 'loading';
+  dhWorkspace.error = null;
+  dhRender();
+  try {
+    const payload = await dhApi('/api/content/digital-human/generate-real', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ taskId, rowNo: rowNo + 1 }),
+    });
+    dhWorkspace.status = 'ready';
+    dhWorkspace.error = { message: '真实生成完成：' + (payload.file || '') + '（音频：' + (payload.audio || '') + '）', kind: 'ok' };
+  } catch (error) {
+    dhWorkspace.status = 'ready';
+    dhWorkspace.error = { message: '真实生成失败：' + (error.message || '未知错误') };
+  }
+  dhRender();
+}
+
+async function dhSaveTaskRows() {
+  if (!dhDraftForm.taskId && !dhDraft.record?.taskId) {
+    dhWorkspace.error = { message: '请先在 P01 选择关联的内容任务。' };
+    dhRender();
+    return;
+  }
+  dhSyncTaskRowsFromDom();
+  dhWorkspace.status = 'loading';
+  dhRender();
+  try {
+    const payload = await dhApi(DH_DRAFT_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        taskId: dhDraft.record?.taskId || dhDraftForm.taskId,
+        mode: dhDraftForm.mode,
+        title: dhDraftForm.title,
+        plannedItems: dhTaskRows,
+        selectedScriptVersionId: dhCopy.data?.selectedScriptVersionId || undefined,
+      }),
+    });
+    dhDraft.record = payload.draft || null;
+    dhDraft.status = 'ready';
+    dhSyncRowsFromDraft(dhDraft.record);
+    const refreshed = await dhApi(DH_WORKSPACE_ENDPOINT);
+    dhWorkspace.data = refreshed.workspace || null;
+    dhWorkspace.status = 'ready';
+    dhWorkspace.error = null;
+  } catch (error) {
+    dhWorkspace.status = 'error';
+    dhWorkspace.error = { message: '明细保存失败：' + error.message };
+  }
+  dhRender();
+}
+
+
+async function dhLoadContexts() {
+  dhContexts.status = 'loading';
+  dhRender();
+  try {
+    const payload = await dhApi(DH_CONTEXTS_ENDPOINT);
+    dhContexts.data = payload.stage || null;
+    dhContexts.status = 'ready';
+    if (dhContexts.data?.selectedContextId) {
+      dhDraftForm.selectedContextId = dhContexts.data.selectedContextId;
+    }
+  } catch (error) {
+    dhContexts.data = null;
+    dhContexts.status = 'error';
+    dhContexts.error = { message: error.message };
+  }
+  dhRender();
+}
+
+async function dhSaveContext(asEdit) {
+  if (!dhContextForm.name.trim()) {
+    dhContexts.status = 'error';
+    dhContexts.error = { message: '项目档案名称不能为空。' };
+    dhRender();
+    return;
+  }
+  dhContexts.status = 'loading';
+  dhRender();
+  try {
+    const payload = await dhApi(DH_CONTEXTS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectId: dhReal.summary?.project?.id || undefined,
+        contextKey: asEdit ? dhContextForm.contextKey : undefined,
+        name: dhContextForm.name,
+        industry: dhContextForm.industry,
+        product: dhContextForm.product,
+        audience: dhContextForm.audience,
+        sellingPoints: dhContextForm.sellingPoints.split(/[；;\n]/).map((point) => point.trim()).filter(Boolean),
+        contentGoal: dhContextForm.contentGoal,
+      }),
+    });
+    if (payload.context) {
+      await dhApi(DH_DRAFT_ENDPOINT, { method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ taskId: dhDraft.record?.taskId || dhDraftForm.taskId, selectedContextId: payload.context.id }) });
+      dhDraftForm.selectedContextId = payload.context.id;
+    }
+    dhContextForm.contextKey = '';
+    dhContextForm.name = '';
+    dhContextForm.industry = '';
+    dhContextForm.product = '';
+    dhContextForm.audience = '';
+    dhContextForm.sellingPoints = '';
+    dhContextForm.contentGoal = '';
+    await dhLoadContexts();
+  } catch (error) {
+    dhContexts.status = 'error';
+    dhContexts.error = { message: '项目上下文保存失败：' + error.message };
+  }
+  dhRender();
+}
+
+async function dhSelectContext(contextId) {
+  try {
+    await dhApi(DH_DRAFT_ENDPOINT, { method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ taskId: dhDraft.record?.taskId || dhDraftForm.taskId, selectedContextId: contextId }) });
+    dhNoticeSet('已选择项目上下文版本，刷新后仍保留。');
+  } catch (error) {
+    dhNoticeSet('选择失败：' + error.message);
+  }
+  await dhLoadContexts();
+}
+
+async function dhSaveCopyRequest() {
+  dhContexts.status = 'loading';
+  dhRender();
+  try {
+    await dhApi(DH_COPY_REQUEST_ENDPOINT, { method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectId: dhReal.summary?.project?.id || undefined,
+        contextId: dhDraftForm.selectedContextId || undefined,
+        count: Number(dhCopyRequestForm.count) || undefined,
+        direction: dhCopyRequestForm.direction,
+        platform: dhCopyRequestForm.platform,
+        durationSeconds: Number(dhCopyRequestForm.durationSeconds) || undefined,
+      }) });
+    dhNoticeSet('文案生成需求已保存（N02）。');
+    await dhLoadContexts();
+  } catch (error) {
+    dhContexts.status = 'error';
+    dhContexts.error = { message: '需求保存失败：' + error.message };
+  }
+  dhRender();
+}
+
+async function dhLoadResults() {
+  dhResults.status = 'loading';
+  dhRender();
+  try {
+    const payload = await dhApi(DH_RESULTS_ENDPOINT);
+    dhResults.data = payload.board || null;
+    dhResults.status = 'ready';
+  } catch (error) {
+    dhResults.data = null;
+    dhResults.status = 'error';
+    dhResults.error = { message: error.message };
+  }
+  dhRender();
+}
+
+async function dhLoadPackage() {
+  dhPackage.status = 'loading';
+  dhRender();
+  try {
+    const payload = await dhApi(DH_PACKAGE_ENDPOINT);
+    dhPackage.data = payload.package || null;
+    dhPackage.status = 'ready';
+  } catch (error) {
+    dhPackage.data = null;
+    dhPackage.status = 'error';
+    dhPackage.error = { message: error.message };
+  }
+  dhRender();
+}
+
+async function dhBatchAction(batchId, action, body = {}) {
+  try {
+    await dhApi(DH_BATCH_ACTIONS_BASE + encodeURIComponent(batchId) + '/' + action, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    dhNoticeSet('批次操作完成：' + action);
+  } catch (error) {
+    dhNoticeSet('批次操作失败：' + error.message);
+  }
+  await dhLoadResults();
+}
+
+async function dhItemReview(batchId, itemId, decision, note) {
+  try {
+    const payload = await dhApi(DH_BATCH_ACTIONS_BASE + encodeURIComponent(batchId) + '/items/' + encodeURIComponent(itemId) + '/review', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ decision, note }),
+    });
+    dhNoticeSet(decision === 'approved' ? '已通过人工验收。' : decision === 'changes_requested' ? '已退回修改。' : '已驳回。');
+    if (payload.batch) {
+      dhResults.data = null;
+    }
+  } catch (error) {
+    dhNoticeSet('审核失败：' + error.message);
+  }
+  await dhLoadResults();
+}
+
+async function dhBatchExport(batchId) {
+  try {
+    const payload = await dhApi(DH_BATCH_ACTIONS_BASE + encodeURIComponent(batchId) + '/export', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    dhNoticeSet('内容包导出完成：' + (payload.export?.status || 'done'));
+  } catch (error) {
+    dhNoticeSet('导出被拒绝：' + error.message);
+  }
+  await dhLoadPackage();
+}
+
+function dhNoticeSet(message) {
+  dhState.notice = { title: message, detail: '操作走的是真实批次接口；模拟输出不能审核通过或导出。', slice: 'F5-06/F5-07' };
+}
+
+async function dhCreateBatch() {
+  if (!dhDraft.record?.taskId && !dhDraftForm.taskId) {
+    dhPreflight.error = '请先在 P01 选择关联的内容任务。';
+    dhRender();
+    return;
+  }
+  dhPreflight.running = true;
+  dhPreflight.error = null;
+  dhRender();
+  try {
+    const payload = await dhApi(DH_BATCH_CREATE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ taskId: dhDraft.record?.taskId || dhDraftForm.taskId }),
+    });
+    dhPreflight.running = false;
+    dhPreflight.createdBatch = payload.batch || null;
+    dhPreflight.createdNote = payload.note || '';
+    await dhLoadDraft();
+  } catch (error) {
+    dhPreflight.running = false;
+    dhPreflight.error = '创建批次失败：' + error.message;
+  }
+  dhRender();
+}
+
+async function dhRunPreflight() {
+  if (!dhDraft.record?.taskId && !dhDraftForm.taskId) {
+    dhPreflight.error = '请先在 P01 选择关联的内容任务。';
+    dhRender();
+    return;
+  }
+  dhSyncTaskRowsFromDom();
+  dhPreflight.running = true;
+  dhPreflight.error = null;
+  dhRender();
+  try {
+    const payload = await dhApi(DH_PREFLIGHT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        taskId: dhDraft.record?.taskId || dhDraftForm.taskId,
+        plannedItems: dhTaskRows,
+      }),
+    });
+    dhPreflight.gate = payload.gate || null;
+    dhPreflight.running = false;
+    const refreshed = await dhApi(DH_WORKSPACE_ENDPOINT);
+    dhWorkspace.data = refreshed.workspace || null;
+    dhWorkspace.status = 'ready';
+  } catch (error) {
+    dhPreflight.running = false;
+    dhPreflight.error = error.message;
+  }
+  dhRender();
 }
 
 /* ---------------------------------------------------------------------------
@@ -1557,27 +2010,24 @@ function dhFlowSteps() {
     {
       no: '03',
       label: '生产任务',
-      page: null,
-      wired: false,
-      slice: 'F5-05',
-      status: tasks.length ? 'active' : 'todo',
-      metric: tasks.length + ' 条任务',
+      page: DH_PAGE_TASK,
+      wired: true,
+      status: tasks.length || dhWorkspace.data?.rowCount ? 'active' : 'todo',
+      metric: tasks.length + ' 批次' + (dhWorkspace.data?.rowCount ? ' · ' + dhWorkspace.data.rowCount + ' 行明细' : ''),
     },
     {
       no: '04',
       label: '人工验收',
-      page: null,
-      wired: false,
-      slice: 'F5-06',
+      page: DH_PAGE_RESULTS,
+      wired: true,
       status: (counts.waitingReview || 0) > 0 ? 'active' : 'todo',
       metric: '待验收 ' + (counts.waitingReview || 0),
     },
     {
       no: '05',
       label: '内容包',
-      page: null,
-      wired: false,
-      slice: 'F5-07',
+      page: DH_PAGE_PACKAGE,
+      wired: true,
       status: 'todo',
       metric: '可导出 ' + (counts.approvedExportable || 0),
     },
@@ -1838,6 +2288,93 @@ function dhCopyRegisterForm() {
   );
 }
 
+/* ---------------------------------------------------------------------------
+   S6-01：N01 项目上下文 + N02 文案生成需求（P02 渲染块）
+   --------------------------------------------------------------------------- */
+
+function dhContextBlock() {
+  const stage = dhContexts.data;
+  const versions = stage?.versions || [];
+  const selectedId = stage?.selectedContextId;
+  return (
+    '<section class="panel dh-queue" aria-label="项目上下文">' +
+    '<div class="panel-heading"><div><div class="eyebrow">项目上下文 · N01</div>' +
+    '<h2>这次文案为哪个行业、哪类受众服务</h2>' +
+    '<p>行业、产品、受众、卖点和内容目标决定文案方向。编辑会产生新版本，旧版本永远可以回溯。</p></div>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-contexts-reload>重新读取</button></div>' +
+    (versions.length
+      ? '<ul class="dh-ctx-list">' +
+        versions
+          .map((item) =>
+            '<li class="dh-copy-card' + (item.id === selectedId ? ' is-selected' : '') + '">' +
+            '<div class="dh-copy-head"><div class="dh-copy-title"><strong>' + dhEscape(item.name) + ' · v' + item.version + '</strong>' +
+            '<small>' + dhEscape([item.industry, item.product, item.audience].filter(Boolean).join(' · ') || item.id) + '</small></div>' +
+            '<div class="dh-task-badges">' + (item.id === selectedId ? '<span class="dh-chip dh-chip-real">已选入草稿</span>' : '') + '</div></div>' +
+            '<p class="dh-copy-summary"><strong>卖点：</strong>' + dhEscape((item.sellingPoints || []).join('；') || '—') +
+            '　<strong>内容目标：</strong>' + dhEscape(item.contentGoal || '—') + '</p>' +
+            '<footer class="dh-copy-foot">' +
+            (item.id === selectedId
+              ? '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled aria-disabled="true">已选入草稿</button>'
+              : '<button class="button button-dark button-small" type="button" data-dh-ctx-select="' + dhEscape(item.id) + '">选入生产草稿</button>') +
+            '<button class="button-link" type="button" data-dh-ctx-edit>载入表单并编辑（产生 v' + (item.version + 1) + '）</button>' +
+            '<small>编辑不改旧版本</small>' +
+            '</footer></li>').join('') +
+        '</ul>'
+      : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span><strong>还没有项目上下文</strong>' +
+        '<p>行业、产品、受众、卖点、内容目标是文案和生产的前提（N01）。在下方创建第一个档案。</p></div>') +
+    '</section>'
+  );
+}
+
+function dhContextFormBlock() {
+  return (
+    '<section class="panel dh-draft" aria-label="项目上下文表单">' +
+    '<div class="panel-heading"><div><div class="eyebrow">项目上下文表单 · N01</div>' +
+    '<h2>新建档案，或编辑已选档案（产生新版本）</h2>' +
+    '<p>编辑不会改写旧版本：旧生产任务引用的上下文永远可以回溯。</p></div></div>' +
+    '<div class="dh-draft-form">' +
+    '<label class="dh-field"><span>档案名称（必填）</span><input type="text" data-dh-ctx-field="name" value="' + dhEscape(dhContextForm.name) + '" placeholder="例如：职业技能培训 · 秋季课程" /></label>' +
+    '<label class="dh-field"><span>行业</span><input type="text" data-dh-ctx-field="industry" value="' + dhEscape(dhContextForm.industry) + '" /></label>' +
+    '<label class="dh-field"><span>产品 / 服务</span><input type="text" data-dh-ctx-field="product" value="' + dhEscape(dhContextForm.product) + '" /></label>' +
+    '<label class="dh-field"><span>目标受众</span><input type="text" data-dh-ctx-field="audience" value="' + dhEscape(dhContextForm.audience) + '" /></label>' +
+    '<label class="dh-field dh-field-wide"><span>卖点（用「；」分隔多条）</span><input type="text" data-dh-ctx-field="sellingPoints" value="' + dhEscape(dhContextForm.sellingPoints) + '" /></label>' +
+    '<label class="dh-field dh-field-wide"><span>内容目标</span><input type="text" data-dh-ctx-field="contentGoal" value="' + dhEscape(dhContextForm.contentGoal) + '" /></label>' +
+    '</div>' +
+    '<div class="dh-draft-foot">' +
+    '<button class="button button-dark button-small" type="button" data-dh-ctx-save-new>保存为新档案</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-ctx-save-edit' + (dhContextForm.contextKey ? '' : ' disabled aria-disabled="true" title="先用「载入表单并编辑」载入一个档案"') + '>保存为所选档案的新版本</button>' +
+    '<small>' + dhEscape(dhContextForm.contextKey ? '将产生 ' + dhContextForm.contextKey + ' 的新版本' : '尚未载入已有档案') + '</small>' +
+    '</div></section>'
+  );
+}
+
+function dhCopyRequestBlock() {
+  const stage = dhContexts.data;
+  const request = stage?.request;
+  const issues = stage?.requestIssues || [];
+  return (
+    '<section class="panel dh-draft" aria-label="文案生成需求">' +
+    '<div class="panel-heading"><div><div class="eyebrow">文案生成需求 · N02</div>' +
+    '<h2>批量候选要多少、往哪个方向、发在哪</h2>' +
+    '<p>N03 AI 批量生成的模型提供方尚未配置——本阶段先保存需求并用手动登记候选占位，生成按钮只会明确阻塞。</p></div></div>' +
+    '<div class="dh-draft-form">' +
+    '<label class="dh-field"><span>数量（1–50）</span><input type="number" min="1" max="50" data-dh-ctx-field="count" value="' + dhEscape(String(dhCopyRequestForm.count || 3)) + '" /></label>' +
+    '<label class="dh-field"><span>方向</span><input type="text" data-dh-ctx-field="direction" value="' + dhEscape(dhCopyRequestForm.direction) + '" placeholder="例如：破除「发手机是福利」的误解" /></label>' +
+    '<label class="dh-field"><span>平台</span><select data-dh-ctx-field="platform">' +
+    ['抖音', '视频号', '小红书', 'B 站'].map((item) => '<option value="' + dhEscape(item) + '"' + (dhCopyRequestForm.platform === item ? ' selected' : '') + '>' + dhEscape(item) + '</option>').join('') +
+    '</select></label>' +
+    '<label class="dh-field"><span>时长（秒，可选）</span><input type="number" min="5" data-dh-ctx-field="durationSeconds" value="' + dhEscape(String(dhCopyRequestForm.durationSeconds || 45)) + '" /></label>' +
+    '</div>' +
+    '<div class="dh-draft-foot">' +
+    '<button class="button button-dark button-small" type="button" data-dh-req-save>保存需求</button>' +
+    '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled aria-disabled="true" title="N03 模型提供方未配置：本阶段不接真实生成">AI 批量生成（未配置）</button>' +
+    '<small>' + (request ? '当前需求已保存：' + (request.count || '—') + ' 条 · ' + dhEscape(request.direction || '—') + ' · ' + dhEscape(request.platform || '—') : '尚未保存需求') + '</small>' +
+    '</div>' +
+    (issues.length ? '<ul class="dh-gate-issues">' + issues.map((issue) => '<li><code>' + dhEscape(issue.code) + '</code><span>' + dhEscape(issue.message) + '</span></li>').join('') + '</ul>' : '') +
+    '</section>'
+  );
+}
+
 function dhRenderCopy() {
   const ready = dhCopy.status === 'ready' && dhCopy.data;
   dhRoot.innerHTML =
@@ -1871,6 +2408,8 @@ function dhRenderCopy() {
     (ready
       ? dhLayout(
           dhFlowBar() +
+          dhContextBlock() +
+          dhCopyRequestBlock() +
           '<section class="panel dh-queue" aria-label="文案候选列表">' +
           '<div class="panel-heading"><div><div class="eyebrow">文案候选</div>' +
           '<h2>从真实文案库中选择</h2>' +
@@ -1896,6 +2435,381 @@ function dhRenderCopy() {
     '<span>后续：F5-04 P03/P04/P05 资产 → F5-05 P06 生产任务 → F5-06 P07 人工验收 → F5-07 P08 内容包</span>' +
     '</footer>';
 }
+
+/* ---------------------------------------------------------------------------
+   F5-06：P07 结果与人工验收（本模块内部子页面）
+   --------------------------------------------------------------------------- */
+
+function dhResultCard(task, item) {
+  const sim = item.preview.simulated;
+  return (
+    '<article class="dh-asset-card' + (item.reviewStatus === 'approved' ? ' is-ok' : '') + '">' +
+    '<div class="dh-asset-main"><strong>第 ' + dhEscape(String(item.rowNo ?? '—')) + ' 行 · ' + dhEscape(item.id.slice(0, 18)) + '…</strong>' +
+    '<small>第 ' + item.attempts.current + '/' + (item.attempts.max || '—') + ' 次尝试</small></div>' +
+    '<div class="dh-asset-side">' + dhAxisBadge('generation', item.generationStatus) + dhAxisBadge('review', item.reviewStatus) + '</div>' +
+    '<div class="dh-row-fields">' +
+    '<div class="dh-asset-main" style="grid-column:1/-1"><small><strong>预览：</strong>' + dhEscape(item.preview.reason) + '</small></div>' +
+    '</div>' +
+    '<div class="dh-asset-actions">' +
+    '<button class="button ' + (item.actions.approve ? 'button-dark' : 'button-secondary') + ' button-small' + (item.actions.approve ? '' : ' dh-is-disabled') + '" type="button"' +
+    (item.actions.approve ? ' data-dh-review="' + dhEscape(task.id) + '|' + dhEscape(item.id) + '|approved"' : ' disabled aria-disabled="true" title="' + dhEscape(item.reviewBlockedReason || '当前状态不可通过') + '"') + '>通过</button>' +
+    '<button class="button button-secondary button-small' + (item.actions.requestChanges ? '' : ' dh-is-disabled') + '" type="button"' +
+    (item.actions.requestChanges ? ' data-dh-review="' + dhEscape(task.id) + '|' + dhEscape(item.id) + '|changes_requested"' : ' disabled aria-disabled="true"') + '>需修改</button>' +
+    '<button class="button button-secondary button-small' + (item.actions.retry ? '' : ' dh-is-disabled') + '" type="button"' +
+    (item.actions.retry ? ' data-dh-retry="' + dhEscape(task.id) + '|' + dhEscape(item.id) + '"' : ' disabled aria-disabled="true" title="只有失败或被退回的明细可以重试"') + '>重试本条</button>' +
+    '</div>' +
+    (item.blockingIssues.length
+      ? '<div class="dh-asset-actions"><small>' + item.blockingIssues.map((issue) => dhEscape(issue.code + ' ' + issue.message)).join('；') + '</small></div>'
+      : '') +
+    '</article>'
+  );
+}
+
+function dhRenderResults() {
+  const ready = dhResults.status === 'ready' && dhResults.data;
+  const data = ready ? dhResults.data : null;
+  dhRoot.innerHTML =
+    dhRealBanner() +
+    '<div class="view-intro-row"><div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
+    '<p>P07 结果与人工验收：每条结果独立显示生成/审核/交付三轴；没有真实文件就如实显示没有。</p></div>' +
+    '<span class="view-intro-status">P07 · 结果与人工验收</span></div>' +
+    '<div class="dh-toolbar"><div class="dh-context">' +
+    '<span><small>批次</small><strong>' + Number(data?.batchCount || 0) + '</strong></span>' +
+    '<span><small>结果</small><strong>' + Number(data?.itemCount || 0) + '</strong></span>' +
+    '<span><small>待验收</small><strong>' + Number(data?.counts?.waitingReview || 0) + '</strong></span>' +
+    '</div><div class="dh-toolbar-actions">' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-results-reload>重新读取</button>' +
+    '</div></div>' +
+    dhNoticeBlock() +
+    (dhResults.status === 'error'
+      ? '<section class="dh-error" role="alert"><span class="dh-error-mark" aria-hidden="true">!</span><div><strong>结果数据读取失败</strong><p>' + dhEscape(dhResults.error?.message || '') + '</p></div><button class="button button-secondary button-small" type="button" data-dh-results-reload>重新读取</button></section>'
+      : '') +
+    (ready
+      ? dhLayout(
+          dhFlowBar() +
+          (data.tasks.length
+            ? data.tasks.map((task) =>
+              '<section class="panel dh-queue" aria-label="批次结果"><div class="panel-heading"><div><div class="eyebrow">批次结果</div><h2>' + dhEscape(task.title) + '</h2>' +
+              '<p>' + dhEscape(task.id) + ' · 状态 ' + dhEscape(task.batchStatus || '—') + ' · 审核摘要 ' + dhEscape(DH_REVIEW_SUMMARY_LABELS[task.reviewSummary] || task.reviewSummary) + '</p></div>' +
+              (task.canRun ? '<button class="button button-dark button-small" type="button" data-dh-run="' + dhEscape(task.id) + '">执行批次（模拟连接器）</button>' : '') +
+              '</div>' +
+              '<div class="dh-asset-list">' + task.items.map((item) => dhResultCard(task, item)).join('') + '</div>' +
+              '</section>').join('')
+            : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span><strong>真实数据里还没有生产批次</strong><p>先到 P06 创建生产批次，再回来验收结果。</p></div>') +
+          '<p class="dh-axis-note">领域规则：模拟输出只能用于验证队列和状态，不能审核通过或作为生产内容交付——「通过」按钮会因此被禁用。</p>',
+          '<section class="panel dh-side-block"><div class="panel-heading"><div><div class="eyebrow">结果统计</div><h2>当前真实结果</h2></div></div>' +
+          '<dl class="dh-source-list">' +
+          '<div><dt>已生成</dt><dd>' + Number(data?.counts?.generated || 0) + '</dd></div>' +
+          '<div><dt>待验收</dt><dd>' + Number(data?.counts?.waitingReview || 0) + '</dd></div>' +
+          '<div><dt>已通过</dt><dd>' + Number(data?.counts?.approved || 0) + '</dd></div>' +
+          '<div><dt>可真实预览</dt><dd>' + Number(data?.previewableCount || 0) + '（模拟 ' + Number(data?.simulatedCount || 0) + ' 条不算）</dd></div>' +
+          '</dl></section>' +
+          '<section class="dh-source"><dl class="dh-source-list"><div><dt>接口</dt><dd><code>' + dhEscape(DH_RESULTS_ENDPOINT) + '</code></dd></div>' +
+          '<div><dt>读取时间</dt><dd>' + dhEscape(dhFormatTime(data?.source?.readAt)) + '</dd></div></dl></section>',
+        )
+      : '') +
+    '<footer class="dh-footnote"><span>当前切片：F5-06 P07 结果与人工验收</span><span>下一步：F5-07 P08 内容包</span></footer>';
+}
+
+/* ---------------------------------------------------------------------------
+   F5-07：P08 内容包（本模块内部子页面）
+   --------------------------------------------------------------------------- */
+
+function dhRenderPackage() {
+  const ready = dhPackage.status === 'ready' && dhPackage.data;
+  const data = ready ? dhPackage.data : null;
+  dhRoot.innerHTML =
+    dhRealBanner() +
+    '<div class="view-intro-row"><div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
+    '<p>P08 内容包：只允许导出「生成成功 + 文件 verified + 人工通过」的结果。模拟输出永远不能导出。</p></div>' +
+    '<span class="view-intro-status">P08 · 内容包</span></div>' +
+    '<div class="dh-toolbar"><div class="dh-context">' +
+    '<span><small>批次</small><strong>' + Number(data?.batchCount || 0) + '</strong></span>' +
+    '<span><small>可导出结果</small><strong>' + Number(data?.exportableCount || 0) + '</strong></span>' +
+    '<span><small>下一步</small><strong>' + dhEscape(dhNextActionText(data?.nextAction)) + '</strong></span>' +
+    '</div><div class="dh-toolbar-actions">' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-package-reload>重新读取</button>' +
+    '</div></div>' +
+    dhNoticeBlock() +
+    (dhPackage.status === 'error'
+      ? '<section class="dh-error" role="alert"><span class="dh-error-mark" aria-hidden="true">!</span><div><strong>内容包数据读取失败</strong><p>' + dhEscape(dhPackage.error?.message || '') + '</p></div><button class="button button-secondary button-small" type="button" data-dh-package-reload>重新读取</button></section>'
+      : '') +
+    (ready
+      ? dhLayout(
+          dhFlowBar() +
+          (data.groups.length
+            ? data.groups.map((group) =>
+              '<section class="panel dh-queue" aria-label="内容包资格"><div class="panel-heading"><div><div class="eyebrow">批次内容包</div><h2>' + dhEscape(group.title) + '</h2>' +
+              '<p>' + dhEscape(group.id) + ' · ' + group.eligibleCount + '/' + group.itemCount + ' 条满足导出资格</p></div>' +
+              (group.eligibleCount ? '<button class="button button-dark button-small" type="button" data-dh-export="' + dhEscape(group.id) + '">导出内容包</button>' : '') +
+              '</div>' +
+              (group.exportRecord
+                ? '<dl class="dh-source-list"><div><dt>上次导出</dt><dd>' + dhEscape(group.exportRecord.status) + ' · 清单 ' + dhEscape(group.exportRecord.manifest || '—') + '</dd></div>' +
+                  '<div><dt>导出时间</dt><dd>' + dhEscape(dhFormatTime(group.exportRecord.exportedAt)) + '</dd></div></dl>'
+                : '<p class="dh-gate-note">' + dhEscape(group.blockedReason || '') + '</p>') +
+              '<div class="dh-asset-list">' +
+              group.items.map((item) =>
+                '<article class="dh-asset-card' + (item.eligible ? ' is-ok' : ' is-gap') + '">' +
+                '<div class="dh-asset-main"><strong>第 ' + dhEscape(String(item.rowNo ?? '—')) + ' 行</strong><small>' + dhEscape(item.id.slice(0, 18)) + '…</small></div>' +
+                '<div class="dh-asset-side">' + (item.eligible ? '<span class="dh-chip dh-chip-real">可导出</span>' : '<span class="dh-chip">不可导出</span>') + '</div>' +
+                '<div class="dh-asset-actions"><small>' + (item.eligible ? '满足全部导出条件' : '缺：' + item.failedChecks.map((code) => DH_GAP_LABELS[code] || code).join('、')) + '</small></div>' +
+                '</article>').join('') +
+              '</div></section>').join('')
+            : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span><strong>还没有生产批次</strong><p>内容包从批次结果里来。先创建并执行批次。</p></div>') +
+          '<p class="dh-axis-note">' + dhEscape(data.note) + '</p>',
+          '<section class="panel dh-side-block"><div class="panel-heading"><div><div class="eyebrow">导出规则</div><h2>5.10 五个条件</h2></div></div>' +
+          '<ul class="dh-gate-issues"><li><span>生成状态 succeeded</span></li><li><span>输出文件 verified 且可读取</span></li><li><span>人工审核 approved</span></li><li><span>用户明确选择进入内容包</span></li><li><span>当前输出未被新版本替代</span></li></ul></section>',
+        )
+      : '') +
+    '<footer class="dh-footnote"><span>当前切片：F5-07 P08 内容包</span><span>导出走既有批次导出接口，模拟输出会被领域层拒绝</span></footer>';
+}
+
+/* ---------------------------------------------------------------------------
+   F5-05：P06 生产任务工作区（本模块内部子页面）
+   --------------------------------------------------------------------------- */
+
+const DH_STEP_STATUS_LABELS = {
+  done: { label: '完成', tone: 'done' },
+  passed: { label: '已通过', tone: 'done' },
+  blocked: { label: '有阻塞', tone: 'failed' },
+  todo: { label: '未开始', tone: 'draft' },
+  not_run: { label: '未检查', tone: 'draft' },
+  unwired: { label: '未接入', tone: 'draft' },
+};
+
+function dhTaskRowEditor(row, index, workspace) {
+  const candidates = dhCopy.data?.candidates || [];
+  const avatars = dhAssets.data?.modeA?.avatars?.options || [];
+  const voices = dhAssets.data?.modeA?.voices?.options || [];
+  const templates = dhAssets.data?.templates?.options || [];
+  const options = (list, selected, emptyLabel) =>
+    '<option value="">' + dhEscape(emptyLabel) + '</option>' +
+    list
+      .map((item) => {
+        const id = item.versionId || item.id;
+        const label = (item.title || item.name || item.id) + (item.confirmed === false ? '（未确认）' : item.usable === false ? '（不可用）' : '');
+        return '<option value="' + dhEscape(id) + '"' + (id === selected ? ' selected' : '') + '>' + dhEscape(label) + '</option>';
+      })
+      .join('');
+  const projected = workspace?.rows?.[index] || null;
+  const rowIssues = projected?.blockingIssues || [];
+  return (
+    '<article class="dh-row-editor" data-dh-row="' + index + '">' +
+    '<header class="dh-row-head"><strong>第 ' + (index + 1) + ' 行</strong>' +
+    '<span class="dh-row-output"><code>' + dhEscape(projected?.outputPath || '（输出路径待保存后生成）') + '</code></span>' +
+    '<button class="button-link" type="button" data-dh-row-real-gen="' + index + '">⚡ 真实生成（云GPU）</button>\n' +
+    '<button class="button-link" type="button" data-dh-row-remove="' + index + '">删除本行</button></header>' +
+    '<div class="dh-row-fields">' +
+    '<label class="dh-field"><span>文案版本（模式 A 必填）</span>' +
+    '<select data-dh-row-field="scriptVersionId">' + options(candidates, row.scriptVersionId, '（选择已确认文案）') + '</select></label>' +
+    '<label class="dh-field"><span>数字人形象版本</span>' +
+    '<select data-dh-row-field="avatarVersionId">' + options(avatars, row.avatarVersionId, '（选择形象）') + '</select></label>' +
+    '<label class="dh-field"><span>数字人声音版本</span>' +
+    '<select data-dh-row-field="voiceVersionId">' + options(voices, row.voiceVersionId, '（选择声音）') + '</select></label>' +
+    '<label class="dh-field"><span>场景模板版本</span>' +
+    '<select data-dh-row-field="templateVersionId">' + options(templates, row.templateVersionId, '（选择模板）') + '</select></label>' +
+    '<label class="dh-field"><span>输出文件名（不含扩展名，N16 要求任务内唯一）</span>' +
+    '<input type="text" data-dh-row-field="outputName" value="' + dhEscape(row.outputName) + '" placeholder="例如 row-01" /></label>' +
+    '<label class="dh-field"><span>输出子目录（留空用任务默认）</span>' +
+    '<input type="text" data-dh-row-field="outputSubdirectory" value="' + dhEscape(row.outputSubdirectory) + '" placeholder="' + dhEscape(workspace?.outputPolicy?.subdirectory || '') + '" /></label>' +
+    '</div>' +
+    (rowIssues.length
+      ? '<ul class="dh-row-issues">' +
+        rowIssues.map((issue) => '<li><code>' + dhEscape(issue.code) + '</code>' + dhEscape(issue.message) + '</li>').join('') +
+        '</ul>'
+      : '<p class="dh-row-ok">本行引用齐备，输出命名未冲突。</p>') +
+    '</article>'
+  );
+}
+
+function dhRenderTask() {
+  const ready = dhWorkspace.status === 'ready' && dhWorkspace.data;
+  const data = ready ? dhWorkspace.data : null;
+  const gate = dhPreflight.gate || data?.preflight || null;
+  dhRoot.innerHTML =
+    dhRealBanner() +
+    '<div class="view-intro-row">' +
+    '<div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
+    '<p>P06 生产任务：把前面选好的文案和资产，显式逐行组成生产明细。一行对应一个输出，1 行就是单条生产。</p></div>' +
+    '<span class="view-intro-status">P06 · 生产任务与显式明细</span>' +
+    '</div>' +
+    '<div class="dh-toolbar">' +
+    '<div class="dh-context" aria-label="当前任务上下文">' +
+    '<span><small>模式</small><strong>模式 ' + dhEscape(data?.mode || 'A') + '</strong></span>' +
+    '<span><small>明细行</small><strong>' + dhTaskRows.length + ' 行' + (dhTaskRows.length === 1 ? ' · 单条生产' : dhTaskRows.length > 1 ? ' · 批量生产' : '') + '</strong></span>' +
+    '<span><small>检查</small><strong>' + dhEscape(gate ? (gate.success ? '已通过' : '被阻塞') : '未检查') + '</strong></span>' +
+    '</div>' +
+    '<div class="dh-toolbar-actions">' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01 生产中心</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-workspace-reload>重新读取</button>' +
+    '</div>' +
+    '</div>' +
+    dhNoticeBlock() +
+    (dhWorkspace.status === 'loading'
+      ? dhLoadingBlock()
+      : dhWorkspace.status === 'error'
+        ? '<section class="dh-error" role="alert"><span class="dh-error-mark" aria-hidden="true">!</span>' +
+          '<div><strong>工作区数据读取失败，因此这里不显示任何明细</strong>' +
+          '<p>' + dhEscape(dhWorkspace.error?.message || '未知错误') + '</p>' +
+          '<small>页面不会用示例明细冒充真实数据。</small></div>' +
+          '<button class="button button-secondary button-small" type="button" data-dh-workspace-reload>重新读取</button></section>'
+        : '') +
+    (ready
+      ? dhLayout(
+          dhFlowBar() +
+          /* 五步工作区 */
+          '<section class="panel dh-steps-panel" aria-label="五步任务工作区">' +
+          '<div class="panel-heading"><div><div class="eyebrow">五步任务工作区</div>' +
+          '<h2>从选择到执行</h2>' +
+          '<p>第 5 步执行（N18）尚未接入：通过生成前检查也不会开始生成，更不会产生任何视频文件。</p></div></div>' +
+          '<ol class="dh-wsteps">' +
+          data.steps
+            .map((step) => {
+              const meta = dhLabel(DH_STEP_STATUS_LABELS, step.status);
+              return '<li class="dh-wstep is-' + step.status + '">' +
+                '<span class="dh-wstep-no">' + dhEscape(step.no) + '</span>' +
+                '<strong>' + dhEscape(step.label) + '</strong>' +
+                dhStatusBadge(meta) +
+                '</li>';
+            })
+            .join('') +
+          '</ol>' +
+          '</section>' +
+          /* 明细配置 */
+          '<section class="panel dh-queue" aria-label="显式明细配置">' +
+          '<div class="panel-heading"><div><div class="eyebrow">明细配置 · N15</div>' +
+          '<h2>显式逐行添加，禁止隐式全组合</h2>' +
+          '<p>一行对应一个输出；想要几条就加几行，系统不会把多个形象和多个文案自动相乘。</p></div>' +
+          '<button class="button button-dark button-small" type="button" data-dh-row-add>+ 添加一行明细</button>' +
+          '</div>' +
+          (dhTaskRows.length
+            ? dhTaskRows.map((row, index) => dhTaskRowEditor(row, index, data)).join('')
+            : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span>' +
+              '<strong>还没有任何明细行</strong>' +
+              '<p>1 行 = 单条生产；多行 = 批量生产。添加后记得保存到草稿。</p></div>') +
+          '<div class="dh-draft-foot">' +
+          '<button class="button button-dark button-small" type="button" data-dh-rows-save' +
+          (dhWorkspace.status === 'loading' ? ' disabled aria-disabled="true"' : '') + '>保存明细到草稿</button>' +
+          '<button class="button button-secondary button-small" type="button" data-dh-preflight-run' +
+          (dhPreflight.running || !dhTaskRows.length ? ' disabled aria-disabled="true"' : '') +
+          (!dhTaskRows.length ? ' title="至少要有 1 行明细才能做生成前检查"' : '') + '>' +
+          (dhPreflight.running ? '正在检查…' : '运行 N17 生成前检查') + '</button>' +
+          '<small>明细保存在生产草稿里，刷新后仍在；生成前检查只判定、不执行。</small>' +
+          '</div>' +
+          '</section>' +
+          /* N17 结果 */
+          (gate
+            ? '<section class="panel ' + (gate.success ? 'dh-gate' : 'dh-gate') + '" aria-label="N17 生成前检查结果">' +
+              '<div class="panel-heading"><div><div class="eyebrow">N17 生成前检查</div>' +
+              '<h2>' + (gate.success ? '通过：允许进入执行' : '被阻塞：还不能执行') + '</h2>' +
+              '<p>判定来自服务端闸门，格式为 allowed_actions / blocking_issues / next_action。</p></div>' +
+              '<span class="phase-label">next_action：' + dhEscape(dhNextActionText(gate.next_action)) + '</span></div>' +
+              (gate.blocking_issues?.length
+                ? '<ul class="dh-gate-issues">' +
+                  gate.blocking_issues.map((item) => '<li><code>' + dhEscape(item.code) + '</code><span>' + dhEscape(item.message) + '</span></li>').join('') +
+                  '</ul>'
+                : '<div class="dh-gate-empty">' +
+                  '<p>没有阻塞项。可以按当前显式明细创建生产批次（一行对应一个输出，不做全组合）。</p>' +
+                  '<button class="button button-dark button-small" type="button" data-dh-batch-create' +
+                  (dhPreflight.running ? ' disabled aria-disabled="true"' : '') + '>' +
+                  (dhPreflight.running ? '正在创建…' : '按显式明细创建生产批次') + '</button>' +
+                  '<small>批次创建后处于 waiting_approval；生成执行（N18）尚未接入，不会开始生成，也不会产生任何视频文件。</small>' +
+                  '</div>') +
+              (dhPreflight.createdBatch
+                ? '<dl class="dh-source-list">' +
+                  '<div><dt>已创建批次</dt><dd><code>' + dhEscape(dhPreflight.createdBatch.id) + '</code></dd></div>' +
+                  '<div><dt>状态</dt><dd>' + dhEscape(dhPreflight.createdBatch.status) + '</dd></div>' +
+                  '<div><dt>明细数</dt><dd>' + Number(dhPreflight.createdBatch.planCount || 0) + ' 行（显式，无全组合）</dd></div>' +
+                  '</dl>' +
+                  (dhPreflight.createdNote ? '<p class="dh-axis-note">' + dhEscape(dhPreflight.createdNote) + '</p>' : '')
+                : '') +
+              '<p class="dh-axis-note">' + dhEscape(gate.note || '') + '</p>' +
+              '</section>'
+            : '') +
+          dhOutputPolicyCard(data),
+          dhTaskSidePanel(data),
+        )
+      : '') +
+    '<footer class="dh-footnote">' +
+    '<span>当前切片：F5-05 P06 生产任务与显式明细</span>' +
+    '<span>后续：F5-06 P07 结果与人工验收 → F5-07 P08 内容包</span>' +
+    '</footer>';
+}
+
+function dhOutputPolicyCard(data) {
+  return (
+    '<section class="panel dh-side-block" aria-label="输出设置">' +
+    '<div class="panel-heading"><div><div class="eyebrow">输出设置 · N16</div>' +
+    '<h2>目录与命名规则</h2>' +
+    '<p>生成出来的视频保存位置由用户设置；这里显示当前任务的目录策略和每行输出路径预览。</p></div></div>' +
+    '<dl class="dh-source-list">' +
+    '<div><dt>输出根目录</dt><dd>' + dhEscape(data.outputPolicy.directory) + '</dd></div>' +
+    '<div><dt>子目录</dt><dd>' + dhEscape(data.outputPolicy.subdirectory) + '</dd></div>' +
+    '<div><dt>命名规则</dt><dd>' + dhEscape(data.outputPolicy.namePattern) + '</dd></div>' +
+    '</dl>' +
+    '</section>'
+  );
+}
+
+function dhN18ProvidersBlock(data) {
+  const readiness = data?.providers?.readiness || {};
+  const rows = Object.entries(readiness).map(([capability, info]) => ({
+    capability,
+    label: capability === 'tts' ? 'TTS 声音' : capability === 'talking_head' ? '数字人视频' : '口型同步',
+    preferred: info.preferred ? info.preferred.providerKey : null,
+    ready: info.ready,
+    counts: '候选 ' + info.candidateCount + ' · 阻塞 ' + info.blockedCount + ' · 模拟 ' + info.simulationCount,
+  }));
+  return (
+    '<section class="panel dh-side-block" aria-label="N18 提供方就绪度">' +
+    '<div class="panel-heading"><div><div class="eyebrow">N18 提供方（S7）</div>' +
+    '<h2>真实生成能力登记</h2>' +
+    '<p>只有 preferred（真实样片验收通过）的能力才允许开始生成；候选/模拟一律如实阻塞。</p></div></div>' +
+    (rows.length
+      ? '<dl class="dh-source-list">' +
+        rows.map((row) => '<div><dt>' + dhEscape(row.label) + '</dt><dd>' +
+          (row.ready ? '<strong>' + dhEscape(row.preferred) + ' ✓</strong>' : '<strong>未就绪</strong>（' + dhEscape(row.counts) + '）') +
+          '</dd></div>').join('') +
+        '</dl>'
+      : '<p class="dh-gate-note">尚无提供方登记。</p>') +
+    '</section>'
+  );
+}
+
+function dhTaskSidePanel(data) {
+  const issues = Array.isArray(data.blockingIssues) ? data.blockingIssues : [];
+  return (
+    dhAssetSelectionSummary() +
+    '<section class="panel dh-gate" aria-label="任务状态闸门">' +
+    '<div class="panel-heading"><div><div class="eyebrow">状态闸门</div>' +
+    '<h2>阻塞项与下一步</h2>' +
+    '<p>来自服务端对显式明细的判定：引用可用、命名唯一、至少 1 行。</p></div>' +
+    '<span class="phase-label">next_action：' + dhEscape(dhNextActionText(data.nextAction)) + '</span></div>' +
+    '<div class="dh-gate-col">' +
+    '<h3>blocking_issues（' + issues.length + '）</h3>' +
+    (issues.length
+      ? '<ul class="dh-gate-issues">' +
+        issues.map((item) => '<li><code>' + dhEscape(item.code) + '</code><span>' + dhEscape(item.message) + '</span></li>').join('') +
+        '</ul>'
+      : '<p class="dh-gate-empty">当前没有阻塞项。</p>') +
+    '</div>' +
+    '<p class="dh-axis-note">明细由用户显式逐行添加，系统不提供「全组合一键生成」：' +
+    '那是规范明令禁止的隐式 Cartesian（N15）。</p>' +
+    '</section>' +
+    '<section class="dh-source" aria-label="工作区数据来源">' +
+    '<div class="dh-source-head"><div><span class="dh-source-tag">数据源</span>' +
+    '<strong>明细、文案与资产都来自真实草稿与目录</strong></div></div>' +
+    '<dl class="dh-source-list">' +
+    (data.source.endpoints || []).map((endpoint) => '<div><dt>接口</dt><dd><code>' + dhEscape(endpoint) + '</code></dd></div>').join('') +
+    '<div><dt>读取时间</dt><dd>' + dhEscape(dhFormatTime(data.source.readAt)) + '</dd></div>' +
+    '</dl>' +
+    '</section>'
+  );
+}
+
+
 
 /* ---------------------------------------------------------------------------
    F5-04：生产资产页（P03 形象/声音 + P04 已有视频 + P05 模板，按模式 A/B 分区）
@@ -1948,6 +2862,228 @@ function dhAssetGroupBlock(title, group, kind, selectedId, emptyHint) {
   );
 }
 
+/* ---------------------------------------------------------------------------
+   S6-02/S6-03：数字人档案（P03）与模式 B 已有视频/映射（P04）渲染块
+   --------------------------------------------------------------------------- */
+
+async function dhLoadModeB() {
+  dhModeB.status = 'loading';
+  dhRender();
+  try {
+    const payload = await dhApi(DH_MODEB_ENDPOINT);
+    dhModeB.data = payload.stage || null;
+    dhModeB.status = 'ready';
+  } catch (error) {
+    dhModeB.data = null;
+    dhModeB.status = 'error';
+    dhModeB.error = { message: error.message };
+  }
+  dhRender();
+}
+
+async function dhSaveProfile() {
+  if (!dhProfileForm.name.trim()) {
+    dhModeB.error = { message: '档案名称不能为空。' };
+    dhRender();
+    return;
+  }
+  dhModeB.status = 'loading';
+  dhRender();
+  try {
+    await dhApi(DH_PROFILES_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectId: dhReal.summary?.project?.id || undefined,
+        name: dhProfileForm.name,
+        subjectRole: dhProfileForm.subjectRole,
+        avatarVersionId: dhProfileForm.avatarVersionId || undefined,
+        voiceVersionId: dhProfileForm.voiceVersionId || undefined,
+      }),
+    });
+    dhProfileForm.name = '';
+    dhProfileForm.subjectRole = '';
+    await dhLoadAssets();
+    await dhLoadModeB();
+  } catch (error) {
+    dhModeB.status = 'error';
+    dhModeB.error = { message: '档案保存失败：' + error.message };
+  }
+  dhRender();
+}
+
+async function dhImportVideo() {
+  if (!dhVideoForm.name.trim()) {
+    dhModeB.error = { message: '视频名称不能为空。' };
+    dhRender();
+    return;
+  }
+  dhModeB.status = 'loading';
+  dhRender();
+  try {
+    await dhApi(DH_SOURCE_VIDEO_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectId: dhReal.summary?.project?.id || undefined,
+        name: dhVideoForm.name,
+        fileRef: dhVideoForm.fileRef,
+        durationSeconds: Number(dhVideoForm.durationSeconds) || undefined,
+        aspect: dhVideoForm.aspect,
+      }),
+    });
+    dhVideoForm.name = '';
+    dhVideoForm.fileRef = '';
+    dhVideoForm.durationSeconds = '';
+    dhVideoForm.aspect = '9:16';
+    await dhLoadModeB();
+  } catch (error) {
+    dhModeB.status = 'error';
+    dhModeB.error = { message: '视频导入失败：' + error.message };
+  }
+  dhRender();
+}
+
+async function dhSaveMapping() {
+  if (!dhMappingForm.videoId) {
+    dhModeB.error = { message: '映射必须选择一个已有视频。' };
+    dhRender();
+    return;
+  }
+  dhModeB.status = 'loading';
+  dhRender();
+  try {
+    await dhApi(DH_MAPPING_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectId: dhReal.summary?.project?.id || undefined,
+        videoId: dhMappingForm.videoId,
+        scriptVersionId: dhMappingForm.scriptVersionId || undefined,
+        voiceSource: dhMappingForm.voiceSource,
+        templateVersionId: dhMappingForm.templateVersionId || undefined,
+      }),
+    });
+    dhMappingForm.videoId = '';
+    dhMappingForm.scriptVersionId = '';
+    dhMappingForm.voiceSource = 'original';
+    dhMappingForm.templateVersionId = '';
+    await dhLoadModeB();
+  } catch (error) {
+    dhModeB.status = 'error';
+    dhModeB.error = { message: '映射保存失败：' + error.message };
+  }
+  dhRender();
+}
+
+function dhProfilesBlock() {
+  const ready = dhAssets.status === 'ready' && dhAssets.data;
+  const profiles = ready ? dhAssets.data?.profiles : null;
+  const list = profiles?.profiles || [];
+  return (
+    '<section class="panel dh-asset-panel" aria-label="员工数字人档案">' +
+    '<div class="panel-heading"><div><div class="eyebrow">员工数字人档案 · N05–N10</div>' +
+    '<h2>档案 = 员工主体 + 形象版本 + 声音版本</h2>' +
+    '<p>处理状态在没有真实训练提供方时只能停在「待处理-提供方未配置」，绝不显示为已训练；能否生产由绑定版本的审核状态推导。</p></div>' +
+    '<span class="phase-label">' + (list.length ? '可生产 ' + (profiles.readyCount || 0) + '/' + list.length : '无档案') + '</span></div>' +
+    (list.length
+      ? '<div class="dh-asset-list">' +
+        list.map((profile) =>
+          '<article class="dh-asset-card' + (profile.ready ? ' is-ok' : ' is-gap') + '">' +
+          '<div class="dh-asset-main"><strong>' + dhEscape(profile.name) + '</strong>' +
+          '<small>' + dhEscape(profile.subjectRole || '未填岗位') + ' · ' + dhEscape(profile.id.slice(0, 14)) + '…</small></div>' +
+          '<div class="dh-asset-side"><span class="dh-chip' + (profile.ready ? ' dh-chip-real' : '') + '">' + (profile.ready ? '可生产' : '未就绪') + '</span></div>' +
+          '<div class="dh-asset-actions"><small>形象：' + dhEscape(profile.avatar ? profile.avatar.name : '未绑定') +
+          ' · 声音：' + dhEscape(profile.voice ? profile.voice.name : '未绑定') + '</small></div>' +
+          (profile.blockingIssues.length
+            ? '<div class="dh-asset-actions"><small>' + profile.blockingIssues.map((issue) => dhEscape(issue.message)).join('；') + '</small></div>'
+            : '') +
+          '</article>').join('') +
+        '</div>'
+      : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span><strong>还没有员工数字人档案</strong>' +
+        '<p>档案把员工主体和它的形象、声音版本绑在一起（N05）。在下方创建。</p></div>') +
+    '<div class="dh-draft-form">' +
+    '<label class="dh-field"><span>员工姓名（必填）</span><input type="text" data-dh-profile-field="name" value="' + dhEscape(dhProfileForm.name) + '" /></label>' +
+    '<label class="dh-field"><span>岗位</span><input type="text" data-dh-profile-field="subjectRole" value="' + dhEscape(dhProfileForm.subjectRole) + '" /></label>' +
+    '<label class="dh-field"><span>绑定形象版本</span><select data-dh-profile-field="avatarVersionId">' +
+    '<option value="">（选择形象）</option>' +
+    (dhAssets.data?.modeA?.avatars?.options || []).map((item) => '<option value="' + dhEscape(item.id) + '">' + dhEscape(item.name) + (item.usable ? '' : '（不可用）') + '</option>').join('') +
+    '</select></label>' +
+    '<label class="dh-field"><span>绑定声音版本</span><select data-dh-profile-field="voiceVersionId">' +
+    '<option value="">（选择声音）</option>' +
+    (dhAssets.data?.modeA?.voices?.options || []).map((item) => '<option value="' + dhEscape(item.id) + '">' + dhEscape(item.name) + (item.usable ? '' : '（不可用）') + '</option>').join('') +
+    '</select></label>' +
+    '</div>' +
+    '<div class="dh-draft-foot">' +
+    '<button class="button button-dark button-small" type="button" data-dh-profile-save' + (dhModeB.status === 'loading' ? ' disabled aria-disabled="true"' : '') + '>保存档案</button>' +
+    '<small>处理状态：真实能力已接入（S7）：豆包克隆音色 + HeyGem 云 GPU，均通过真实样片验收</small>' +
+    '</div>' +
+    (dhModeB.error ? '<p class="dh-draft-message is-error" role="alert">' + dhEscape(dhModeB.error.message) + '</p>' : '') +
+    '</section>'
+  );
+}
+
+function dhModeBBlock() {
+  const ready = dhModeB.status === 'ready' && dhModeB.data;
+  const videos = ready ? dhModeB.data.videos : [];
+  const mappings = ready ? dhModeB.data.mappings : [];
+  return (
+    '<section class="panel dh-asset-panel" aria-label="模式 B 已有视频与映射">' +
+    '<div class="panel-heading"><div><div class="eyebrow">模式 B · 已有视频与映射 · N11–N12</div>' +
+    '<h2>导入旧视频，显式映射到文案与模板</h2>' +
+    '<p>导入只登记元信息（本阶段不解析真实文件）；映射必须四项齐全才算 ready，模式 B 行才能进入生产。</p></div>' +
+    '<span class="phase-label">' + (mappings.length ? '完整映射 ' + (dhModeB.data.readyMappingCount || 0) + '/' + mappings.length : '无映射') + '</span></div>' +
+    (videos.length
+      ? '<div class="dh-asset-list">' +
+        videos.map((video) =>
+          '<article class="dh-asset-card' + (video.status === 'usable' ? ' is-ok' : ' is-gap') + '">' +
+          '<div class="dh-asset-main"><strong>' + dhEscape(video.name) + '</strong>' +
+          '<small>' + dhEscape(video.id.slice(0, 14)) + '…' + (video.durationSeconds ? ' · ' + video.durationSeconds + 's' : '') + (video.aspect ? ' · ' + dhEscape(video.aspect) : '') + '</small></div>' +
+          '<div class="dh-asset-side"><span class="dh-chip">' + dhEscape(video.status) + '</span></div>' +
+          '</article>').join('') +
+        '</div>'
+      : '<p class="dh-gate-note">还没有导入任何已有视频（N11）。</p>') +
+    (mappings.length
+      ? '<div class="dh-asset-list">' +
+        mappings.map((mapping) =>
+          '<article class="dh-asset-card' + (mapping.ready ? ' is-ok' : ' is-gap') + '">' +
+          '<div class="dh-asset-main"><strong>' + dhEscape(mapping.video ? mapping.video.name : '（视频缺失）') + '</strong>' +
+          '<small>文案：' + dhEscape(mapping.script ? mapping.script.title : '未映射') + ' · 模板：' + dhEscape(mapping.template ? mapping.template.name : '未映射') + '</small></div>' +
+          '<div class="dh-asset-side">' + (mapping.ready ? '<span class="dh-chip dh-chip-real">映射完整</span>' : '<span class="dh-chip">不完整</span>') + '</div>' +
+          (mapping.missing.length ? '<div class="dh-asset-actions"><small>缺：' + dhEscape(mapping.missing.join('、')) + '</small></div>' : '') +
+          '</article>').join('') +
+        '</div>'
+      : '') +
+    '<div class="dh-draft-form">' +
+    '<label class="dh-field"><span>导入视频（名称，必填）</span><input type="text" data-dh-video-field="name" value="' + dhEscape(dhVideoForm.name) + '" /></label>' +
+    '<label class="dh-field"><span>文件引用（可选）</span><input type="text" data-dh-video-field="fileRef" value="' + dhEscape(dhVideoForm.fileRef) + '" placeholder="例如 source/old-take" /></label>' +
+    '<label class="dh-field"><span>时长（秒）</span><input type="number" min="1" data-dh-video-field="durationSeconds" value="' + dhEscape(String(dhVideoForm.durationSeconds || '')) + '" /></label>' +
+    '<label class="dh-field"><span>画幅</span><select data-dh-video-field="aspect">' +
+    ['9:16', '16:9', '1:1'].map((item) => '<option value="' + dhEscape(item) + '"' + (dhVideoForm.aspect === item ? ' selected' : '') + '>' + dhEscape(item) + '</option>').join('') +
+    '</select></label>' +
+    '<label class="dh-field"><span>映射：视频</span><select data-dh-map-field="videoId"><option value="">（选择视频）</option>' +
+    videos.map((video) => '<option value="' + dhEscape(video.id) + '">' + dhEscape(video.name) + '</option>').join('') +
+    '</select></label>' +
+    '<label class="dh-field"><span>映射：文案（需已确认）</span><select data-dh-map-field="scriptVersionId"><option value="">（选择文案）</option>' +
+    (dhCopy.data?.candidates || []).map((item) => '<option value="' + dhEscape(item.id) + '">' + dhEscape(item.title) + (item.confirmed ? '' : '（未确认）') + '</option>').join('') +
+    '</select></label>' +
+    '<label class="dh-field"><span>映射：声音来源</span><select data-dh-map-field="voiceSource">' +
+    '<option value="original"' + (dhMappingForm.voiceSource === 'original' ? ' selected' : '') + '>视频原声</option>' +
+    '<option value="voice_version"' + (dhMappingForm.voiceSource === 'voice_version' ? ' selected' : '') + '>指定声音版本</option>' +
+    '</select></label>' +
+    '<label class="dh-field"><span>映射：模板</span><select data-dh-map-field="templateVersionId"><option value="">（选择模板）</option>' +
+    (dhAssets.data?.templates?.options || []).map((item) => '<option value="' + dhEscape(item.id) + '">' + dhEscape(item.name) + '</option>').join('') +
+    '</select></label>' +
+    '</div>' +
+    '<div class="dh-draft-foot">' +
+    '<button class="button button-dark button-small" type="button" data-dh-video-import>导入视频</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-map-save>保存映射</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-modeb-reload>重新读取</button>' +
+    '<small>完整映射的 id 可以被 P06 的模式 B 明细行引用。</small>' +
+    '</div></section>'
+  );
+}
+
 function dhRenderAssets() {
   const ready = dhAssets.status === 'ready' && dhAssets.data;
   const data = ready ? dhAssets.data : null;
@@ -1988,18 +3124,11 @@ function dhRenderAssets() {
           '<h2>数字人形象与声音</h2>' +
           '<p>只有「已审核 + 已开启批量使用」的版本可以进入批量生产；选择会写入生产草稿。</p></div>' +
           '<span class="phase-label">' + (data.modeA.ready ? '资产齐全' : '资产不齐') + '</span></div>' +
+          dhProfilesBlock() +
           dhAssetGroupBlock('数字人形象版本（P03）', data.modeA.avatars, 'avatar', data.selected.avatarVersionId, '还没有任何数字人形象版本') +
           dhAssetGroupBlock('数字人声音版本（P03）', data.modeA.voices, 'voice', data.selected.voiceVersionId, '还没有任何数字人声音版本') +
           '</section>' +
-          '<section class="panel dh-asset-panel" aria-label="模式 B 资产">' +
-          '<div class="panel-heading"><div><div class="eyebrow">模式 B · 已有视频 + 文案/音频口型同步</div>' +
-          '<h2>已有视频与映射（P04）</h2>' +
-          '<p>现有资产目录里还没有“已有视频 / 映射”这一类资产。页面如实标注未接入，不用空列表冒充结论。</p></div>' +
-          '<span class="phase-label">未接入</span></div>' +
-          '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span>' +
-          '<strong>模式 B 的已有视频目录尚未接入</strong>' +
-          '<p>接入后这里会显示：视频是否可用、口型映射是否完成。模式 A 与模式 B 的输入差异不会被合并。</p></div>' +
-          '</section>' +
+          dhModeBBlock() +
           '<section class="panel dh-asset-panel" aria-label="场景模板">' +
           '<div class="panel-heading"><div><div class="eyebrow">共用 · 模式 A 与模式 B 都使用</div>' +
           '<h2>场景模板（P05）</h2>' +
@@ -2008,6 +3137,7 @@ function dhRenderAssets() {
           '</section>',
           dhAssetGate() +
           dhAssetSourceBar() +
+          dhN18ProvidersBlock(data) +
           dhAssetSelectionSummary() +
           (dhDraft.saveMessage
             ? '<p class="dh-draft-message' + (dhDraft.saveState === 'error' ? ' is-error' : '') + '" role="status">' +
@@ -2125,6 +3255,18 @@ function dhRender() {
     dhRenderAssets();
     return;
   }
+  if (dhState.page === DH_PAGE_TASK) {
+    dhRenderTask();
+    return;
+  }
+  if (dhState.page === DH_PAGE_RESULTS) {
+    dhRenderResults();
+    return;
+  }
+  if (dhState.page === DH_PAGE_PACKAGE) {
+    dhRenderPackage();
+    return;
+  }
   if (dhIsRealMode()) {
     dhRenderReal();
     return;
@@ -2148,6 +3290,15 @@ function dhGoToPage(page) {
   }
   if (page === DH_PAGE_ASSETS && dhAssets.status !== 'ready') {
     dhLoadAssets();
+  }
+  if (page === DH_PAGE_TASK && dhWorkspace.status !== 'ready') {
+    dhLoadWorkspace();
+  }
+  if (page === DH_PAGE_RESULTS && dhResults.status !== 'ready') {
+    dhLoadResults();
+  }
+  if (page === DH_PAGE_PACKAGE && dhPackage.status !== 'ready') {
+    dhLoadPackage();
   }
 }
 
@@ -2262,6 +3413,139 @@ function dhHandleClick(event) {
   const assetsReload = event.target.closest('[data-dh-assets-reload]');
   if (assetsReload) {
     dhLoadAssets();
+    return;
+  }
+  const rowAdd = event.target.closest('[data-dh-row-add]');
+  if (rowAdd) {
+    dhAddTaskRow();
+    return;
+  }
+  const rowRealGen = event.target.closest('[data-dh-row-real-gen]');
+  if (rowRealGen) {
+    dhRunRealGenerate(Number(rowRealGen.dataset.dhRowRealGen));
+    return;
+  }
+  const rowRemove = event.target.closest('[data-dh-row-remove]');
+  if (rowRemove) {
+    dhRemoveTaskRow(Number(rowRemove.dataset.dhRowRemove));
+    return;
+  }
+  const rowsSave = event.target.closest('[data-dh-rows-save]');
+  if (rowsSave) {
+    dhSaveTaskRows();
+    return;
+  }
+  const preflightRun = event.target.closest('[data-dh-preflight-run]');
+  if (preflightRun) {
+    dhRunPreflight();
+    return;
+  }
+  const ctxSelect = event.target.closest('[data-dh-ctx-select]');
+  if (ctxSelect) {
+    dhSelectContext(ctxSelect.dataset.dhCtxSelect);
+    return;
+  }
+  const ctxSaveNew = event.target.closest('[data-dh-ctx-save-new]');
+  if (ctxSaveNew) {
+    dhSyncContextFormsFromDom();
+    dhSaveContext(false);
+    return;
+  }
+  const ctxSaveEdit = event.target.closest('[data-dh-ctx-save-edit]');
+  if (ctxSaveEdit) {
+    dhSyncContextFormsFromDom();
+    dhSaveContext(true);
+    return;
+  }
+  const ctxEdit = event.target.closest('[data-dh-ctx-edit]');
+  if (ctxEdit) {
+    const selected = (dhContexts.data?.versions || []).find((c) => c.id === dhContexts.data?.selectedContextId) || (dhContexts.data?.versions || [])[0];
+    if (selected) {
+      dhContextForm.contextKey = selected.contextKey;
+      dhContextForm.name = selected.name || '';
+      dhContextForm.industry = selected.industry || '';
+      dhContextForm.product = selected.product || '';
+      dhContextForm.audience = selected.audience || '';
+      dhContextForm.sellingPoints = (selected.sellingPoints || []).join('；');
+      dhContextForm.contentGoal = selected.contentGoal || '';
+    }
+    dhRender();
+    return;
+  }
+  const reqSave = event.target.closest('[data-dh-req-save]');
+  if (reqSave) {
+    dhSyncContextFormsFromDom();
+    dhSaveCopyRequest();
+    return;
+  }
+  const contextsReload = event.target.closest('[data-dh-contexts-reload]');
+  if (contextsReload) {
+    dhLoadContexts();
+    return;
+  }
+  const profileSave = event.target.closest('[data-dh-profile-save]');
+  if (profileSave) {
+    dhSyncAssetFormsFromDom();
+    dhSaveProfile();
+    return;
+  }
+  const videoImport = event.target.closest('[data-dh-video-import]');
+  if (videoImport) {
+    dhSyncAssetFormsFromDom();
+    dhImportVideo();
+    return;
+  }
+  const mapSave = event.target.closest('[data-dh-map-save]');
+  if (mapSave) {
+    dhSyncAssetFormsFromDom();
+    dhSaveMapping();
+    return;
+  }
+  const modebReload = event.target.closest('[data-dh-modeb-reload]');
+  if (modebReload) {
+    dhLoadModeB();
+    return;
+  }
+  const reviewBtn = event.target.closest('[data-dh-review]');
+  if (reviewBtn) {
+    const [batchId, itemId, decision] = reviewBtn.dataset.dhReview.split('|');
+    dhItemReview(batchId, itemId, decision, '');
+    return;
+  }
+  const retryBtn = event.target.closest('[data-dh-retry]');
+  if (retryBtn) {
+    const [batchId, itemId] = retryBtn.dataset.dhRetry.split('|');
+    dhBatchAction(batchId, 'items/' + encodeURIComponent(itemId) + '/retry');
+    return;
+  }
+  const runBtn = event.target.closest('[data-dh-run]');
+  if (runBtn) {
+    dhBatchAction(runBtn.dataset.dhRun, 'start');
+    return;
+  }
+  const exportBtn = event.target.closest('[data-dh-export]');
+  if (exportBtn) {
+    dhBatchExport(exportBtn.dataset.dhExport);
+    return;
+  }
+  const resultsReload = event.target.closest('[data-dh-results-reload]');
+  if (resultsReload) {
+    dhLoadResults();
+    return;
+  }
+  const packageReload = event.target.closest('[data-dh-package-reload]');
+  if (packageReload) {
+    dhLoadPackage();
+    return;
+  }
+  const batchCreate = event.target.closest('[data-dh-batch-create]');
+  if (batchCreate) {
+    dhCreateBatch();
+    return;
+  }
+  const workspaceReload = event.target.closest('[data-dh-workspace-reload]');
+  if (workspaceReload) {
+    dhLoadWorkspace();
     return;
   }
   const assetSelect = event.target.closest('[data-dh-asset-select]');
@@ -2385,6 +3669,15 @@ function dhInit() {
     if (dhState.page === DH_PAGE_ASSETS) {
       dhLoadAssets();
     }
+    if (dhState.page === DH_PAGE_TASK) {
+      dhLoadWorkspace();
+    }
+    if (dhState.page === DH_PAGE_RESULTS) {
+      dhLoadResults();
+    }
+    if (dhState.page === DH_PAGE_PACKAGE) {
+      dhLoadPackage();
+    }
   }
 
   /* 入口卡在内容编辑工作区内部，用事件委托处理，避免与 content-workspace.js 抢 DOM。 */
@@ -2400,6 +3693,15 @@ function dhInit() {
     dhHandleDraftInput(event);
     if (event.target.closest('[data-dh-copy-field]')) {
       dhSyncCopyFormFromDom();
+    }
+    if (event.target.closest('[data-dh-row]')) {
+      dhSyncTaskRowsFromDom();
+    }
+    if (event.target.closest('[data-dh-ctx-field]')) {
+      dhSyncContextFormsFromDom();
+    }
+    if (event.target.closest('[data-dh-profile-field]') || event.target.closest('[data-dh-video-field]') || event.target.closest('[data-dh-map-field]')) {
+      dhSyncAssetFormsFromDom();
     }
   });
 }

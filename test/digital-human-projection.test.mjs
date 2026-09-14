@@ -17,9 +17,16 @@ import {
   projectAssetOption,
   projectBatchItem,
   projectCenterSummary,
+  projectContextStage,
+  projectDigitalHumanProfiles,
+  projectModeBStage,
   projectCopyCandidate,
   projectCopyCandidates,
+  projectPackageView,
   projectProductionTask,
+  projectResultBoard,
+  projectTaskWorkspace,
+  preflightGate,
   summarizeCopyText,
 } from '../src/digital-human-projection.mjs';
 
@@ -371,4 +378,218 @@ test('F5-04 形象缺标准图、声音缺参考音频时必须给出阻塞项',
   assert.equal(option.blockingIssues.some((issue) => issue.code === 'AVATAR_IMAGE_MISSING'), true);
   const voice = projectAssetOption({ id: 'v9', status: 'approved', batchAllowed: true }, 'voice');
   assert.equal(voice.blockingIssues.some((issue) => issue.code === 'VOICE_REFERENCE_MISSING'), true);
+});
+
+/* ---------------------------------------------------------------------------
+   F5-05：P06 显式明细与 N17 生成前检查
+   --------------------------------------------------------------------------- */
+
+const f504Catalog = {
+  project: { id: 'p', name: 'x' },
+  avatars: [{ id: 'a1', displayName: 'A', version: 1, status: 'approved', batchAllowed: true, canonicalImageRef: 'x' }],
+  voices: [{ id: 'v1', displayName: 'V', version: 1, status: 'approved', batchAllowed: true, referenceAudioRef: 'y' }],
+  templates: [{ id: 't1', displayName: 'T', version: 1, status: 'approved', batchAllowed: true }],
+};
+
+function f504Assets() {
+  return projectAssetCatalog(f504Catalog, {
+    selectedAvatarVersionId: 'a1',
+    selectedVoiceVersionId: 'v1',
+    selectedTemplateVersionId: 't1',
+  });
+}
+
+function f504Copy() {
+  return projectCopyCandidates([{ id: 'c1', title: 'A 版', status: 'approved', text: '正文' }], 'c1');
+}
+
+test('F5-05 一行显式明细 = 单条生产，所有引用齐备时 N17 通过', () => {
+  const ws = projectTaskWorkspace({
+    draft: { mode: 'A', title: '口播', plannedItems: [{ mode: 'A', scriptVersionId: 'c1', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'row-01' }] },
+    copy: f504Copy(),
+    assets: f504Assets(),
+  });
+  assert.equal(ws.rowCount, 1);
+  assert.equal(ws.isSingle, true, '1 行就是单条生产，不额外出现单条模式');
+  assert.deepEqual(ws.blockingIssues, []);
+  assert.equal(ws.nextAction, 'run_preflight');
+  assert.equal(preflightGate(ws).success, true);
+  assert.equal(preflightGate(ws).allowed_actions.includes('start_execution'), true);
+});
+
+test('F5-05 明细行缺引用、文案未确认、命名冲突时必须逐行给出阻塞', () => {
+  const ws = projectTaskWorkspace({
+    draft: { mode: 'A', plannedItems: [
+      { mode: 'A', scriptVersionId: null, avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'same' },
+      { mode: 'A', scriptVersionId: 'c1', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'same' },
+    ] },
+    copy: f504Copy(),
+    assets: f504Assets(),
+  });
+  const codes = ws.blockingIssues.map((issue) => issue.code);
+  assert.ok(codes.includes('ROW_COPY_MISSING'), '缺文案要阻塞');
+  assert.ok(codes.includes('ROW_OUTPUT_NAME_CONFLICT'), '命名冲突要阻塞（N16）');
+  assert.equal(ws.blockingIssues.filter((issue) => issue.code === 'ROW_OUTPUT_NAME_CONFLICT').length, 1, '只报后一行冲突');
+  assert.equal(preflightGate(ws).success, false);
+  assert.equal(preflightGate(ws).next_action, 'fix_blockers');
+});
+
+test('F5-05 禁止隐式 Cartesian：选择隐含组合多于显式行数时阻塞（N15）', () => {
+  /* 选择区选了 a1+v1，但明细 0 行 → 缺行阻塞，而不是自动生成 1 行 */
+  const empty = projectTaskWorkspace({ draft: { mode: 'A', plannedItems: [] }, copy: f504Copy(), assets: f504Assets() });
+  assert.equal(empty.blockingIssues.some((issue) => issue.code === 'NO_PLANNED_ROWS'), true);
+  /* 模式 B 行：已有视频未接入 → 必须阻塞，不能装作能生产 */
+  const modeB = projectTaskWorkspace({
+    draft: { mode: 'B', plannedItems: [{ mode: 'B', scriptVersionId: 'c1', sourceVideoAssetId: 'sv1', outputName: 'b1' }] },
+    copy: f504Copy(),
+    assets: f504Assets(),
+  });
+  assert.equal(modeB.blockingIssues.some((issue) => issue.code === 'ROW_MAPPING_NOT_READY'), true, '模式 B 行必须引用完整映射（S6-03 后语义）');
+  assert.equal(modeB.executionWired, false);
+});
+
+test('F5-05 输出路径按行预览，子目录缺省取任务标题', () => {
+  const ws = projectTaskWorkspace({
+    draft: { mode: 'A', title: '入职手机口播', plannedItems: [{ mode: 'A', scriptVersionId: 'c1', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'row-01' }] },
+    copy: f504Copy(),
+    assets: f504Assets(),
+  });
+  assert.equal(ws.rows[0].outputPath, '入职手机口播/row-01.mp4');
+  assert.equal(ws.rows[0].blockingIssues.length, 0);
+});
+
+test('F5-05 文件名非法字符被拦截（N16）', () => {
+  const ws = projectTaskWorkspace({
+    draft: { mode: 'A', plannedItems: [{ mode: 'A', scriptVersionId: 'c1', avatarVersionId: 'a1', voiceVersionId: 'v1', templateVersionId: 't1', outputName: 'a/b:c' }] },
+    copy: f504Copy(),
+    assets: f504Assets(),
+  });
+  assert.equal(ws.blockingIssues.some((issue) => issue.code === 'ROW_OUTPUT_NAME_INVALID'), true);
+});
+
+/* ---------------------------------------------------------------------------
+   F5-06/F5-07：结果验收与内容包资格
+   --------------------------------------------------------------------------- */
+
+test('F5-06 模拟输出的预览与通过都被诚实拦截', () => {
+  const board = projectResultBoard([{ id: 'b', title: 't', status: 'waiting_review', items: [
+    { id: 'i1', status: 'succeeded', output: { simulated: true, verificationStatus: 'verified' } },
+  ] }]);
+  const item = board.tasks[0].items[0];
+  assert.equal(item.preview.available, false);
+  assert.equal(item.preview.simulated, true);
+  assert.equal(item.actions.approve, false, '模拟输出不能被审核通过');
+  assert.equal(item.actions.requestChanges, true, '但可以退回修改');
+  assert.ok((item.reviewBlockedReason || '').includes('模拟输出'));
+});
+
+test('F5-06 非模拟且待验收的结果允许通过/退回，失败可重试', () => {
+  const board = projectResultBoard([{ id: 'b', title: 't', status: 'partial_failed', items: [
+    { id: 'i1', status: 'succeeded', output: { simulated: false, verificationStatus: 'verified' } },
+    { id: 'i2', status: 'failed', error: { retryable: true } },
+  ] }]);
+  const [ok, failed] = board.tasks[0].items;
+  assert.equal(ok.actions.approve, true);
+  assert.equal(failed.actions.retry, true);
+  assert.equal(board.nextAction, 'review_pending_items');
+});
+
+test('F5-07 导出资格五条件：模拟、未通过、未生成都不合格（5.10）', () => {
+  const view = projectPackageView([{ id: 'b', title: 't', status: 'waiting_review', items: [
+    { id: 'i1', status: 'succeeded', output: { simulated: true, verificationStatus: 'verified' } },
+    { id: 'i2', status: 'succeeded', output: { simulated: false, verificationStatus: 'verified' } },
+    { id: 'i3', status: 'planned' },
+  ] }]);
+  const [sim, unreviewed, planned] = view.groups[0].items;
+  assert.equal(sim.eligible, false);
+  assert.ok(sim.failedChecks.includes('FILE_VERIFIED'), '模拟输出不满足文件 verified 条件');
+  assert.equal(unreviewed.eligible, false);
+  assert.ok(unreviewed.failedChecks.includes('REVIEW_APPROVED'));
+  assert.equal(planned.eligible, false);
+  assert.equal(view.exportableCount, 0);
+  assert.ok((view.groups[0].blockedReason || '').includes('模拟输出'));
+});
+
+/* ---------------------------------------------------------------------------
+   S6-01：N01–N02 项目上下文阶段投影
+   --------------------------------------------------------------------------- */
+
+test('S6-01 N01：无上下文/未选择/需求缺失分别给出可解释阻塞', () => {
+  const empty = projectContextStage([], null, null);
+  assert.equal(empty.blockingIssues[0].code, 'NO_PROJECT_CONTEXT');
+  assert.equal(empty.nextAction, 'create_context');
+
+  const one = [{ id: 'c1', contextKey: 'k1', version: 1, name: 'A', status: 'active', sellingPoints: [] }];
+  const noSelect = projectContextStage(one, null, null);
+  assert.equal(noSelect.nextAction, 'select_context');
+  assert.deepEqual(noSelect.blockingIssues, []);
+
+  const noRequest = projectContextStage(one, null, 'c1');
+  assert.equal(noRequest.nextAction, 'configure_copy_request');
+  assert.equal(noRequest.requestIssues[0].code, 'NO_COPY_REQUEST');
+
+  const withRequest = projectContextStage(one, { count: 3, direction: 'x', platform: '抖音' }, 'c1');
+  assert.equal(withRequest.nextAction, 'nothing_pending');
+  assert.equal(withRequest.modelProviderConfigured, false, 'N03 模型提供方未配置必须显式声明');
+});
+
+test('S6-01 N01：多版本档案只显示每个档案的最新版本', () => {
+  const stage = projectContextStage([
+    { id: 'c1', contextKey: 'k1', version: 1, name: 'A v1', status: 'active', sellingPoints: [] },
+    { id: 'c2', contextKey: 'k1', version: 2, name: 'A v2', status: 'active', sellingPoints: [] },
+    { id: 'c3', contextKey: 'k2', version: 1, name: 'B v1', status: 'active', sellingPoints: [] },
+  ], null, 'c2');
+  assert.equal(stage.versions.length, 2, '同档案旧版本不再出现在选择列表');
+  assert.equal(stage.selected.id, 'c2');
+  assert.equal(stage.selectedContextId, 'c2');
+});
+
+/* ---------------------------------------------------------------------------
+   S6-02/S6-03：数字人档案与模式 B 投影
+   --------------------------------------------------------------------------- */
+
+test('S6-02 档案就绪由绑定版本推导；未绑定给可解释阻塞；处理状态不伪造', () => {
+  const assets = f504Assets();
+  const bound = projectDigitalHumanProfiles([
+    { id: 'p1', name: '张三', avatarVersionId: 'a1', voiceVersionId: 'v1' },
+    { id: 'p2', name: '李四', avatarVersionId: null, voiceVersionId: null },
+  ], assets);
+  assert.equal(bound.profiles[0].ready, true);
+  assert.equal(bound.profiles[0].status, 'ready_for_production');
+  assert.equal(bound.profiles[0].processingStatus, 'pending_provider', '没有真实提供方，处理状态必须停在待处理');
+  assert.equal(bound.profiles[1].ready, false);
+  assert.ok(bound.profiles[1].blockingIssues.some((issue) => issue.code === 'PROFILE_AVATAR_UNBOUND'));
+  assert.equal(bound.readyCount, 1);
+  assert.equal(bound.nextAction, 'nothing_pending', '已有可生产档案时档案阶段不再阻塞');
+});
+
+test('S6-03 模式 B 映射四项齐全才算 ready', () => {
+  const copy = f504Copy();
+  const assets = f504Assets();
+  const videos = [{ id: 'v-src', name: '旧拍摄', status: 'usable' }];
+  const full = projectModeBStage(videos, [
+    { id: 'm1', videoId: 'v-src', scriptVersionId: 'c1', voiceSource: 'original', templateVersionId: 't1' },
+  ], copy, assets);
+  assert.equal(full.readyMappingCount, 1);
+  assert.deepEqual(full.blockingIssues, []);
+
+  const incomplete = projectModeBStage(videos, [
+    { id: 'm2', videoId: 'v-src', scriptVersionId: null, voiceSource: 'original', templateVersionId: null },
+  ], copy, assets);
+  assert.equal(incomplete.readyMappingCount, 0);
+  const m = incomplete.mappings[0];
+  assert.ok(m.missing.includes('SCRIPT_NOT_CONFIRMED') && m.missing.includes('TEMPLATE_MISSING'));
+  assert.equal(incomplete.blockingIssues[0].code, 'NO_READY_VIDEO_MAPPING');
+});
+
+test('S6-03 模式 B 行引用完整映射后不再被阻塞', () => {
+  const mappings = [{ id: 'm1', videoId: 'v-src', scriptVersionId: 'c1', voiceSource: 'original', templateVersionId: 't1', ready: true }];
+  const ws = projectTaskWorkspace({
+    draft: { mode: 'B', plannedItems: [{ mode: 'B', mappingVersionId: 'm1', outputName: 'b-01' }] },
+    copy: f504Copy(),
+    assets: f504Assets(),
+    mappings,
+    sourceVideos: [{ id: 'v-src', name: '旧拍摄', status: 'usable' }],
+  });
+  assert.equal(ws.blockingIssues.some((issue) => issue.code === 'ROW_MAPPING_NOT_READY'), false, '完整映射让模式 B 行可进入生产');
 });

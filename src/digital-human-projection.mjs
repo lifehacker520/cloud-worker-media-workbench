@@ -651,8 +651,540 @@ export function projectAssetCatalog(catalog = {}, draft = null) {
 
 
 /* ---------------------------------------------------------------------------
-   P01 生产中心摘要
+   F5-05：P06 生产任务工作区（五步 + 显式明细 + N17 生成前检查）
+   规则：
+     - 单条和批量共用一套任务：1 行明细就是单条生产；
+     - production_item 一行对应一个输出，明细必须显式逐行添加（N15 禁止隐藏全组合）；
+     - 模式 A 行需要 文案 + 形象 + 声音；模式 B 行需要 已有视频 + 文案 + 声音来源；
+     - 输出设置：子目录 + 文件名，必须唯一且不含非法字符（N16）；
+     - N17 生成前检查：所有必需引用可用且输入冻结后才允许执行。
+   本切片不创建批次、不执行生成——把显式行转成真批次需要新的领域函数，
+   这是对现有全组合 buildBatchPlan 的结构性调整，需要负责人确认（7.3）。
    --------------------------------------------------------------------------- */
+
+export const DH_WORKSPACE_STEPS = Object.freeze([
+  { no: '1', key: 'scope', label: '模式与范围' },
+  { no: '2', key: 'rows', label: '明细配置' },
+  { no: '3', key: 'output', label: '输出设置' },
+  { no: '4', key: 'preflight', label: '生成前检查' },
+  { no: '5', key: 'execute', label: '开始执行' },
+]);
+
+const DH_OUTPUT_NAME_FORBIDDEN = /[/\\:*?"<>|]/;
+
+export function sanitizeOutputName(value) {
+  return text(value).replace(/\s+/g, '-');
+}
+
+function normalizePlannedRows(input, copyIndex, assets, mode) {
+  const rows = Array.isArray(input) ? input : [];
+  return rows.slice(0, 300).map((raw, index) => {
+    const rowMode = text(raw?.mode, mode) || 'A';
+    const scriptVersionId = text(raw?.scriptVersionId, null);
+    const avatarVersionId = text(raw?.avatarVersionId, null);
+    const voiceVersionId = text(raw?.voiceVersionId, null);
+    const templateVersionId = text(raw?.templateVersionId, null);
+    const mappingVersionId = text(raw?.mappingVersionId, null);
+    const outputName = sanitizeOutputName(raw?.outputName);
+    const outputSubdirectory = sanitizeOutputName(raw?.outputSubdirectory);
+    const script = scriptVersionId ? copyIndex.get(scriptVersionId) || null : null;
+    const avatar = avatarVersionId ? assets.avatarIndex.get(avatarVersionId) || null : null;
+    const voice = voiceVersionId ? assets.voiceIndex.get(voiceVersionId) || null : null;
+    const template = templateVersionId ? assets.templateIndex.get(templateVersionId) || null : null;
+    return {
+      rowNo: index + 1,
+      mode: rowMode,
+      scriptVersionId,
+      avatarVersionId,
+      voiceVersionId,
+      templateVersionId,
+      sourceVideoAssetId: text(raw?.sourceVideoAssetId, null),
+      mappingVersionId,
+      outputName,
+      outputSubdirectory,
+      refs: {
+        script,
+        avatar,
+        voice,
+        template,
+      },
+    };
+  });
+}
+
+/* N15：禁止隐藏全组合。选择区里勾了多个形象/多个文案，但明细没有显式覆盖，
+   系统绝不能自动相乘，必须作为阻塞项提示用户逐行添加。 */
+function detectHiddenCartesian(rows, assets, mode) {
+  if (mode !== 'A') return null;
+  const avatars = new Set(rows.map((row) => row.avatarVersionId).filter(Boolean));
+  const scripts = new Set(rows.map((row) => row.scriptVersionId).filter(Boolean));
+  const selectedAvatars = assets.selected?.avatarVersionId ? [assets.selected.avatarVersionId] : [];
+  const selectedScripts = assets.selectedScriptIds || [];
+  const impliedAvatars = new Set([...avatars, ...selectedAvatars]);
+  const impliedScripts = new Set([...scripts, ...selectedScripts]);
+  const implied = impliedAvatars.size * impliedScripts.size;
+  if (implied > rows.length) {
+    return issue(
+      'HIDDEN_CARTESIAN_RISK',
+      'plannedItems',
+      '当前选择隐含 ' + implied + ' 种组合，但明细只有 ' + rows.length + ' 行。' +
+        '系统不会自动全组合，需要哪几条就显式加哪几行（N15 禁止隐藏全组合）',
+      { retryable: false },
+    );
+  }
+  return null;
+}
+
+export function projectTaskWorkspace(input = {}) {
+  const draft = input.draft && typeof input.draft === 'object' ? input.draft : {};
+  const mappings = Array.isArray(input.mappings) ? input.mappings : [];
+  const sourceVideos = Array.isArray(input.sourceVideos) ? input.sourceVideos : [];
+  const copy = input.copy && typeof input.copy === 'object' ? input.copy : { candidates: [] };
+  const assets = input.assets && typeof input.assets === 'object' ? input.assets : null;
+  const mode = text(draft.mode, 'A') === 'B' ? 'B' : 'A';
+
+  const copyIndex = new Map((copy.candidates || []).map((candidate) => [candidate.id, candidate]));
+  const assetIndex = (list) => new Map((list || []).map((option) => [option.id, option]));
+  const avatarIndex = assetIndex(assets?.modeA?.avatars?.options);
+  const voiceIndex = assetIndex(assets?.modeA?.voices?.options);
+  const templateIndex = assetIndex(assets?.templates?.options);
+  const lookupAssets = { avatarIndex, voiceIndex, templateIndex };
+
+  const rows = normalizePlannedRows(draft.plannedItems, copyIndex, lookupAssets, mode);
+  const requestedItemCount = Number(draft.plannedItemCount) || rows.length || null;
+
+  /* ---- 每行校验（N15 / N16 / N17 的事实来源） ---- */
+  const blockingIssues = [];
+  const seenNames = new Map();
+  for (const row of rows) {
+    const prefix = '第 ' + row.rowNo + ' 行';
+    const rowMapping = row.mode === 'B' ? mappings.find((item) => item.id === row.mappingVersionId) || null : null;
+    /* 映射就绪在工作区里就地判定（原始 mapping 没有 ready 字段）：
+       视频可读 + 文案已确认 + 模板存在 + 声音来源齐全。 */
+    const mappingReady = (mapping) => {
+      if (!mapping) return false;
+      const video = sourceVideos.find((item) => item.id === mapping.videoId) || null;
+      const script = mapping.scriptVersionId ? copyIndex.get(mapping.scriptVersionId) || null : null;
+      const template = mapping.templateVersionId ? templateIndex.get(mapping.templateVersionId) || null : null;
+      return Boolean(video && video.status === 'usable' && script && script.confirmed && template);
+    };
+    if (row.mode === 'B') {
+      if (!rowMapping || !mappingReady(rowMapping)) {
+        blockingIssues.push(issue('ROW_MAPPING_NOT_READY', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：模式 B 行必须引用一条完整映射（视频 + 已确认文案 + 声音来源 + 模板，N12）', { retryable: false }));
+      }
+    } else {
+      if (!row.scriptVersionId || !row.refs.script) {
+        blockingIssues.push(issue('ROW_COPY_MISSING', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：还没有引用已确认的文案版本', { retryable: false }));
+      } else if (!row.refs.script.confirmed) {
+        blockingIssues.push(issue('ROW_COPY_NOT_CONFIRMED', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：引用的文案未确认，不能进入生产', { retryable: false }));
+      }
+      if (!row.avatarVersionId || !row.refs.avatar) {
+        blockingIssues.push(issue('ROW_AVATAR_MISSING', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：还没有引用数字人形象版本', { retryable: false }));
+      } else if (!row.refs.avatar.usable) {
+        blockingIssues.push(issue('ROW_AVATAR_NOT_USABLE', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：引用的形象版本当前不可用于批量生产', { retryable: false }));
+      }
+      if (!row.voiceVersionId || !row.refs.voice) {
+        blockingIssues.push(issue('ROW_VOICE_MISSING', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：还没有引用数字人声音版本', { retryable: false }));
+      } else if (!row.refs.voice.usable) {
+        blockingIssues.push(issue('ROW_VOICE_NOT_USABLE', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：引用的声音版本当前不可用于批量生产', { retryable: false }));
+      }
+    }
+    /* 模式 B 行的模板来自映射本身；模板缺失已在映射检查里报过，这里只在模式 A 检查。 */
+    const rowTemplateResolved = row.mode === 'B' ? (mappingReady(rowMapping) ? { usable: true } : null) : row.refs.template;
+    if (row.mode !== 'B' && (!row.templateVersionId || !rowTemplateResolved)) {
+      blockingIssues.push(issue('ROW_TEMPLATE_MISSING', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：还没有引用场景模板版本', { retryable: false }));
+    } else if (row.mode !== 'B' && !rowTemplateResolved.usable) {
+      blockingIssues.push(issue('ROW_TEMPLATE_NOT_USABLE', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：引用的模板版本当前不可用于批量生产', { retryable: false }));
+    }
+    if (!row.outputName) {
+      blockingIssues.push(issue('ROW_OUTPUT_NAME_MISSING', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：缺少输出文件名（N16 输出设置）', { retryable: false }));
+    } else if (DH_OUTPUT_NAME_FORBIDDEN.test(row.outputName)) {
+      blockingIssues.push(issue('ROW_OUTPUT_NAME_INVALID', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：输出文件名含有非法字符 / \\ : * ? " < > |', { retryable: false }));
+    } else if (seenNames.has(row.outputName)) {
+      blockingIssues.push(issue('ROW_OUTPUT_NAME_CONFLICT', 'plannedItems[' + (row.rowNo - 1) + ']', prefix + '：输出文件名与第 ' + seenNames.get(row.outputName) + ' 行重复（N16 命名冲突）', { retryable: false }));
+    } else {
+      seenNames.set(row.outputName, row.rowNo);
+    }
+  }
+  const hiddenCartesian = detectHiddenCartesian(rows, assets, mode);
+  if (hiddenCartesian) blockingIssues.push(hiddenCartesian);
+  if (!rows.length) {
+    blockingIssues.push(issue('NO_PLANNED_ROWS', 'plannedItems', '明细至少要有 1 行；1 行就是单条生产（N15）', { retryable: false }));
+  }
+
+  /* ---- 五步状态 ---- */
+  const stepStates = {
+    scope: 'done',
+    rows: rows.length ? (blockingIssues.some((item) => item.code.startsWith('ROW_')) ? 'blocked' : 'done') : 'todo',
+    output: rows.length && rows.every((row) => row.outputName && !DH_OUTPUT_NAME_FORBIDDEN.test(row.outputName)) ? 'done' : 'todo',
+    preflight: blockingIssues.length ? 'blocked' : 'not_run',
+    execute: 'unwired',
+  };
+  if (draft.preflightResult?.passed === true && !blockingIssues.length) {
+    stepStates.preflight = 'passed';
+  }
+
+  const outputDir = sanitizeOutputName(text(draft.title, '口播生产') || '口播生产');
+
+  return {
+    mode,
+    title: text(draft.title, '未命名口播生产草稿'),
+    requestedItemCount,
+    rowCount: rows.length,
+    isSingle: rows.length === 1,
+    rows: rows.map((row) => ({
+      rowNo: row.rowNo,
+      mode: row.mode,
+      refs: {
+        script: row.refs.script ? { id: row.refs.script.id, title: row.refs.script.title, confirmed: row.refs.script.confirmed } : null,
+        avatar: row.refs.avatar ? { id: row.refs.avatar.id, name: row.refs.avatar.name, usable: row.refs.avatar.usable } : null,
+        voice: row.refs.voice ? { id: row.refs.voice.id, name: row.refs.voice.name, usable: row.refs.voice.usable } : null,
+        template: row.refs.template ? { id: row.refs.template.id, name: row.refs.template.name, usable: row.refs.template.usable } : null,
+      },
+      outputName: row.outputName,
+      outputSubdirectory: row.outputSubdirectory || outputDir,
+      outputPath: (row.outputSubdirectory || outputDir) + '/' + (row.outputName || '未命名') + '.mp4',
+      blockingIssues: blockingIssues.filter((item) => item.field === 'plannedItems[' + (row.rowNo - 1) + ']'),
+    })),
+    steps: DH_WORKSPACE_STEPS.map((step) => ({ ...step, status: stepStates[step.key] })),
+    outputPolicy: {
+      directory: text(input.outputRoot, '（由输出策略决定，首版本地目录）'),
+      writeable: input.outputWriteable === true,
+      subdirectory: outputDir,
+      namePattern: '行号或自定义文件名 + .mp4，同一任务内必须唯一（N16）',
+      note: '生成出来的视频保存位置由用户设置；生产任务保存目录策略、命名规则和实际文件记录。',
+    },
+    allowedActions: rows.length ? ['run_preflight'] : [],
+    blockingIssues,
+    nextAction: blockingIssues.length ? 'fix_blockers' : rows.length ? 'run_preflight' : 'add_rows',
+    preflight: draft.preflightResult || null,
+    preflightHistory: Array.isArray(draft.preflightHistory) ? draft.preflightHistory.slice(-20).reverse() : [],
+    executionWired: false,
+    source: {
+      endpoints: ['/api/content/digital-human/draft', '/api/content/digital-human/copy', '/api/content/digital-human/assets'],
+      readAt: null,
+      real: true,
+    },
+  };
+}
+
+/* N17 闸门：统一返回格式（7.1）。只判定，不执行。 */
+export function preflightGate(workspace) {
+  const blockingIssues = Array.isArray(workspace.blockingIssues) ? workspace.blockingIssues : [];
+  const passed = blockingIssues.length === 0;
+  return {
+    success: passed,
+    entity_id: text(workspace.title, 'draft') || 'draft',
+    previous_state: { preflight: 'not_run', rows: workspace.rowCount },
+    current_state: { preflight: passed ? 'passed' : 'blocked', rows: workspace.rowCount },
+    allowed_actions: passed ? ['start_execution'] : ['fix_blockers'],
+    blocking_issues: blockingIssues,
+    next_action: passed ? 'start_execution' : 'fix_blockers',
+    event_id: null,
+    version: 'dh-preflight-v1',
+    note: '生成执行（N18）尚未接入：通过生成前检查也不代表会开始生成，更不会产生任何视频文件。',
+  };
+}
+
+
+
+/* ---------------------------------------------------------------------------
+   F5-06/F5-07：P07 结果验收 + P08 内容包投影
+   规则：
+     - 每条结果独立三轴状态（复用 projectBatchItem）；
+     - 预览：没有真实文件就如实显示没有，模拟输出不得作为可预览成片；
+     - 导出资格（5.10）：生成 succeeded + 文件 verified + 审核 approved + 非模拟；
+     - 审核动作由领域层执行，这里只标注哪条规则会拦住它。
+   --------------------------------------------------------------------------- */
+
+export function projectResultItem(item = {}, rowNo = null) {
+  const projected = projectBatchItem(item, rowNo);
+  const simulated = projected.currentOutput?.simulated === true;
+  const hasRealFile = Boolean(item.output?.fileRef || item.output?.videoUrl || item.output?.path);
+  const reviewBlockedReason = simulated
+    ? '领域规则：模拟输出只能用于验证队列和状态，不能审核通过或作为生产内容交付'
+    : projected.reviewStatus === 'approved'
+      ? '该结果已经人工通过'
+      : null;
+
+  return {
+    ...projected,
+    preview: {
+      available: hasRealFile && !simulated,
+      simulated,
+      reason: simulated
+        ? '这是模拟输出，没有真实视频文件，不能预览也不能交付'
+        : hasRealFile
+          ? '可预览'
+          : '该结果还没有可预览的文件',
+    },
+    attempts: {
+      current: Number(item.attempt) || 0,
+      max: Number(item.maxAttempts) || 0,
+      historyCount: Array.isArray(item.history) ? item.history.length : null,
+    },
+    reviewBlockedReason,
+    actions: {
+      approve: projected.reviewStatus === 'waiting_review' && !simulated,
+      requestChanges: projected.reviewStatus === 'waiting_review',
+      reject: projected.reviewStatus === 'waiting_review',
+      retry: projected.allowedActions.includes('retry_item'),
+    },
+  };
+}
+
+export function projectResultBoard(batches = []) {
+  const list = Array.isArray(batches) ? batches : [];
+  const tasks = list.map((batch) => {
+    const task = projectProductionTask(batch);
+    return {
+      ...task,
+      items: task.items.map((item, index) => projectResultItem((batch.items || [])[index], index + 1)),
+      canRun: ['waiting_approval', 'queued', 'paused', 'partial_failed', 'blocked'].includes(text(batch.status)) &&
+        !(task.items || []).some((item) => item.generationStatus === 'running'),
+    };
+  });
+  const items = tasks.flatMap((task) => task.items);
+  return {
+    batchCount: tasks.length,
+    itemCount: items.length,
+    counts: {
+      generated: items.filter((item) => item.generationStatus === 'succeeded').length,
+      failed: items.filter((item) => ['failed', 'blocked'].includes(item.generationStatus)).length,
+      approved: items.filter((item) => item.reviewStatus === 'approved').length,
+      waitingReview: items.filter((item) => item.reviewStatus === 'waiting_review').length,
+      changesRequested: items.filter((item) => ['changes_requested', 'rejected'].includes(item.reviewStatus)).length,
+    },
+    previewableCount: items.filter((item) => item.preview.available).length,
+    simulatedCount: items.filter((item) => item.preview.simulated).length,
+    tasks,
+    allowedActions: [
+      ...(tasks.some((task) => task.canRun) ? ['start_execution'] : []),
+      ...(items.some((item) => item.actions.requestChanges) ? ['request_changes'] : []),
+      ...(items.some((item) => item.actions.retry) ? ['retry_item'] : []),
+    ],
+    nextAction: items.some((item) => item.reviewStatus === 'waiting_review')
+      ? 'review_pending_items'
+      : items.some((item) => item.actions.retry)
+        ? 'retry_failed_items'
+        : tasks.some((task) => task.canRun)
+          ? 'start_execution'
+          : 'nothing_pending',
+    source: { endpoints: ['/api/content/batches'], readAt: null, real: true },
+  };
+}
+
+export function projectPackageView(batches = []) {
+  const list = Array.isArray(batches) ? batches : [];
+  const groups = list.map((batch) => {
+    const task = projectProductionTask(batch);
+    const items = (batch.items || []).map((item, index) => {
+      const projected = projectResultItem(item, index + 1);
+      /* 5.10 导出资格五条件 */
+      const checks = [
+        { code: 'GENERATION_SUCCEEDED', ok: projected.generationStatus === 'succeeded', label: '生成状态 succeeded' },
+        { code: 'FILE_VERIFIED', ok: Boolean(projected.currentOutput) && projected.currentOutput.verificationStatus === 'verified' && !projected.preview.simulated, label: '输出文件 verified 且非模拟' },
+        { code: 'REVIEW_APPROVED', ok: projected.reviewStatus === 'approved', label: '人工审核 approved' },
+        { code: 'OUTPUT_CURRENT', ok: Boolean(projected.currentOutput), label: '存在当前输出（未被替代）' },
+      ];
+      return {
+        rowNo: projected.rowNo,
+        id: projected.id,
+        eligible: checks.every((check) => check.ok),
+        failedChecks: checks.filter((check) => !check.ok).map((check) => check.code),
+        checks,
+        outputName: text(item.outputName, null),
+      };
+    });
+    const eligible = items.filter((item) => item.eligible);
+    const exportRecord = batch.exportRecord && typeof batch.exportRecord === 'object' ? batch.exportRecord : null;
+    return {
+      id: text(batch.id),
+      title: text(batch.title, '未命名生产任务'),
+      batchStatus: text(batch.status),
+      itemCount: items.length,
+      eligibleCount: eligible.length,
+      items,
+      blockedReason: eligible.length
+        ? null
+        : (batch.items || []).some((item) => item.output?.simulated === true)
+          ? '当前结果都是模拟输出：模拟输出不能导出为审核通过的生产内容包'
+          : '没有同时满足「生成成功 + 文件 verified + 人工通过」的结果',
+      exportRecord: exportRecord
+        ? {
+            status: text(exportRecord.status),
+            approvedCount: Number(exportRecord.approvedCount) || 0,
+            manifest: text(exportRecord.manifest) || null,
+            packageDir: text(exportRecord.package?.packageDir || exportRecord.package?.directory) || null,
+            missingFiles: Array.isArray(exportRecord.package?.missingFiles) ? exportRecord.package.missingFiles.length : null,
+            exportedAt: toIsoOrNull(exportRecord.exportedAt),
+          }
+        : null,
+    };
+  });
+  const exportableCount = groups.reduce((sum, group) => sum + group.eligibleCount, 0);
+  return {
+    batchCount: groups.length,
+    exportableCount,
+    groups,
+    allowedActions: exportableCount ? ['export_package'] : [],
+    nextAction: exportableCount ? 'export_package' : groups.length ? 'review_pending_items' : 'prepare_assets',
+    note: '导出只引用：生成 succeeded、文件 verified、人工 approved、明确选择、未被替代（5.10）。模拟输出永远不能导出。',
+    source: { endpoints: ['/api/content/batches'], readAt: null, real: true },
+  };
+}
+
+
+
+/* ---------------------------------------------------------------------------
+   S6-01：N01–N02 项目上下文与文案生成需求投影
+   --------------------------------------------------------------------------- */
+
+export const DH_COPY_REQUEST_FIELDS = Object.freeze([
+  { key: 'count', label: '数量', required: true },
+  { key: 'direction', label: '方向', required: true },
+  { key: 'platform', label: '平台', required: true },
+  { key: 'durationSeconds', label: '时长（秒）', required: false },
+]);
+
+export function projectContextStage(contexts = [], request = null, selectedContextId = null) {
+  const list = Array.isArray(contexts) ? contexts : [];
+  const latestByKey = new Map();
+  for (const item of list) {
+    if (!latestByKey.has(item.contextKey) || (item.version || 0) > (latestByKey.get(item.contextKey).version || 0)) {
+      latestByKey.set(item.contextKey, item);
+    }
+  }
+  const versions = [...latestByKey.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const selected = selectedContextId ? list.find((item) => item.id === selectedContextId) || null : null;
+  const blockingIssues = [];
+  if (!versions.length) {
+    blockingIssues.push(issue('NO_PROJECT_CONTEXT', 'project_contexts', '还没有项目上下文：行业、产品、受众、卖点、内容目标是文案和生产的前提（N01）', { retryable: false }));
+  } else if (selected && selected.status !== 'active') {
+    blockingIssues.push(issue('SELECTED_CONTEXT_ARCHIVED', 'selectedContextId', '已选择的项目上下文已归档，请重新选择', { retryable: false }));
+  }
+  const requestIssues = [];
+  if (!request) {
+    requestIssues.push(issue('NO_COPY_REQUEST', 'copy_generation_requests', '还没有文案生成需求：数量、方向、平台是批量候选的前提（N02）', { retryable: false }));
+  } else {
+    if (!request.count) requestIssues.push(issue('COPY_REQUEST_COUNT_MISSING', 'count', '生成数量缺失', { retryable: false }));
+    if (!text(request.direction)) requestIssues.push(issue('COPY_REQUEST_DIRECTION_MISSING', 'direction', '生成方向缺失', { retryable: false }));
+    if (!text(request.platform)) requestIssues.push(issue('COPY_REQUEST_PLATFORM_MISSING', 'platform', '目标平台缺失', { retryable: false }));
+  }
+
+  let nextAction = 'nothing_pending';
+  if (!versions.length) nextAction = 'create_context';
+  else if (!selected) nextAction = 'select_context';
+  else if (requestIssues.length) nextAction = 'configure_copy_request';
+  else nextAction = 'nothing_pending';
+
+  return {
+    versions,
+    selected,
+    selectedContextId: selected ? selected.id : null,
+    request: request || null,
+    requestIssues,
+    blockingIssues,
+    allowedActions: versions.length ? ['select_context', 'configure_copy_request'] : ['create_context'],
+    nextAction,
+    modelProviderConfigured: false,
+    note: 'N03 AI 批量生成的模型提供方尚未配置：本阶段用手动登记候选 + 状态机占位，生成按钮只会返回明确阻塞。',
+  };
+}
+
+/* ---------------------------------------------------------------------------
+   S6-02：N05–N10 数字人档案阶段投影；S6-03：N11–N12 模式 B 阶段投影
+   规则：
+     - 档案 = 员工主体 + 形象版本绑定 + 声音版本绑定；
+     - 处理状态没有真实提供方时只能停在 pending_provider，绝不显示已训练；
+     - 档案 ready_for_production 由绑定版本的 approved+batchAllowed 推导；
+     - 模式 B 映射必须显式包含 视频/文案/声音来源/模板 四项才算 ready。
+   --------------------------------------------------------------------------- */
+
+export function projectDigitalHumanProfiles(profiles = [], assets = null) {
+  const list = Array.isArray(profiles) ? profiles : [];
+  const avatarIndex = new Map((assets?.modeA?.avatars?.options || []).map((item) => [item.id, item]));
+  const voiceIndex = new Map((assets?.modeA?.voices?.options || []).map((item) => [item.id, item]));
+  const profilesView = list.map((profile) => {
+    const avatar = profile.avatarVersionId ? avatarIndex.get(profile.avatarVersionId) || null : null;
+    const voice = profile.voiceVersionId ? voiceIndex.get(profile.voiceVersionId) || null : null;
+    const bindingIssues = [];
+    if (!avatar) bindingIssues.push(issue('PROFILE_AVATAR_UNBOUND', 'avatar_version_id', '该档案还没有绑定可用的形象版本（N06–N07）', { retryable: false }));
+    if (!voice) bindingIssues.push(issue('PROFILE_VOICE_UNBOUND', 'voice_version_id', '该档案还没有绑定可用的声音版本（N08–N09）', { retryable: false }));
+    const ready = Boolean(avatar && voice);
+    return {
+      id: profile.id,
+      name: profile.name,
+      subjectRole: profile.subjectRole || null,
+      status: ready ? 'ready_for_production' : 'draft',
+      processingStatus: 'pending_provider',
+      processingNote: '真实形象/声音训练的提供方尚未配置：状态停在「待处理-提供方未配置」，不显示为已训练。',
+      avatar: avatar ? { id: avatar.id, name: avatar.name, usable: avatar.usable } : null,
+      voice: voice ? { id: voice.id, name: voice.name, usable: voice.usable } : null,
+      ready,
+      allowedActions: ready ? ['use_in_production'] : ['complete_binding'],
+      blockingIssues: bindingIssues,
+    };
+  });
+  const blockingIssues = [];
+  if (!profilesView.length) {
+    blockingIssues.push(issue('NO_DIGITAL_HUMAN_PROFILE', 'digital_human_profiles', '还没有员工数字人档案：模式 A 的生产以档案为主体绑定形象与声音（N05）', { retryable: false }));
+  } else if (!profilesView.some((profile) => profile.ready)) {
+    blockingIssues.push(issue('NO_READY_DIGITAL_HUMAN_PROFILE', 'digital_human_profiles', '有档案但没有任何一个完成形象/声音绑定，不能进入生产（N10）', { retryable: false }));
+  }
+  return {
+    profiles: profilesView,
+    readyCount: profilesView.filter((profile) => profile.ready).length,
+    totalCount: profilesView.length,
+    blockingIssues,
+    nextAction: profilesView.some((profile) => profile.ready) ? 'nothing_pending' : profilesView.length ? 'complete_binding' : 'create_profile',
+    source: { endpoints: ['/api/content/digital-human/profiles'], readAt: null, real: true },
+  };
+}
+
+export function projectModeBStage(sourceVideos = [], mappings = [], copy = null, assets = null) {
+  const videos = Array.isArray(sourceVideos) ? sourceVideos : [];
+  const maps = Array.isArray(mappings) ? mappings : [];
+  const scriptIndex = new Map((copy?.candidates || []).map((item) => [item.id, item]));
+  const templateIndex = new Map((assets?.templates?.options || []).map((item) => [item.id, item]));
+
+  const mappingsView = maps.map((mapping) => {
+    const video = videos.find((item) => item.id === mapping.videoId) || null;
+    const script = mapping.scriptVersionId ? scriptIndex.get(mapping.scriptVersionId) || null : null;
+    const template = mapping.templateVersionId ? templateIndex.get(mapping.templateVersionId) || null : null;
+    const missing = [];
+    if (!video) missing.push('VIDEO_MISSING');
+    if (!script || !script.confirmed) missing.push('SCRIPT_NOT_CONFIRMED');
+    if (mapping.voiceSource === 'voice_version' && !mapping.voiceVersionId) missing.push('VOICE_SOURCE_MISSING');
+    if (!template) missing.push('TEMPLATE_MISSING');
+    if (video && video.status !== 'usable') missing.push('VIDEO_NOT_USABLE');
+    return {
+      id: mapping.id,
+      video: video ? { id: video.id, name: video.name, status: video.status } : null,
+      script: script ? { id: script.id, title: script.title, confirmed: script.confirmed } : null,
+      voiceSource: mapping.voiceSource || 'original',
+      voiceVersionId: mapping.voiceVersionId || null,
+      template: template ? { id: template.id, name: template.name, usable: template.usable } : null,
+      ready: missing.length === 0,
+      missing,
+    };
+  });
+  const blockingIssues = [];
+  if (!videos.length) {
+    blockingIssues.push(issue('NO_SOURCE_VIDEO', 'source_videos', '模式 B 还没有导入任何已有视频（N11）。导入是登记元信息，本阶段不解析真实文件。', { retryable: false }));
+  } else if (!mappingsView.some((mapping) => mapping.ready)) {
+    blockingIssues.push(issue('NO_READY_VIDEO_MAPPING', 'video_mappings', '有视频但没有任何完整映射：视频、已确认文案、声音来源、模板四项缺一不可（N12）', { retryable: false }));
+  }
+  return {
+    videos,
+    mappings: mappingsView,
+    readyMappingCount: mappingsView.filter((mapping) => mapping.ready).length,
+    mappingCount: mappingsView.length,
+    blockingIssues,
+    nextAction: mappingsView.some((mapping) => mapping.ready) ? 'nothing_pending' : videos.length ? 'complete_mapping' : 'import_video',
+    source: { endpoints: ['/api/content/digital-human/modeb'], readAt: null, real: true },
+  };
+}
 
 export function projectCenterSummary(input = {}) {
   const batches = Array.isArray(input.batches) ? input.batches : [];
