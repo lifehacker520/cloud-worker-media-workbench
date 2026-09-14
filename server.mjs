@@ -4,6 +4,8 @@ import { createServer } from 'node:http';
 import fs from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { heygemGenerate, checkHeygemWorker, loadSshConfig, burnSubtitles } from './src/autodl-worker.mjs';
+import { HeyGemSshConnector } from './src/heygem-connector.mjs';
+import { loadDoubaoTtsConfig } from './src/doubao-voice.mjs';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
@@ -1653,7 +1655,13 @@ async function probePackageDirWritable() {
 async function runContentBatch(user, batch) {
   const catalog = contentBatchCatalogFor(user, batch.projectId, batch.taskId);
   const connector = catalog.connectors.find((item) => item.id === batch.connectorId);
-  const connectors = connector?.config?.mode === 'simulation'
+  const connectors = connector?.config?.mode === 'ssh-heygem'
+    ? [new HeyGemSshConnector({
+        id: connector.id,
+        speakerFallback: loadDoubaoTtsConfig().clonedSpeakerId || null,
+        defaultAvatarVideo: 'data/media-output/侯云龙-形象源-无字幕.mp4',
+      })]
+    : connector?.config?.mode === 'simulation'
     ? [new FakeMediaGenerationConnector({ id: connector.id })]
     : connector?.config?.mode === 'http-worker' && contentMediaWorkerConnector?.id === connector.id
       ? [normalizedBatchConnector(contentMediaWorkerConnector, async (output) => {
@@ -4989,6 +4997,68 @@ async function handleRequest(request, response) {
     }
   }
 
+  /* S8-01：执行数字人批次（真实 runner 管线：租约→尝试→model_run→quality_report） */
+  if (/^\/api\/content\/batches\/[^/]+\/run$/.test(requestUrl.pathname) && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const batchId = decodeURIComponent(requestUrl.pathname.split('/')[4]);
+      const batch = contentBatchStore ? contentBatchStore.getBatch(user, batchId) : null;
+      if (!batch) return sendJson(response, { ok: false, error: '批次不存在' }, 404);
+      const gate = batch.gate || null;
+      if (batch.status === 'waiting_approval') return sendJson(response, { ok: false, error: '批次尚未批准执行（waiting_approval）' }, 409);
+      const ran = await runContentBatch(user, batch);
+      await recordActivity(user, 'content_batch_ran', '执行数字人批次：' + batchId);
+      return sendJson(response, { ok: true, batch: contentBatchResponse(ran, user) });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S8-01（N19 数据面）：批次结果逐条明细——输出/可播放/校验状态/质检/运行记录 */
+  if (requestUrl.pathname === '/api/content/digital-human/results/items' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const batchId = requestUrl.searchParams.get('batchId');
+      if (!batchId || !contentBatchStore) return sendJson(response, { ok: false, error: '缺少 batchId' }, 409);
+      const batch = contentBatchStore.getBatch(user, batchId);
+      if (!batch) return sendJson(response, { ok: false, error: '批次不存在' }, 404);
+      const runs = contentBatchStore.listModelRuns(user, batchId);
+      const reports = contentBatchStore.listQualityReports(user, batchId);
+      const items = (batch.items || []).map((item) => {
+        const run = [...runs].reverse().find((candidate) => candidate.itemId === item.id) || null;
+        const report = [...reports].reverse().find((candidate) => candidate.itemId === item.id) || null;
+        const output = item.output || run?.output || null;
+        return {
+          itemId: item.id,
+          status: item.status,
+          stage: item.stage,
+          attempt: item.attempt,
+          review: item.review || null,
+          output: output
+            ? {
+                videoRef: output.videoRef || null,
+                audioRef: output.audioRef || null,
+                playable: Boolean(output.videoRef) && output.simulated !== true,
+                simulated: output.simulated === true,
+                verificationStatus: report?.status || (output.simulated ? 'simulation_only' : 'media_check_pending'),
+                provider: output.provider || item.connectorId || null,
+                modelVersion: output.modelVersion || null,
+                requestId: output.requestId || null,
+                errorClass: output.errorClass || null,
+              }
+            : null,
+          quality: report ? { status: report.status, checks: report.checks, durationMs: report.durationMs } : null,
+          failure: item.failure || run?.error || null,
+        };
+      });
+      return sendJson(response, { ok: true, batchId, batchStatus: batch.status, items });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
   /* S7：HeyGem 云 Worker 健康检查 */
   if (requestUrl.pathname === '/api/content/digital-human/heygem-health' && request.method === 'GET') {
     const user = authorizedUser(request, response);
@@ -5018,7 +5088,9 @@ async function handleRequest(request, response) {
       if (!gate.success) {
         return sendJson(response, { ok: false, error: '生成前检查未通过，不能创建批次', gate }, 409);
       }
-      const connector = (catalog.connectors || []).find((item) => ['ready', 'simulation'].includes(item.status) && Array.isArray(item.capabilities) && item.capabilities.includes('talking_head'));
+      const connector = [...(catalog.connectors || [])]
+        .filter((item) => ['ready', 'simulation'].includes(item.status) && Array.isArray(item.capabilities) && item.capabilities.includes('talking_head'))
+        .sort((a, b) => (a.status === 'ready' ? 0 : 1) - (b.status === 'ready' ? 0 : 1))[0];
       if (!connector) return sendJson(response, { ok: false, error: '没有具备口播能力的可用连接器' }, 409);
       const plan = buildExplicitBatchPlan({
         rows: draft.plannedItems,
