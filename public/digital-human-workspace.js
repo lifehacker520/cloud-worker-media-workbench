@@ -738,6 +738,111 @@ async function dhRunRealGenerate(rowNo) {
   dhRender();
 }
 
+
+/* S8-02~S8-04：第八阶段面板——批次结果逐条查看、人工验收、重试、导出内容包 */
+async function dhLoadStage8() {
+  const batchId = dhDraft.record?.createdBatchId || dhDraftForm.createdBatchId || '';
+  if (!batchId) {
+    dhStage8.data = { batchId: null, items: [], packages: [], note: '尚未创建批次：先在 P06 保存明细并创建批次' };
+    dhStage8.status = 'ready';
+    dhRender();
+    return;
+  }
+  dhStage8.status = 'loading';
+  dhRender();
+  try {
+    const results = await dhApi('/api/content/digital-human/results/items?batchId=' + encodeURIComponent(batchId));
+    const packages = await dhApi('/api/content/digital-human/packages').catch(() => ({ packages: [] }));
+    dhStage8.data = { batchId, batchStatus: results.batchStatus, items: results.items || [], packages: packages.packages || [] };
+    dhStage8.status = 'ready';
+  } catch (error) {
+    dhStage8.status = 'ready';
+    dhStage8.data = { batchId, items: [], packages: [], note: error.message };
+  }
+  dhRender();
+}
+
+async function dhRunBatch() {
+  const batchId = dhDraft.record?.createdBatchId;
+  if (!batchId) { window.alert('尚未创建批次'); return; }
+  if (!window.confirm('执行批次将调用真实连接器（云 GPU）逐条生成，确定开始？')) return;
+  try {
+    await dhApi('/api/content/batches/' + encodeURIComponent(batchId) + '/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    await dhLoadStage8();
+  } catch (error) {
+    window.alert('执行失败：' + error.message);
+  }
+}
+
+async function dhReviewItem(itemId, decision) {
+  const batchId = dhStage8.data?.batchId;
+  if (!batchId) return;
+  const note = decision === 'changes_requested' ? (window.prompt('退回原因（会记录在验收记录里）') || '') : '';
+  try {
+    await dhApi('/api/content/batches/' + encodeURIComponent(batchId) + '/items/' + encodeURIComponent(itemId) + '/review', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ decision, note }),
+    });
+    await dhLoadStage8();
+  } catch (error) {
+    window.alert('验收失败：' + error.message);
+  }
+}
+
+async function dhRetryItem(itemId) {
+  const batchId = dhStage8.data?.batchId;
+  if (!batchId) return;
+  try {
+    await dhApi('/api/content/batches/' + encodeURIComponent(batchId) + '/items/' + encodeURIComponent(itemId) + '/retry', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    await dhLoadStage8();
+  } catch (error) {
+    window.alert('重试失败：' + error.message);
+  }
+}
+
+async function dhExportPackage() {
+  const batchId = dhStage8.data?.batchId;
+  if (!batchId) return;
+  try {
+    const payload = await dhApi('/api/content/digital-human/package', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ batchId }) });
+    window.alert('内容包已生成：' + payload.dir + '（' + payload.package.includedCount + ' 条，未通过 ' + payload.package.blockedCount + ' 条）');
+    await dhLoadStage8();
+  } catch (error) {
+    window.alert('导出失败：' + error.message);
+  }
+}
+
+function dhRenderStage8() {
+  const data = dhStage8.data;
+  if (!data) {
+    return '<section class="dh-block"><h3>第八阶段：结果、验收与内容包</h3><p class="dh-muted">尚未加载。</p>' +
+      '<button class="button button-dark button-small" type="button" data-dh-stage8-load>加载结果</button></section>';
+  }
+  const items = data.items || [];
+  return '<section class="dh-block"><h3>第八阶段：结果、验收与内容包</h3>' +
+    (data.note ? '<p class="dh-muted">' + dhEscape(data.note) + '</p>' : '') +
+    '<div class="dh-stage8-actions">' +
+    '<button class="button button-dark button-small" type="button" data-dh-stage8-load>刷新结果</button>' +
+    '<button class="button button-small" type="button" data-dh-stage8-run>执行批次（真实）</button>' +
+    '<button class="button button-small" type="button" data-dh-stage8-package>导出内容包</button>' +
+    '</div>' +
+    (items.length ? '<ul class="dh-stage8-list">' + items.map((item) => {
+      const output = item.output || {};
+      const state = item.review?.decision ? ('已验收：' + item.review.decision) : (output.simulated ? '模拟输出（不可通过）' : (output.playable ? '待人工验收' : '无可用成片'));
+      return '<li class="dh-stage8-row"><code>' + dhEscape(item.itemId) + '</code>' +
+        '<span>状态 ' + dhEscape(item.status) + ' · 第 ' + dhEscape(String(item.attempt || 0)) + ' 次 · ' + dhEscape(state) + '</span>' +
+        (output.videoRef ? '<span class="dh-muted">' + dhEscape(output.videoRef) + '</span>' : '<span class="dh-muted">' + dhEscape(item.failure ? (item.failure.message || JSON.stringify(item.failure)) : '尚无产出') + '</span>') +
+        '<span class="dh-stage8-buttons">' +
+        '<button class="button-link" type="button" data-dh-stage8-approve="' + dhEscape(item.itemId) + '">通过</button>' +
+        '<button class="button-link" type="button" data-dh-stage8-reject="' + dhEscape(item.itemId) + '">退回</button>' +
+        '<button class="button-link" type="button" data-dh-stage8-retry="' + dhEscape(item.itemId) + '">重试</button>' +
+        '</span></li>';
+    }).join('') + '</ul>' : '<p class="dh-muted">该批次没有条目。</p>') +
+    '<p class="dh-muted">内容包：' + ((data.packages || []).length ? dhEscape((data.packages || []).map((item) => item.packageId + '(' + item.includedCount + '条)').join('、')) : '尚无') + '</p>' +
+    '</section>';
+}
+
+const dhStage8 = { status: 'idle', data: null };
+
 async function dhSaveTaskRows() {
   if (!dhDraftForm.taskId && !dhDraft.record?.taskId) {
     dhWorkspace.error = { message: '请先在 P01 选择关联的内容任务。' };
@@ -2509,7 +2614,8 @@ function dhRenderResults() {
           '<div><dt>读取时间</dt><dd>' + dhEscape(dhFormatTime(data?.source?.readAt)) + '</dd></div></dl></section>',
         )
       : '') +
-    '<footer class="dh-footnote"><span>当前切片：F5-06 P07 结果与人工验收</span><span>下一步：F5-07 P08 内容包</span></footer>';
+    dhRenderStage8() +
+    '<footer class="dh-footnote"><span>当前切片：S8-02~04 P07 结果 · 人工验收 · 版本重做</span><span>内容包见 P08</span></footer>';
 }
 
 /* ---------------------------------------------------------------------------
@@ -3435,6 +3541,18 @@ function dhHandleClick(event) {
     dhSaveTaskRows();
     return;
   }
+  const stage8Load = event.target.closest('[data-dh-stage8-load]');
+  if (stage8Load) { dhLoadStage8(); return; }
+  const stage8Run = event.target.closest('[data-dh-stage8-run]');
+  if (stage8Run) { dhRunBatch(); return; }
+  const stage8Package = event.target.closest('[data-dh-stage8-package]');
+  if (stage8Package) { dhExportPackage(); return; }
+  const stage8Approve = event.target.closest('[data-dh-stage8-approve]');
+  if (stage8Approve) { dhReviewItem(stage8Approve.dataset.dhStage8Approve, 'approved'); return; }
+  const stage8Reject = event.target.closest('[data-dh-stage8-reject]');
+  if (stage8Reject) { dhReviewItem(stage8Reject.dataset.dhStage8Reject, 'changes_requested'); return; }
+  const stage8Retry = event.target.closest('[data-dh-stage8-retry]');
+  if (stage8Retry) { dhRetryItem(stage8Retry.dataset.dhStage8Retry); return; }
   const preflightRun = event.target.closest('[data-dh-preflight-run]');
   if (preflightRun) {
     dhRunPreflight();

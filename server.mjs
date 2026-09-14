@@ -6,6 +6,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 
 import { heygemGenerate, checkHeygemWorker, loadSshConfig, burnSubtitles } from './src/autodl-worker.mjs';
 import { HeyGemSshConnector } from './src/heygem-connector.mjs';
 import { loadDoubaoTtsConfig } from './src/doubao-voice.mjs';
+import { buildContentPackage, summarizePackage } from './src/content-package.mjs';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
@@ -73,6 +74,7 @@ import {
   preflightGate,
 } from './src/digital-human-projection.mjs';
 import { ContentBatchRunner, FakeMediaGenerationConnector } from './src/content-batch-runner.mjs';
+import { transitionContentBatchItem as transitionBatchItemForApi } from './src/digital-human-domain.mjs';
 import { ContentBatchStore } from './src/content-batch-store.mjs';
 import { buildContentBatchAudit } from './src/content-batch-audit.mjs';
 import { createHttpMediaGenerationConnector } from './src/content-media-worker-connector.mjs';
@@ -5059,6 +5061,55 @@ async function handleRequest(request, response) {
     }
   }
 
+  /* S8-04（N22）：导出内容包——只收人工通过且真实可用的文件 */
+  if (requestUrl.pathname === '/api/content/digital-human/package' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const batchId = String(body.batchId || '');
+      const batch = contentBatchStore ? contentBatchStore.getBatch(user, batchId) : null;
+      if (!batch) return sendJson(response, { ok: false, error: '批次不存在' }, 404);
+      const packageId = 'content_package_' + randomUUID();
+      const createdAt = new Date().toISOString();
+      const pkg = buildContentPackage({ batch, packageId, createdAt, title: batch.title || null });
+      if (!pkg.includedCount) {
+        return sendJson(response, { ok: false, error: '没有任何「已人工通过且文件真实可用」的条目，内容包未生成', blocked: pkg.blocked }, 409);
+      }
+      const packageDir = join(process.cwd(), 'data', 'content-packages', packageId);
+      fs.mkdirSync(packageDir, { recursive: true });
+      for (const entry of pkg.included) {
+        const source = (entry.videoRef.startsWith('/') ? entry.videoRef : join(process.cwd(), entry.videoRef));
+        if (!fs.existsSync(source)) continue;
+        fs.copyFileSync(source, join(packageDir, basename(entry.videoRef)));
+        fs.writeFileSync(join(packageDir, basename(entry.videoRef) + '.json'), JSON.stringify({ itemId: entry.itemId, provider: entry.provider, modelVersion: entry.modelVersion, attempt: entry.attempt, verificationStatus: entry.verificationStatus, review: entry.review, requestId: entry.requestId }, null, 2));
+      }
+      fs.writeFileSync(join(packageDir, 'manifest.json'), JSON.stringify(pkg, null, 2));
+      await recordActivity(user, 'content_package_exported', '导出内容包：' + packageId + '（' + pkg.includedCount + ' 条）');
+      return sendJson(response, { ok: true, package: summarizePackage(pkg), dir: 'data/content-packages/' + packageId, blocked: pkg.blocked }, 201);
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
+  /* S8-04：内容包列表 */
+  if (requestUrl.pathname === '/api/content/digital-human/packages' && request.method === 'GET') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const root = join(process.cwd(), 'data', 'content-packages');
+      const packages = fs.existsSync(root)
+        ? fs.readdirSync(root).filter((name) => fs.existsSync(join(root, name, 'manifest.json'))).map((name) => {
+            const manifest = JSON.parse(fs.readFileSync(join(root, name, 'manifest.json'), 'utf-8'));
+            return summarizePackage(manifest);
+          }).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+        : [];
+      return sendJson(response, { ok: true, packages });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
   /* S7：HeyGem 云 Worker 健康检查 */
   if (requestUrl.pathname === '/api/content/digital-human/heygem-health' && request.method === 'GET') {
     const user = authorizedUser(request, response);
@@ -5088,9 +5139,9 @@ async function handleRequest(request, response) {
       if (!gate.success) {
         return sendJson(response, { ok: false, error: '生成前检查未通过，不能创建批次', gate }, 409);
       }
-      const connector = [...(catalog.connectors || [])]
-        .filter((item) => ['ready', 'simulation'].includes(item.status) && Array.isArray(item.capabilities) && item.capabilities.includes('talking_head'))
-        .sort((a, b) => (a.status === 'ready' ? 0 : 1) - (b.status === 'ready' ? 0 : 1))[0];
+      /* 优先显式配置的真实连接器（ssh-heygem 且 ready）；否则沿用原有选择逻辑，避免误选占位的 ready 连接器 */
+      const realConnector = (catalog.connectors || []).find((item) => item.config?.mode === 'ssh-heygem' && item.status === 'ready' && Array.isArray(item.capabilities) && item.capabilities.includes('talking_head')) || null;
+      const connector = realConnector || (catalog.connectors || []).find((item) => ['ready', 'simulation'].includes(item.status) && Array.isArray(item.capabilities) && item.capabilities.includes('talking_head'));
       if (!connector) return sendJson(response, { ok: false, error: '没有具备口播能力的可用连接器' }, 409);
       const plan = buildExplicitBatchPlan({
         rows: draft.plannedItems,
