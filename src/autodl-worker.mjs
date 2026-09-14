@@ -120,3 +120,17 @@ export async function checkHeygemWorker() {
     label: cfg.label,
   };
 }
+
+/**
+ * N13 最小实现：把时间轴字幕烧录到视频底部（白字黑底条，居中）。
+ * lines: [{ text, start, end }]（秒）。字体默认 STHeiti（macOS 自带中文黑体）。
+ */
+export async function burnSubtitles(videoFile, lines = [], fontFile = '/System/Library/Fonts/STHeiti Medium.ttc') {
+  if (!Array.isArray(lines) || !lines.length) return { ok: false, error: '无字幕行', file: videoFile };
+  if (!fs.existsSync(fontFile)) return { ok: false, error: `字幕字体不存在：${fontFile}`, file: videoFile };
+  const escapeText = (t) => String(t).replace(/\\/g, '\\\\\\\\').replace(/:/g, '\\\\:').replace(/'/g, "\\\\'").replace(/%/g, '\\\\%');
+  const filters = lines.map((seg) => `drawtext=fontfile='${fontFile}':text='${escapeText(seg.text)}':fontcolor=white:fontsize=44:box=1:boxcolor=black@0.45:boxborderw=14:x=(w-text_w)/2:y=h*0.85:enable='between(t,${Number(seg.start)},${Number(seg.end)})'`);
+  const out = videoFile.replace(/\.mp4$/, '-subtitled.mp4');
+  await execFileAsync('ffmpeg', ['-y', '-i', videoFile, '-vf', filters.join(','), '-c:a', 'copy', out], { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 });
+  return { ok: true, file: out };
+}

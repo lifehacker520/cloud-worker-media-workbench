@@ -3,7 +3,11 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { createServer } from 'node:http';
 import fs from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { heygemGenerate, checkHeygemWorker, loadSshConfig } from './src/autodl-worker.mjs';
+import { heygemGenerate, checkHeygemWorker, loadSshConfig, burnSubtitles } from './src/autodl-worker.mjs';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
+import { DatabaseSync } from 'node:sqlite';
+const execFileAsync2 = promisify(execFileCb);
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -4886,7 +4890,12 @@ async function handleRequest(request, response) {
       const ttsConfig = JSON.parse(fs.readFileSync(join(process.cwd(), 'data', 'secrets', 'doubao-tts.json'), 'utf-8'));
       const speaker = ttsConfig.clonedSpeakerId || null;
       if (!speaker) return sendJson(response, { ok: false, error: 'N18：尚未配置克隆音色（S_ ID）' }, 409);
-      const voiceSource = body.voiceVersionId || speaker;
+      /* 声音：模式 B 优先用映射绑定的声音版本；否则用默认克隆音色 */
+      let voiceSource = body.voiceVersionId || speaker;
+      if (row.mode === 'B') {
+        const bMapping = contentBatchStore.listVideoMappings(user, task.projectId).find((m) => m.id === row.mappingVersionId) || null;
+        if (bMapping?.voiceSource === 'voice_version' && bMapping.voiceVersionId) voiceSource = bMapping.voiceVersionId;
+      }
       /* 1. TTS：豆包 v3 单向流式（克隆音色） */
       const ttsPayload = {
         user: { uid: 'cloud-worker-content-editor' },
@@ -4909,8 +4918,15 @@ async function handleRequest(request, response) {
       fs.mkdirSync(path.dirname(audioFile), { recursive: true });
       fs.writeFileSync(audioFile, Buffer.from(ttsParts.join(''), 'base64'));
       /* 2. 形象视频：干净无字幕源（去烧录字幕裁剪） */
-      const avatarVideo = body.videoLocal || [join(process.cwd(), 'data', 'media-output', '侯云龙-形象源-无字幕.mp4')].find((p) => fs.existsSync(p));
-      if (!avatarVideo || !fs.existsSync(avatarVideo)) return sendJson(response, { ok: false, error: 'N18：缺少形象视频（干净无字幕素材）' }, 409);
+      /* 形象/源视频：模式 A 用形象版本素材；模式 B 用映射的已有视频（N11-N12） */
+      let avatarVideo = body.videoLocal || null;
+      if (!avatarVideo && row.mode === 'B') {
+        const mapping = contentBatchStore.listVideoMappings(user, task.projectId).find((m) => m.id === row.mappingVersionId) || null;
+        const sourceVideo = mapping ? contentBatchStore.listSourceVideos(user, task.projectId).find((v) => v.id === mapping.videoId) : null;
+        avatarVideo = sourceVideo?.fileRef ? join(process.cwd(), sourceVideo.fileRef) : null;
+      }
+      if (!avatarVideo) avatarVideo = [join(process.cwd(), 'data', 'media-output', '侯云龙-形象源-无字幕.mp4')].find((p) => fs.existsSync(p)) || null;
+      if (!avatarVideo || !fs.existsSync(avatarVideo)) return sendJson(response, { ok: false, error: 'N18：缺少形象/源视频（模式 A 需形象版本素材，模式 B 需映射视频且文件存在）' }, 409);
       /* 3. HeyGem 云 GPU 合成 */
       const result = await heygemGenerate({
         audioLocal: audioFile,
@@ -4919,8 +4935,55 @@ async function handleRequest(request, response) {
         timeoutMs: 25 * 60_000,
       });
       if (!result.ok) return sendJson(response, { ok: false, error: 'HeyGem 生成失败：' + (result.error || '超时'), log: result.log }, 502);
-      await recordActivity(user, 'real_video_generated', '真实数字人视频生成成功：' + result.localFile);
-      return sendJson(response, { ok: true, file: result.localFile, audio: audioFile, n18: { schema_version: 'content-digital-human-n18-v1', mode: row.mode, script_version_id: row.scriptVersionId, speaker: voiceSource } });
+      let finalFile = result.localFile;
+      if (Array.isArray(body.subtitleLines) && body.subtitleLines.length) {
+        try {
+          const burned = await burnSubtitles(finalFile, body.subtitleLines);
+          if (burned.ok) finalFile = burned.file;
+        } catch (burnError) {
+          /* 字幕失败不阻断交付，保留原片 */
+        }
+      }
+      await recordActivity(user, 'real_video_generated', '真实数字人视频生成成功：' + finalFile);
+      return sendJson(response, { ok: true, file: finalFile, audio: audioFile, n18: { schema_version: 'content-digital-human-n18-v1', mode: row.mode, script_version_id: row.scriptVersionId, speaker: voiceSource } });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 502);
+    }
+  }
+
+  /* S7 流程化：多员工声音复刻——训练（豆包 V3）+ 自动登记声音版本 + 绑定数字人档案 */
+  if (requestUrl.pathname === '/api/content/digital-human/clone-voice-register' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const name = String(body.name || '').trim();
+      const audioFile = String(body.audioFile || '').trim();
+      const referenceText = String(body.referenceText || '').trim();
+      const speakerId = String(body.speakerId || '').trim();
+      if (!name || !audioFile || !fs.existsSync(join(process.cwd(), audioFile))) return sendJson(response, { ok: false, error: '缺少 name 或有效 audioFile（相对仓库路径）' }, 409);
+      if (!speakerId || !speakerId.startsWith('S_')) return sendJson(response, { ok: false, error: '缺少音色槽位 speakerId（S_ 开头，控制台声音复刻页创建后提供）' }, 409);
+      const ttsConfig = JSON.parse(fs.readFileSync(join(process.cwd(), 'data', 'secrets', 'doubao-tts.json'), 'utf-8'));
+      const wrapper = join(process.cwd(), 'tools', 'media-model-worker', 'wrappers', 'doubao_voice_clone_v3.py');
+      const stdinPayload = JSON.stringify({ audio_file: join(process.cwd(), audioFile), text: referenceText, speaker_id: speakerId });
+      const { stdout } = await execFileAsync2('/Users/rancemac/.workbuddy/binaries/python/versions/3.13.12/bin/python3', [wrapper], { input: stdinPayload, timeout: 180_000, maxBuffer: 1024 * 1024 });
+      const parsed = JSON.parse(stdout);
+      if (!parsed.ok) return sendJson(response, { ok: false, error: '复刻训练失败：' + (parsed.error || parsed.body || '未知'), raw: parsed }, 502);
+      /* 训练成功 → 自动登记声音版本（存在则新增版本号） */
+      const db = new DatabaseSync(join(process.cwd(), 'data', 'workbench.sqlite'));
+      const projectId = String(body.projectId || db.prepare("SELECT project_id FROM digital_human_profiles WHERE id='dhp_hou_01'").get()?.project_id || '');
+      const tenantId = 'tenant_local';
+      const now = new Date().toISOString();
+      const voiceProfileId = 'vop_' + speakerId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16).toLowerCase();
+      db.prepare('INSERT OR IGNORE INTO voice_profiles (id,tenant_id,project_id,name,status,payload_json,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+        .run(voiceProfileId, tenantId, projectId || 'default', name + '声音', 'approved', JSON.stringify({ kind: 'cloned', provider: 'doubao-voice-clone-2.0' }), 'platform', now, now);
+      const maxVer = db.prepare('SELECT COALESCE(MAX(version_number),0) v FROM voice_profile_versions WHERE profile_id=?').get(voiceProfileId).v;
+      const versionId = 'voice_v_' + speakerId.replace(/[^a-zA-Z0-9]/g, '');
+      db.prepare(`INSERT OR IGNORE INTO voice_profile_versions (id,profile_id,tenant_id,project_id,version_number,status,authorization_status,batch_allowed,payload_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(versionId, voiceProfileId, tenantId, projectId || 'default', maxVer + 1, 'approved', 'authorized_by_subject_provider', 1, JSON.stringify({ speakerId, provider: 'doubao-voice-clone-2.0', displayName: name + '声音 V' + (maxVer + 1), referenceAudioRef: audioFile, note: '训练分钟级生效' }), now, now);
+      db.close();
+      await recordActivity(user, 'voice_clone_registered', '声音复刻登记：' + name + ' → ' + speakerId);
+      return sendJson(response, { ok: true, speakerId, voiceVersionId: versionId, voiceProfileId, note: '训练分钟级生效；生效后即可在数字人档案绑定该声音版本' });
     } catch (error) {
       return sendJson(response, { ok: false, error: safeError(error) }, 502);
     }

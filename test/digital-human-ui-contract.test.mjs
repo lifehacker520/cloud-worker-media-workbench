@@ -107,6 +107,7 @@ test('P01/P02 只允许调用数字人口播自己的端点 + 现有文案登记
     '/api/content/digital-human/source-videos',
     '/api/content/digital-human/video-mappings',
     '/api/content/digital-human/generate-real',
+    '/api/content/digital-human/clone-voice-register',
     '/api/content/digital-human/heygem-health',
     '/api/content/batches/',
     '/api/content/script-sets',
