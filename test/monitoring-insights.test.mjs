@@ -107,6 +107,34 @@ test('monitoring insights aggregate by period and preserve platform-native metri
   assert.ok(insights.dataQuality.missingMetrics.includes('阅读'));
 });
 
+test('normalizeComments 丢弃挂不上监控作品的评论，看板不展示无归属数据', () => {
+  const account = { id: 'account_douyin', tenantId: 'tenant_demo', platform: 'douyin', state: 'active' };
+  const works = [{ id: 'work_douyin_1', accountId: 'account_douyin', platform: 'douyin', title: '抖音作品一' }];
+  const comments = normalizeComments(
+    [
+      { id: 'c-linked', workId: 'work_douyin_1', content: '挂得上作品的评论', createTime: now },
+      { id: 'c-stray', workId: 'recommend_video_999', content: '推荐流的别人评论', createTime: now },
+      { id: 'c-orphan', content: '完全没有作品 id 的评论', createTime: now },
+    ],
+    { account, works, source: 'browser-network', fetchedAt: now },
+  );
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0].workId, 'work_douyin_1');
+
+  const insights = buildMonitoringInsights({
+    accounts: [account],
+    works,
+    snapshots: [],
+    comments: [
+      ...comments,
+      { id: 'legacy-orphan', tenantId: 'tenant_demo', platform: 'douyin', accountId: 'account_douyin', workId: null, text: '历史无归属残留', createdAt: now, fetchedAt: now },
+    ],
+    period: 'month',
+    now,
+  });
+  assert.equal(insights.comments.count, 1);
+});
+
 test('monitoring totals sum the latest snapshot of every work without double counting account aggregates', () => {
   const accounts = [
     { id: 'account_douyin_total', tenantId: 'tenant_demo', platform: 'douyin', state: 'active', commentStatus: 'empty', commentLastFetchedAt: now },

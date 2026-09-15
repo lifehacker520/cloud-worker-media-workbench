@@ -62,8 +62,7 @@ test('browser network extraction keeps work metrics and generic comment ids', ()
   assert.equal(result.comments[0].workId, '7550000000000000001');
 });
 
-test('xhs comment payloads use content.message and survive extraction', () => {
-  /* 真实小红书 /api/sns/web/v2/comment/page 响应形状：正文在 content.message
+test('xhs comment payloads use content.message and survive extraction', () => {  /* 真实小红书 /api/sns/web/v2/comment/page 响应形状：正文在 content.message
      （content 是对象），回复数在 sub_comment_count，IP 属地在 ip_location。
      回归背景：VIS-14 评论采集上线后 XHS 评论一直为 0，根因是
      scalarText(object.content) 遇到对象返回 null，全部评论被丢弃。 */
@@ -119,6 +118,46 @@ test('xhs comment payloads use content.message and survive extraction', () => {
   const reply = result.comments.find((comment) => comment.externalId === '67f12345abc0000001234568');
   assert.ok(reply, '子评论必须被提取');
   assert.equal(reply.text, '可以的支持一下');
+});
+
+test('comments inherit source work id from the capture URL when the object lacks one', () => {
+  /* 评论对象没有 note_id 时（XHS 子评论等），必须从评论接口 URL 的
+     note_id/aweme_id 补上来源作品 id，服务端才能做归属判定。 */
+  const payloads = [
+    {
+      url: 'https://www.xiaohongshu.com/api/sns/web/v2/comment/page?note_id=67d3fb1a000000000f021ad8&cursor=',
+      status: 200,
+      body: {
+        data: {
+          comments: [
+            {
+              id: 'no-note-id-comment',
+              like_count: '3',
+              content: { message: '这条评论对象里没有 note_id' },
+              user_info: { user_id: 'u_1', nickname: '路人' },
+            },
+          ],
+        },
+      },
+    },
+    {
+      url: 'https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=7550000000000000099',
+      status: 200,
+      body: {
+        comments: [
+          { id: 'douyin-no-aweme-id', text: '抖音评论对象缺 aweme_id', user: { nickname: '访客' } },
+        ],
+      },
+    },
+  ];
+
+  const xhs = extractPayloadData('xhs', [payloads[0]], 'https://www.xiaohongshu.com/user/profile/x');
+  assert.equal(xhs.comments.length, 1);
+  assert.equal(xhs.comments[0].workId, '67d3fb1a000000000f021ad8');
+
+  const douyin = extractPayloadData('douyin', [payloads[1]], 'https://www.douyin.com/user/demo');
+  assert.equal(douyin.comments.length, 1);
+  assert.equal(douyin.comments[0].workId, '7550000000000000099');
 });
 
 test('browser network relevance includes comment and statistics endpoints', async () => {

@@ -769,6 +769,26 @@ export class WorkbenchStore {
     return this.listMonitoringComments({ role: 'admin' });
   }
 
+  /**
+   * 归属不变量清洗：监控评论必须挂在当前已监控作品下。
+   * 历史版本曾把无归属（work_id 为空）或外部作品 id 的评论落库，
+   * 启动时按调用方给出的合法作品 id 白名单清掉挂不上的记录；返回删除条数。
+   * 白名单为空时不动数据（避免加载顺序问题导致误删）。
+   */
+  deleteUnlinkedMonitoringComments(validWorkIds = []) {
+    const ids = (Array.isArray(validWorkIds) ? validWorkIds : [])
+      .filter((id) => typeof id === 'string' && id.trim())
+      .slice(0, 20000);
+    if (!ids.length) {
+      return 0;
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    const result = this.db
+      .prepare(`DELETE FROM monitoring_comments WHERE work_id IS NULL OR work_id NOT IN (${placeholders})`)
+      .run(...ids);
+    return result.changes || 0;
+  }
+
   listMonitoringComments(actor, options = {}) {
     const userTenant = text(actor?.tenantId, DEFAULT_TENANT_ID);
     const conditions = [];

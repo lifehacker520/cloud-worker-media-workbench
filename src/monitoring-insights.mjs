@@ -418,6 +418,9 @@ export function normalizeComments(comments, { account = {}, works = [], source =
       const work = workByExternalId.get(String(comment?.workId || comment?.contentId || comment?.itemId || comment?.item_id || ''));
       const commentText = text(comment?.text || comment?.content || comment?.comment, '');
       if (!commentText) return null;
+      /* 数据归属红线：挂不上该账号已监控作品的评论一律丢弃——
+         主页补采 payload 里可能混入推荐流的他人评论，缺失不伪造。 */
+      if (!work) return null;
       const createdAt = iso(comment?.createdAt || comment?.createTime || comment?.create_time, null);
       const tenantId = text(account?.tenantId, 'tenant_local');
       const platform = text(account?.platform, 'other');
@@ -426,7 +429,7 @@ export function normalizeComments(comments, { account = {}, works = [], source =
         tenantId,
         platform,
         accountId: text(account?.id, 'unknown'),
-        workId: work?.id || comment?.workId || null,
+        workId: work?.id || null,
         externalId: externalId || null,
         text: commentText,
         authorName: text(comment?.authorName || comment?.nickname || comment?.userName, '匿名用户'),
@@ -498,8 +501,11 @@ export function buildMonitoringInsights({ accounts = [], works = [], snapshots =
     };
   });
   const latestObservedAt = visibleSnapshots.reduce((latest, snapshot) => (!latest || snapshot.observedAt > latest ? snapshot.observedAt : latest), null);
+  const visibleWorkIds = new Set(workList.map((work) => work.id));
   const commentsVisible = (Array.isArray(comments) ? comments : [])
     .filter((comment) => accountIds.has(comment.accountId))
+    /* 归属红线：评论必须挂在可见的监控作品上，无归属/外部残留一律不展示。 */
+    .filter((comment) => comment.workId && visibleWorkIds.has(comment.workId))
     .filter((comment) => normalizedPlatform === 'all' || comment.platform === normalizedPlatform)
     .filter((comment) => !comment.createdAt || withinWindow(comment.createdAt, window))
     .sort((left, right) => Date.parse(right.createdAt || right.fetchedAt || '') - Date.parse(left.createdAt || left.fetchedAt || ''))

@@ -55,8 +55,11 @@ export function planCommentCollection({ works = [], perAccount = DEFAULT_PER_ACC
 }
 
 /**
- * 把浏览器层的作品 id（noteId/contentId/短链）映射到监听台内部作品 id。
- * 匹配顺序：外部 id 精确匹配 → 作品直链包含外部 id → 直链完全相等。
+ * 从浏览器层的作品 id（noteId/contentId/短链）映射到监听台内部作品 id。
+ * 匹配顺序：外部 id 精确匹配 → 作品直链包含外部 id。
+ * 直链相等兜底仅在评论「没有」外部作品 id 时使用（如部分子评论）；
+ * 有外部 id 但匹配不上，说明评论来自作品页推荐流的其他视频，
+ * 绝不允许兜底挂到当前作品——否则会污染监控数据归属。
  */
 export function matchWorkId({ comment, works = [], workUrl = null } = {}) {
   const external = text(comment?.workId);
@@ -76,6 +79,7 @@ export function matchWorkId({ comment, works = [], workUrl = null } = {}) {
         return byLink.id;
       }
     }
+    return null;
   }
   const url = text(workUrl);
   if (url) {
@@ -90,12 +94,14 @@ export function matchWorkId({ comment, works = [], workUrl = null } = {}) {
 /**
  * 单条评论 → 监听台评论模型。
  * id 采用 accountId + externalId 组合，保证重复采集时落库幂等（upsert 同一条）。
+ * 数据归属红线：挂不上任何监控作品（workId 为空）的评论一律拒绝——
+ * 看板只允许出现「已监控账号 × 已监控作品」下的评论，缺失不伪造。
  */
 export function normalizeWorkComment({ comment, account, workId = null, fetchedAt }) {
   const externalId = text(comment?.externalId ?? comment?.id);
   const body = text(comment?.text);
   const accountId = text(account?.id);
-  if (!externalId || !body || !accountId) {
+  if (!externalId || !body || !accountId || !text(workId)) {
     return null;
   }
   return {

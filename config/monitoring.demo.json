@@ -10,7 +10,9 @@
       "userId": "000000000000000000000001",
       "canonicalUrl": "https://www.xiaohongshu.com/user/profile/000000000000000000000001",
       "nickname": "演示小红书",
-      "profileMetrics": { "follower_count": 23800 },
+      "profileMetrics": {
+        "follower_count": 23800
+      },
       "state": "active",
       "metricStatus": "available",
       "metricLastObservedAt": "2026-09-02T03:30:00.000Z",
@@ -27,7 +29,9 @@
       "userId": "MS4wLjABAAAA-demo-user",
       "canonicalUrl": "https://www.douyin.com/user/MS4wLjABAAAA-demo-user",
       "nickname": "演示抖音",
-      "profileMetrics": { "follower_count": 56200 },
+      "profileMetrics": {
+        "follower_count": 56200
+      },
       "state": "active",
       "metricStatus": "available",
       "metricLastObservedAt": "2026-09-02T03:30:00.000Z",
@@ -44,7 +48,9 @@
       "userId": "demo_finder_account",
       "canonicalUrl": "https://channels.weixin.qq.com/web/pages/profile?finderUsername=demo_finder_account",
       "nickname": "演示视频号",
-      "profileMetrics": { "follower_count": 31700 },
+      "profileMetrics": {
+        "follower_count": 31700
+      },
       "state": "active",
       "metricStatus": "available",
       "metricLastObservedAt": "2026-09-02T03:30:00.000Z",
@@ -117,7 +123,8 @@
         "comment_count": 186,
         "share_count": 760
       },
-      "seen": true
+      "seen": true,
+      "noteId": "demo-douyin-note-1"
     },
     {
       "id": "demo_douyin_work_2",
@@ -138,7 +145,8 @@
         "comment_count": 94,
         "share_count": 410
       },
-      "seen": true
+      "seen": true,
+      "noteId": "demo-douyin-note-2"
     },
     {
       "id": "demo_channels_work_1",
@@ -159,7 +167,8 @@
         "comment_count": 73,
         "share_count": 280
       },
-      "seen": true
+      "seen": true,
+      "noteId": "demo-channels-note-1"
     }
   ],
   "comments": [
@@ -171,7 +180,8 @@
       "authorName": "演示访客 A",
       "createdAt": "2026-09-02T02:20:00.000Z",
       "likeCount": 8,
-      "replyCount": 2
+      "replyCount": 2,
+      "workId": "demo-xhs-note-1"
     },
     {
       "id": "demo-comment-douyin-1",
@@ -181,7 +191,8 @@
       "authorName": "演示访客 B",
       "createdAt": "2026-09-02T01:20:00.000Z",
       "likeCount": 13,
-      "replyCount": 3
+      "replyCount": 3,
+      "workId": "demo-douyin-note-1"
     },
     {
       "id": "demo-comment-channels-1",
@@ -191,7 +202,8 @@
       "authorName": "演示访客 C",
       "createdAt": "2026-09-01T12:00:00.000Z",
       "likeCount": 5,
-      "replyCount": 1
+      "replyCount": 1,
+      "workId": "demo-channels-note-1"
     }
   ]
 }

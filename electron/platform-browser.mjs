@@ -127,6 +127,30 @@ function workId(value) {
   return text && /^[A-Za-z0-9_@:-]{6,180}$/.test(text) ? text : null;
 }
 
+/* 评论接口 URL 自带来源作品 id（XHS note_id / 抖音 aweme_id 等）。
+   把它写进每条评论，服务端才能判定评论属于监控作品还是页面推荐流的
+   其他视频——这是「采集数据必须归属已监控账号作品」的判据。 */
+function workIdFromCaptureUrl(url) {
+  if (!isHttpUrl(url)) {
+    return null;
+  }
+  try {
+    const query = new URL(url).searchParams;
+    for (const key of [
+      'note_id', 'noteId', 'aweme_id', 'awemeId', 'item_id', 'itemId',
+      'object_id', 'objectId', 'group_id', 'groupId', 'video_id', 'videoId',
+    ]) {
+      const value = workId(query.get(key) || '');
+      if (value) {
+        return value;
+      }
+    }
+  } catch {
+    // URL 解析失败时放弃从 URL 归属。
+  }
+  return null;
+}
+
 function metricsFromWork(work) {
   const statistics = [
     work?.statistics,
@@ -391,9 +415,14 @@ export function extractPayloadData(platform, payloads, fallbackUrl) {
     if (!body || typeof body !== 'object') {
       continue;
     }
+    /* 该响应来自哪个作品的接口：评论对象自带 id 优先，URL query 兜底。 */
+    const captureSourceWorkId = workIdFromCaptureUrl(payload?.url);
     walkObjects(body, (object) => {
       const comment = commentFromObject(platform, object);
       if (comment) {
+        if (!comment.workId && captureSourceWorkId) {
+          comment.workId = captureSourceWorkId;
+        }
         const key = comment.externalId + '\u0000' + (comment.workId || '') + '\u0000' + comment.text;
         if (!comments.has(key)) {
           comments.set(key, comment);
@@ -726,12 +755,14 @@ export class PlatformBrowserSession {
 
   createWindow(platform) {
     const config = this.configFor(platform);
+    /* 采集窗口默认隐藏：桌面端启动首刷、自动刷新与评论采集都走后台窗口，
+       不再反复弹出抢焦点。只有用户主动打开平台登录窗口（open）才会显示。 */
     const browserWindow = new BrowserWindow({
       width: 1280,
       height: 860,
       minWidth: 980,
       minHeight: 680,
-      show: true,
+      show: false,
       title: config.title,
       backgroundColor: '#f5f6f8',
       webPreferences: {
@@ -739,6 +770,7 @@ export class PlatformBrowserSession {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        backgroundThrottling: false,
       },
     });
     const context = { responses: [], responseByRequestId: new Map(), generation: 0 };
@@ -829,21 +861,24 @@ export class PlatformBrowserSession {
     return bodyPromise;
   }
 
-  async ensureWindow(platform) {
+  async ensureWindow(platform, options = {}) {
     this.configFor(platform);
     let entry = this.windows.get(platform);
     if (!entry || entry.browserWindow.isDestroyed()) {
       entry = this.createWindow(platform);
     }
-    entry.browserWindow.show();
-    entry.browserWindow.focus();
+    /* 默认静默后台运行；仅调用方显式要求（用户主动打开平台登录窗口）时才显示并聚焦。 */
+    if (options.show) {
+      entry.browserWindow.show();
+      entry.browserWindow.focus();
+    }
     this.metadataFor(platform).lastUsedAt = new Date().toISOString();
     return entry;
   }
 
   async open(platform) {
     const config = this.configFor(platform);
-    const entry = await this.ensureWindow(platform);
+    const entry = await this.ensureWindow(platform, { show: true });
     const currentUrl = entry.browserWindow.webContents.getURL();
     if (!isHttpUrl(currentUrl)) {
       try {
@@ -1036,7 +1071,7 @@ export class PlatformBrowserSession {
     };
     if (!works.length && /安全限制|安全验证|验证码|服务异常|登录即可|请登录|需要登录/i.test(snapshot.bodyText || '')) {
       throw new Error(
-        '平台页面需要登录或人工验证；请在弹出的' + this.configFor(platform).title + '窗口完成后，再点击“浏览器补采”',
+        '平台页面需要登录或人工验证；请先在“设置 → 平台会话”打开' + this.configFor(platform).title + '并完成验证，再点击“浏览器补采”',
       );
     }
     if (!works.length) {
@@ -1130,7 +1165,7 @@ export class PlatformBrowserSession {
     const comments = payloadData.comments.slice(0, limit);
     if (!comments.length && /安全限制|安全验证|验证码|服务异常|登录即可|请登录|需要登录/i.test(snapshot.bodyText || '')) {
       throw new Error(
-        '作品页需要登录或人工验证；请在弹出的' + this.configFor(platform).title + '窗口完成后重试',
+        '作品页需要登录或人工验证；请先在“设置 → 平台会话”打开' + this.configFor(platform).title + '并完成验证后重试',
       );
     }
     return {
@@ -1264,7 +1299,7 @@ export class PlatformBrowserSession {
     if (!videoUrl && !coverUrl && !imageUrls.length) {
       if (/安全限制|安全验证|验证码|服务异常|登录即可|请登录|需要登录/i.test(snapshot.bodyText || '')) {
         throw new Error(
-          '平台页面需要登录或人工验证；请在弹出的' + this.configFor(platform).title + '窗口完成后，再点击解析',
+          '平台页面需要登录或人工验证；请先在“设置 → 平台会话”打开' + this.configFor(platform).title + '并完成验证，再点击解析',
         );
       }
       throw new Error('平台页面没有返回可下载的媒体资源；请确认链接指向具体作品后重试');

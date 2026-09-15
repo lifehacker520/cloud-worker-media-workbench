@@ -1999,7 +1999,9 @@ async function loadMonitoringInsights(options = {}) {
   const requestId = ++insightsRequestId;
   const params = new URLSearchParams({
     period: monitorPeriod,
-    platform: insightsPlatformFilter,
+    /* 兜底：选中账号时账号已唯一确定数据范围，平台过滤与账号平台矛盾
+       会把刚采集的评论过滤成空面板，这里让账号优先于平台过滤。 */
+    platform: selectedAccountId ? 'all' : insightsPlatformFilter,
     accountId: selectedAccountId || 'all',
   });
   isInsightsLoading = true;
@@ -2249,6 +2251,14 @@ function selectMonitorAccount(accountId) {
     return;
   }
 
+  /* 选中账号即聚焦该账号：若看板平台过滤与账号平台矛盾，账号的一切数据
+     （包括刚采集成功的评论）都会被过滤成空面板。这里让平台过滤让位。 */
+  if (insightsPlatformFilter !== 'all' && insightsPlatformFilter !== (account.platform || 'other')) {
+    insightsPlatformFilter = 'all';
+    if (elements.insightsPlatformFilter) {
+      elements.insightsPlatformFilter.value = 'all';
+    }
+  }
   selectedAccountId = accountId;
   renderWorks();
   renderAccountHealth();

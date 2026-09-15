@@ -83,6 +83,25 @@ test('normalizeWorkComment 拒绝缺外部 id / 缺正文 / 缺账号的脏数�
   assert.equal(normalizeWorkComment({ comment: browserComment({ externalId: null }), account: ACCOUNT }), null);
   assert.equal(normalizeWorkComment({ comment: browserComment({ text: '   ' }), account: ACCOUNT }), null);
   assert.equal(normalizeWorkComment({ comment: browserComment(), account: null }), null);
+  /* 归属红线：挂不上监控作品的评论不允许落库 */
+  assert.equal(normalizeWorkComment({ comment: browserComment(), account: ACCOUNT, workId: null }), null);
+});
+
+test('normalizeBrowserComments 丢弃推荐流的外部评论（外部 id 匹配不上不兜底）', () => {
+  const comments = normalizeBrowserComments({
+    comments: [
+      browserComment({ externalId: 'c_own', likeCount: 5, text: '监控作品下的真实评论' }),
+      /* 抖音作品页滚动加载的推荐流视频评论：外部 id 属于其他视频 */
+      browserComment({ externalId: 'c_stray', workId: 'recommend_video_123456', likeCount: 999, text: '推荐流的别人评论' }),
+    ],
+    account: ACCOUNT,
+    works: WORKS,
+    workUrl: 'https://www.xiaohongshu.com/explore/note_a',
+    fetchedAt: '2026-09-15T03:00:00.000Z',
+  });
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0].externalId, 'c_own');
+  assert.equal(comments[0].workId, 'work_old');
 });
 
 test('normalizeBrowserComments 去重取点赞更高者并按点赞倒序', () => {

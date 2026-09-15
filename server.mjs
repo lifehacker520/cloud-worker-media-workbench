@@ -421,6 +421,15 @@ async function ensureData() {
   } else {
     await backfillLegacyMonitoringEvidence(appState.accounts, appState.works);
   }
+  /* 归属不变量：监控评论只允许挂在当前已监控作品下。
+     历史版本可能落过无归属或外部 id 的评论，启动时按作品白名单清洗。 */
+  const removedOrphanComments = workbenchStore.deleteUnlinkedMonitoringComments(
+    appState.works.map((work) => work.id),
+  );
+  appState.comments = workbenchStore.listMonitoringComments(migrationActor);
+  if (removedOrphanComments > 0) {
+    console.log('已清洗无归属的监控评论 ' + removedOrphanComments + ' 条（归属不变量）');
+  }
   const savedContentTasks = await readJson(CONTENT_TASKS_FILE, []);
   if (Array.isArray(savedContentTasks)) {
     for (const rawTask of savedContentTasks) {
