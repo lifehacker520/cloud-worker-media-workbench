@@ -2054,6 +2054,7 @@ function dhRenderReal() {
     '<p>用已确认文案、员工数字人或已有视频，生成并人工验收口播视频。这是内容编辑云员工下面的批量生产中心，不是独立产品。</p></div>' +
     '<span class="view-intro-status">P01 · 生产中心</span>' +
     '</div>' +
+    dhRenderCreatePanel() +
     '<div class="dh-toolbar">' +
     '<div class="dh-context" aria-label="当前行业与项目上下文">' +
     '<span><small>项目</small><strong>' +
@@ -3256,6 +3257,169 @@ function dhModeBBlock() {
   );
 }
 
+
+/* ---------------------------------------------------------------------------
+   资产创建（P03）：创建数字人 / 克隆声音——参照云客数字人的交互，落到我们的资产接口
+   --------------------------------------------------------------------------- */
+const dhCreate = { tab: 'avatar', kind: 'video', busy: false, message: null, error: null };
+
+function dhRenderCreatePanel() {
+  const busy = dhCreate.busy ? ' disabled aria-disabled="true"' : '';
+  const message = dhCreate.error
+    ? '<p class="dh-draft-message is-error" role="alert">' + dhEscape(dhCreate.error) + '</p>'
+    : dhCreate.message
+      ? '<p class="dh-draft-message" role="status">' + dhEscape(dhCreate.message) + '</p>'
+      : '';
+  const tabs = '<div class="dh-scenario-tabs" role="tablist">' +
+    '<button class="dh-scenario-tab' + (dhCreate.tab === 'avatar' ? ' is-active' : '') + '" type="button" data-dh-create-tab="avatar">创建数字人</button>' +
+    '<button class="dh-scenario-tab' + (dhCreate.tab === 'voice' ? ' is-active' : '') + '" type="button" data-dh-create-tab="voice">克隆声音</button>' +
+    '</div>';
+  if (dhCreate.tab === 'avatar') {
+    return '<section class="dh-block" aria-label="创建数字人">' +
+      '<h3>创建数字人</h3>' + tabs +
+      '<div class="dh-draft-form">' +
+      '<label class="dh-field"><span>数字人名称（必填）</span><input type="text" data-dh-create-field="avatarName" placeholder="例如 侯云龙" /></label>' +
+      '<label class="dh-field"><span>类型</span><select data-dh-create-field="avatarKind">' +
+      '<option value="video"' + (dhCreate.kind === 'video' ? ' selected' : '') + '>视频数字人（上传一段真实视频，口型与动作随视频）</option>' +
+      '<option value="photo"' + (dhCreate.kind === 'photo' ? ' selected' : '') + '>照片数字人（上传一张清晰正脸照）</option>' +
+      '</select></label>' +
+      '<label class="dh-field"><span>素材文件（必需）</span><input type="file" data-dh-create-field="avatarFile" accept="video/*,image/*" /></label>' +
+      '<label class="dh-field"><span>绑定声音版本（可留空，稍后在档案里绑定）</span><select data-dh-create-field="avatarVoice">' +
+      '<option value="">（不绑定）</option>' +
+      ((dhAssets.data?.modeA?.voices?.options) || []).map((item) => '<option value="' + dhEscape(item.id) + '">' + dhEscape(item.name) + '</option>').join('') +
+      '</select></label>' +
+      '<label class="dh-field dh-field-inline"><input type="checkbox" data-dh-create-field="avatarAuthorized" /> <span>素材由本人提供并已获授权（勾选后立即可用于批量；不勾选则保存为待确认）</span></label>' +
+      '</div>' +
+      '<div class="dh-draft-foot">' +
+      '<button class="button button-dark button-small" type="button" data-dh-create-avatar' + busy + '>保存数字人</button>' +
+      '<small>保存后进入下方形象版本列表；用于批量生产还需「审核通过 + 开启批量」。</small>' +
+      '</div>' + message + '</section>';
+  }
+  return '<section class="dh-block" aria-label="克隆声音">' +
+    '<h3>克隆声音</h3>' + tabs +
+    '<div class="dh-draft-form">' +
+    '<label class="dh-field"><span>声音名称（必填）</span><input type="text" data-dh-create-field="voiceName" placeholder="例如 侯云龙声音" /></label>' +
+    '<label class="dh-field"><span>声音模型</span><select data-dh-create-field="voiceModel">' +
+    '<option value="seed-tts-2.0-standard">情感版（推荐）</option>' +
+    '<option value="seed-tts-1.0">标准版</option>' +
+    '</select></label>' +
+    '<label class="dh-field"><span>参考音频（必需，10 秒以上、单人、无背景音乐）</span><input type="file" data-dh-create-field="voiceFile" accept="audio/*" /></label>' +
+    '<label class="dh-field"><span>参考文本（音频里说的内容，用于复刻比对）</span><input type="text" data-dh-create-field="voiceTranscript" placeholder="例如：大家好，今天讲讲工作手机" /></label>' +
+    '<label class="dh-field"><span>豆包复刻槽位 S_ ID（可选，填了才会触发训练；没填先登记待复刻）</span><input type="text" data-dh-create-field="voiceSpeaker" placeholder="例如 S_C8a62LEV1" /></label>' +
+    '<label class="dh-field dh-field-inline"><input type="checkbox" data-dh-create-field="voiceAuthorized" /> <span>声音由本人提供并已获授权（勾选后立即可用于批量）</span></label>' +
+    '</div>' +
+    '<div class="dh-draft-foot">' +
+    '<button class="button button-dark button-small" type="button" data-dh-create-voice' + busy + '>保存声音</button>' +
+    '<small>复刻训练由豆包声音复刻 2.0 完成，分钟级生效；训练与登记都会写入活动记录。</small>' +
+    '</div>' + message + '</section>';
+}
+
+function dhCreateField(name) {
+  const node = dhRoot ? dhRoot.querySelector('[data-dh-create-field="' + name + '"]') : null;
+  return node ? node.value.trim() : '';
+}
+
+async function dhReadFileAsBase64(input) {
+  const file = input?.files?.[0];
+  if (!file) return null;
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, data: String(reader.result) });
+    reader.onerror = () => reject(new Error('读取文件失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function dhUploadAsset(input, kind) {
+  const file = await dhReadFileAsBase64(input);
+  if (!file) throw new Error('请先选择文件');
+  const payload = await dhApi('/api/content/digital-human/upload-asset', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind, filename: file.name, dataBase64: file.data }),
+  });
+  return payload.ref;
+}
+
+async function dhSubmitAvatarCreate() {
+  const name = dhCreateField('avatarName');
+  const kind = dhCreateField('avatarKind') || 'video';
+  if (!name) { dhCreate.error = '请填写数字人名称'; dhRender(); return; }
+  dhCreate.busy = true; dhCreate.error = null; dhCreate.message = '正在上传素材…'; dhRender();
+  try {
+    const ref = await dhUploadAsset(dhRoot.querySelector('[data-dh-create-field="avatarFile"]'), kind === 'photo' ? 'image' : 'video');
+    const authorized = Boolean(dhRoot.querySelector('[data-dh-create-field="avatarAuthorized"]')?.checked);
+    dhCreate.message = '正在登记资产…'; dhRender();
+    const created = await dhApi('/api/content/avatar-profiles', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        displayName: name + '形象 V1',
+        canonicalImageRef: kind === 'photo' ? ref : null,
+        baseVideoRef: kind === 'video' ? ref : null,
+        provider: 'heygem-autodl-ssh',
+        modelVersion: 'heygem-autodl-ssh',
+        authorizationStatus: authorized ? 'approved' : 'pending',
+        authorizationRef: authorized ? 'user-confirmed:' + new Date().toISOString() : null,
+        approved: authorized,
+        batchAllowed: authorized,
+        notes: kind === 'photo' ? '照片数字人（单图驱动，待 provider 支持后启用）' : '视频数字人（真实素材）',
+      }),
+    });
+    dhCreate.busy = false;
+    dhCreate.message = '数字人已创建：' + (created.profile?.name || name) + '（' + (authorized ? '已授权，可用于批量' : '待确认授权') + '）';
+    await dhLoadAssets();
+  } catch (error) {
+    dhCreate.busy = false;
+    dhCreate.error = '创建数字人失败：' + (error.message || '未知错误');
+    dhRender();
+  }
+}
+
+async function dhSubmitVoiceCreate() {
+  const name = dhCreateField('voiceName');
+  const model = dhCreateField('voiceModel') || 'seed-tts-2.0-standard';
+  const transcript = dhCreateField('voiceTranscript');
+  const speaker = dhCreateField('voiceSpeaker');
+  if (!name) { dhCreate.error = '请填写声音名称'; dhRender(); return; }
+  dhCreate.busy = true; dhCreate.error = null; dhCreate.message = '正在上传音频…'; dhRender();
+  try {
+    const ref = await dhUploadAsset(dhRoot.querySelector('[data-dh-create-field="voiceFile"]'), 'audio');
+    const authorized = Boolean(dhRoot.querySelector('[data-dh-create-field="voiceAuthorized"]')?.checked);
+    if (speaker) {
+      dhCreate.message = '正在提交复刻训练…'; dhRender();
+      await dhApi('/api/content/digital-human/clone-voice-register', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, audioFile: ref, referenceText: transcript || name, speakerId: speaker }),
+      });
+    }
+    dhCreate.message = '正在登记声音资产…'; dhRender();
+    const created = await dhApi('/api/content/voice-profiles', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        displayName: name + ' V1',
+        referenceAudioRef: ref,
+        referenceTranscript: transcript || null,
+        voiceName: speaker || null,
+        provider: 'doubao-voice-clone-2.0',
+        modelVersion: model,
+        authorizationStatus: authorized ? 'approved' : 'pending',
+        authorizationRef: authorized ? 'user-confirmed:' + new Date().toISOString() : null,
+        approved: authorized,
+        batchAllowed: authorized,
+        notes: speaker ? '复刻已提交（槽位 ' + speaker + '）' : '已登记参考音频，待创建复刻槽位后训练',
+      }),
+    });
+    dhCreate.busy = false;
+    dhCreate.message = '声音已创建：' + (created.profile?.name || name) + (speaker ? '（复刻训练已提交）' : '（待复刻槽位）');
+    await dhLoadAssets();
+  } catch (error) {
+    dhCreate.busy = false;
+    dhCreate.error = '创建声音失败：' + (error.message || '未知错误');
+    dhRender();
+  }
+}
+
 function dhRenderAssets() {
   const ready = dhAssets.status === 'ready' && dhAssets.data;
   const data = ready ? dhAssets.data : null;
@@ -3263,7 +3427,7 @@ function dhRenderAssets() {
     dhRealBanner() +
     '<div class="view-intro-row">' +
     '<div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
-    '<p>P03 数字人资产 · P04 已有视频 · P05 场景模板：按模式 A / 模式 B 分区选择生产资产。本切片只做选择与状态显示，不做登记与训练。</p></div>' +
+    '<p>P03 数字人资产 · P04 已有视频 · P05 场景模板：按模式 A / 模式 B 分区选择生产资产。可在本页创建数字人、克隆声音，并选择资产用于批量生产。</p></div>' +
     '<span class="view-intro-status">P03–P05 · 生产资产</span>' +
     '</div>' +
     '<div class="dh-toolbar">' +
@@ -3620,6 +3784,14 @@ function dhHandleClick(event) {
     dhSaveTaskRows();
     return;
   }
+  const createTab = event.target.closest('[data-dh-create-tab]');
+  if (createTab) { dhCreate.tab = createTab.dataset.dhCreateTab; dhCreate.error = null; dhCreate.message = null; dhRender(); return; }
+  const createAvatar = event.target.closest('[data-dh-create-avatar]');
+  if (createAvatar) { dhSubmitAvatarCreate(); return; }
+  const createVoice = event.target.closest('[data-dh-create-voice]');
+  if (createVoice) { dhSubmitVoiceCreate(); return; }
+  const createKind = event.target.closest('[data-dh-create-field="avatarKind"]');
+  if (createKind) { dhCreate.kind = createKind.value; return; }
   const stage8Load = event.target.closest('[data-dh-stage8-load]');
   if (stage8Load) { dhLoadStage8(); return; }
   const stage8Run = event.target.closest('[data-dh-stage8-run]');

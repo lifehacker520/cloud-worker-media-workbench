@@ -5179,6 +5179,30 @@ async function handleRequest(request, response) {
     }
   }
 
+  /* 资产创建：上传素材（base64）→ 落盘 data/uploads，返回相对引用（浏览器拿不到本地绝对路径） */
+  if (requestUrl.pathname === '/api/content/digital-human/upload-asset' && request.method === 'POST') {
+    const user = authorizedUser(request, response);
+    if (!user) return null;
+    try {
+      const body = await readRequestBody(request);
+      const kind = String(body.kind || '').toLowerCase();
+      if (!['audio', 'video', 'image'].includes(kind)) return sendJson(response, { ok: false, error: 'kind 必须是 audio / video / image' }, 409);
+      const raw = String(body.dataBase64 || '');
+      if (!raw) return sendJson(response, { ok: false, error: '缺少 dataBase64' }, 409);
+      const buffer = Buffer.from(raw.replace(/^data:[^;]+;base64,/, ''), 'base64');
+      if (buffer.length > 50 * 1024 * 1024) return sendJson(response, { ok: false, error: '素材超过 50MB 上限' }, 409);
+      const ext = kind === 'audio' ? '.mp3' : kind === 'image' ? '.jpg' : '.mp4';
+      const safeBase = String(body.filename || (kind + '-' + Date.now())).replace(/[^\w.-]+/g, '_').replace(/\.[^.]*$/, '');
+      const rel = join('data', 'uploads', safeBase.slice(0, 60) + '-' + Date.now().toString(36) + ext);
+      fs.mkdirSync(join(process.cwd(), 'data', 'uploads'), { recursive: true });
+      fs.writeFileSync(join(process.cwd(), rel), buffer);
+      await recordActivity(user, 'asset_uploaded', '上传素材：' + rel + '（' + buffer.length + ' 字节）');
+      return sendJson(response, { ok: true, ref: rel, bytes: buffer.length, kind }, 201);
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    }
+  }
+
   /* S7：HeyGem 云 Worker 健康检查 */
   if (requestUrl.pathname === '/api/content/digital-human/heygem-health' && request.method === 'GET') {
     const user = authorizedUser(request, response);
