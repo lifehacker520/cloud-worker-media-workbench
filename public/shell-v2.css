@@ -876,13 +876,13 @@ body[data-active-view="monitor"] .header-cta {
   min-width: 0;
 }
 
-/* 头像：VIS-09 放大为可辨识的真实头像（44px） */
+/* 头像缩小成真正的列表头像 */
 #view-monitor .monitor-account-row .avatar,#view-monitor .monitor-account-row .account-avatar {
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  font-size: 16px;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 13px;
 }
 
 #view-monitor .monitor-account-copy {
@@ -1097,8 +1097,8 @@ body[data-active-view="monitor"] .header-cta {
 
 #view-monitor .work-cover-wrap {
   position: relative;
-  width: 112px;
-  height: 92px;
+  width: 56px;
+  height: 56px;
   margin: 0;
   border-radius: 10px;
   overflow: hidden;
@@ -3396,69 +3396,4 @@ body {
 /* ---- 窄屏回退 ------------------------------------------------------ */
 @media (max-width: 1080px) {
   #view-monitor .ws-inspector.ws-lower { grid-template-columns: minmax(0, 1fr); }
-}
-
-/* ===========================================================================
-   VIS-09：监控中心「可观看」二次放大（用户 2026-09-15 反馈：可展示、可观看
-   的视觉效果还需要拉大）
-   - 作品卡封面 64 → 112px 大图（媒体感核心），标题 17px
-   - 账号头像 31 → 44px，名字 16px
-   - 筛选控件与 meta 行同步放大
-   纯 CSS，不改 HTML/JS。
-   =========================================================================== */
-
-/* ---- 作品卡：封面大图化 -------------------------------------------- */
-#view-monitor .work-card {
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 16px;
-  padding: 15px 18px;
-}
-#view-monitor .work-cover {
-  min-height: 92px;
-  border-radius: 10px;
-  overflow: hidden;
-}
-#view-monitor .work-card h3 {
-  font-size: 17px;
-  font-weight: 680;
-  line-height: 1.45;
-  -webkit-line-clamp: 2;
-}
-#view-monitor .work-topline { font-size: 13px; }
-#view-monitor .work-card-body { gap: 7px; }
-#view-monitor .work-card .work-meta,
-#view-monitor .work-card small { font-size: 12.5px; }
-
-/* ---- 账号行：头像与名字放大 ---------------------------------------- */
-#view-monitor .account-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  font-size: 16px;
-}
-#view-monitor .monitor-account-row {
-  padding: 14px 15px;
-  gap: 14px;
-}
-#view-monitor .monitor-account-row + .monitor-account-row { margin-top: 10px; }
-#view-monitor .monitor-account-copy strong { font-size: 16px; }
-#view-monitor .monitor-account-copy small,
-#view-monitor .monitor-account-subtitle { font-size: 12.5px; }
-#view-monitor .monitor-account-row .select-control,
-#view-monitor .monitor-account-group-select { min-height: 30px; font-size: 12.5px; }
-#view-monitor .monitor-summary .panel-footnote { font-size: 12px; line-height: 1.6; }
-
-/* ---- 筛选控件放大 -------------------------------------------------- */
-#view-monitor .monitor-filter-row .select-control,
-#view-monitor .work-filter-row .select-control {
-  min-height: 36px;
-  font-size: 13px;
-  padding: 0 12px;
-}
-#view-monitor .work-filter-row { padding: 12px 16px; }
-
-/* ---- 窄屏回退：小屏回归紧凑封面 ------------------------------------ */
-@media (max-width: 1024px) {
-  #view-monitor .work-card { grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }
-  #view-monitor .work-cover { min-height: 64px; }
 }
