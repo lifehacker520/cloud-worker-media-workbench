@@ -98,8 +98,7 @@
   text-decoration: none;
 }
 
-.sidebar-brand:hover,
-.sidebar-brand:focus-visible {
+.sidebar-brand:hover,.sidebar-brand:focus-visible {
   background: var(--shell-nav-hover-bg);
 }
 
@@ -148,8 +147,7 @@
   text-transform: uppercase;
 }
 
-.nav-item,
-.nav-group-toggle {
+.nav-item,.nav-group-toggle {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -167,8 +165,7 @@
   transition: background 140ms ease, color 140ms ease;
 }
 
-.nav-item .nav-icon,
-.nav-group-toggle .nav-icon {
+.nav-item .nav-icon,.nav-group-toggle .nav-icon {
   flex: 0 0 16px;
   width: 16px;
   font-size: 13px;
@@ -176,8 +173,7 @@
   text-align: center;
 }
 
-.nav-item:hover,
-.nav-group-toggle:hover {
+.nav-item:hover,.nav-group-toggle:hover {
   background: var(--shell-nav-hover-bg);
   color: var(--ink);
 }
@@ -386,16 +382,14 @@
   transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
-.button-primary,
-.button-dark {
+.button-primary,.button-dark {
   background: var(--blue);
   border-color: var(--blue);
   color: #fff;
   box-shadow: 0 1px 2px rgba(77, 82, 201, 0.28);
 }
 
-.button-primary:hover,
-.button-dark:hover {
+.button-primary:hover,.button-dark:hover {
   background: #454ac0;
   border-color: #454ac0;
   color: #fff;
@@ -469,12 +463,7 @@
    5. 面板
    --------------------------------------------------------------------------- */
 
-#view-monitor .panel,
-#view-insights .panel,
-#view-downloads .panel,
-#view-settings .panel,
-#view-collab .panel,
-#view-planned .panel {
+#view-monitor .panel,#view-insights .panel,#view-downloads .panel,#view-settings .panel,#view-collab .panel,#view-planned .panel {
   border: 1px solid var(--shell-hairline);
   border-radius: var(--shell-radius-panel);
   background: var(--shell-surface);
@@ -495,8 +484,7 @@
   min-width: 0;
 }
 
-.panel-bar h2,
-.panel-bar h3 {
+.panel-bar h2,.panel-bar h3 {
   margin: 0;
   font-size: 14.5px;
   font-weight: 700;
@@ -537,9 +525,7 @@
   text-transform: uppercase;
 }
 
-#view-monitor .panel-heading,
-#view-downloads .panel-heading,
-#view-settings .panel-heading {
+#view-monitor .panel-heading,#view-downloads .panel-heading,#view-settings .panel-heading {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -547,9 +533,7 @@
   border-bottom: 1px solid var(--shell-hairline-soft);
 }
 
-#view-monitor .panel-heading h2,
-#view-downloads .panel-heading h2,
-#view-settings .panel-heading h2 {
+#view-monitor .panel-heading h2,#view-downloads .panel-heading h2,#view-settings .panel-heading h2 {
   margin: 0;
   font-size: 14.5px;
   font-weight: 700;
@@ -569,8 +553,7 @@
   background: var(--tone-slate);
 }
 
-.seg-tabs > button,
-.seg-tabs > a {
+.seg-tabs > button,.seg-tabs > a {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -586,14 +569,11 @@
   cursor: pointer;
 }
 
-.seg-tabs > button:hover,
-.seg-tabs > a:hover {
+.seg-tabs > button:hover,.seg-tabs > a:hover {
   color: var(--ink);
 }
 
-.seg-tabs > button.is-active,
-.seg-tabs > a.is-active,
-.seg-tabs > button[aria-selected="true"] {
+.seg-tabs > button.is-active,.seg-tabs > a.is-active,.seg-tabs > button[aria-selected="true"] {
   background: var(--shell-surface);
   color: var(--ink);
   font-weight: 700;
@@ -617,8 +597,7 @@
   font-size: 13px;
 }
 
-.seg-tabs.is-underline > button.is-active,
-.seg-tabs.is-underline > button[aria-selected="true"] {
+.seg-tabs.is-underline > button.is-active,.seg-tabs.is-underline > button[aria-selected="true"] {
   background: transparent;
   box-shadow: none;
   color: var(--blue);
@@ -632,8 +611,7 @@
 }
 
 /* 监控中心顶部"监控中心 / 数据看板"用下划线式 */
-#view-monitor .monitor-center-tabs,
-#view-insights .monitor-center-tabs {
+#view-monitor .monitor-center-tabs,#view-insights .monitor-center-tabs {
   display: flex;
   gap: 20px;
   margin: 0 0 -2px;
@@ -642,8 +620,7 @@
   background: transparent;
 }
 
-#view-monitor .monitor-center-tab,
-#view-insights .monitor-center-tab {
+#view-monitor .monitor-center-tab,#view-insights .monitor-center-tab {
   min-height: 38px;
   padding: 0 0 10px;
   border: 0;
@@ -655,8 +632,7 @@
   cursor: pointer;
 }
 
-#view-monitor .monitor-center-tab.is-active,
-#view-insights .monitor-center-tab.is-active {
+#view-monitor .monitor-center-tab.is-active,#view-insights .monitor-center-tab.is-active {
   border-bottom-color: var(--blue);
   color: var(--blue);
   font-weight: 700;
@@ -791,8 +767,7 @@
 }
 
 /* 列表 + 分隔条 + 主工作区 */
-.split-cols,
-#view-monitor .monitor-layout {
+.split-cols,#view-monitor .monitor-layout {
   display: grid;
   grid-template-columns: var(--monitor-accounts-width, 336px) var(--splitter-w) minmax(0, 1fr);
   gap: 0;
@@ -835,9 +810,7 @@ body[data-active-view="monitor"] .header-cta {
   transition: background 140ms ease;
 }
 
-.monitor-splitter:hover span,
-.monitor-splitter:focus-visible span,
-body.is-resizing .monitor-splitter span {
+.monitor-splitter:hover span,.monitor-splitter:focus-visible span,body.is-resizing .monitor-splitter span {
   background: var(--blue);
 }
 
@@ -904,8 +877,7 @@ body.is-resizing .monitor-splitter span {
 }
 
 /* 头像缩小成真正的列表头像 */
-#view-monitor .monitor-account-row .avatar,
-#view-monitor .monitor-account-row .account-avatar {
+#view-monitor .monitor-account-row .avatar,#view-monitor .monitor-account-row .account-avatar {
   flex: 0 0 34px;
   width: 34px;
   height: 34px;
@@ -975,8 +947,7 @@ body.is-resizing .monitor-splitter span {
   transition: opacity 130ms ease;
 }
 
-#view-monitor .monitor-account-row:hover .monitor-account-group-select,
-#view-monitor .monitor-account-group-select:focus-visible {
+#view-monitor .monitor-account-row:hover .monitor-account-group-select,#view-monitor .monitor-account-group-select:focus-visible {
   width: auto;
   padding: 1px 4px;
   border-color: var(--shell-hairline);
@@ -1033,15 +1004,12 @@ body.is-resizing .monitor-splitter span {
   color: var(--red);
 }
 
-#view-monitor .monitor-account-row:hover .monitor-account-actions > .row-act,
-#view-monitor .monitor-account-row:focus-within .monitor-account-actions > .row-act,
-#view-monitor .monitor-account-actions > .row-act:focus-visible {
+#view-monitor .monitor-account-row:hover .monitor-account-actions > .row-act,#view-monitor .monitor-account-row:focus-within .monitor-account-actions > .row-act,#view-monitor .monitor-account-actions > .row-act:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
 
-#view-monitor .monitor-account-actions > a:hover,
-#view-monitor .monitor-account-actions > button:hover {
+#view-monitor .monitor-account-actions > a:hover,#view-monitor .monitor-account-actions > button:hover {
   border-color: #d5d3cc;
   color: var(--ink);
 }
@@ -1212,13 +1180,11 @@ body.is-resizing .monitor-splitter span {
   transition: opacity 130ms ease;
 }
 
-#view-monitor .work-card:hover .work-actions,
-#view-monitor .work-card:focus-within .work-actions {
+#view-monitor .work-card:hover .work-actions,#view-monitor .work-card:focus-within .work-actions {
   opacity: 1;
 }
 
-#view-monitor .work-actions a,
-#view-monitor .work-actions button {
+#view-monitor .work-actions a,#view-monitor .work-actions button {
   padding: 3px 7px;
   border: 1px solid var(--shell-hairline);
   border-radius: 7px;
@@ -1230,8 +1196,7 @@ body.is-resizing .monitor-splitter span {
   cursor: pointer;
 }
 
-#view-monitor .work-actions a:hover,
-#view-monitor .work-actions button:hover {
+#view-monitor .work-actions a:hover,#view-monitor .work-actions button:hover {
   border-color: #d5d3cc;
   color: var(--ink);
 }
@@ -1245,16 +1210,12 @@ body.is-resizing .monitor-splitter span {
   transition: opacity 130ms ease;
 }
 
-#view-monitor .work-card:hover .work-select,
-#view-monitor .work-card:focus-within .work-select,
-#view-monitor .work-select:has(input:checked) {
+#view-monitor .work-card:hover .work-select,#view-monitor .work-card:focus-within .work-select,#view-monitor .work-select:has(input:checked) {
   opacity: 1;
 }
 
 /* 平台 / 来源小标签 */
-.platform-chip,
-.source-chip,
-.monitor-platform-label {
+.platform-chip,.source-chip,.monitor-platform-label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1266,9 +1227,7 @@ body.is-resizing .monitor-splitter span {
   font-weight: 650;
 }
 
-.platform-chip i,
-.source-chip i,
-.monitor-platform-label i {
+.platform-chip i,.source-chip i,.monitor-platform-label i {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1321,8 +1280,7 @@ body.is-resizing .monitor-splitter span {
   min-width: 168px;
 }
 
-#view-monitor .work-read-field,
-#view-monitor .work-select-all {
+#view-monitor .work-read-field,#view-monitor .work-select-all {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1343,11 +1301,7 @@ body.is-resizing .monitor-splitter span {
   flex-wrap: wrap;
 }
 
-.select-control,
-input[type="text"],
-input[type="search"],
-input[type="url"],
-textarea {
+.select-control,input[type="text"],input[type="search"],input[type="url"],textarea {
   min-height: 34px;
   padding: 0 10px;
   border: 1px solid var(--shell-hairline);
@@ -1357,9 +1311,7 @@ textarea {
   font-size: 12.5px;
 }
 
-.select-control:focus-visible,
-input:focus-visible,
-textarea:focus-visible {
+.select-control:focus-visible,input:focus-visible,textarea:focus-visible {
   outline: none;
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(77, 82, 201, 0.14);
@@ -1421,8 +1373,7 @@ textarea:focus-visible {
   padding: 14px 16px;
 }
 
-.kv-cell,
-.kv-row {
+.kv-cell,.kv-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1436,8 +1387,7 @@ textarea:focus-visible {
   gap: 12px;
 }
 
-.kv-cell span,
-.kv-row span {
+.kv-cell span,.kv-row span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1446,61 +1396,13 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
-.kv-cell strong,
-.kv-row strong {
+.kv-cell strong,.kv-row strong {
   overflow: hidden;
   font-size: 13px;
   font-weight: 650;
   color: var(--ink);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin: 0;
-  padding: 12px 16px;
-  list-style: none;
-}
-
-.timeline li {
-  position: relative;
-  display: grid;
-  grid-template-columns: 15px minmax(0, 1fr);
-  gap: 10px;
-  padding-bottom: 14px;
-}
-
-.timeline li:last-child {
-  padding-bottom: 0;
-}
-
-.timeline li::before {
-  content: "";
-  position: absolute;
-  top: 15px;
-  left: 6px;
-  bottom: 0;
-  width: 1px;
-  background: var(--shell-hairline);
-}
-
-.timeline li:last-child::before {
-  display: none;
-}
-
-.timeline .timeline-dot {
-  position: relative;
-  z-index: 1;
-  width: 13px;
-  height: 13px;
-  margin-top: 2px;
-  border: 3px solid var(--shell-surface);
-  border-radius: 50%;
-  background: var(--line);
-  box-shadow: 0 0 0 1px var(--shell-hairline);
 }
 
 .timeline .timeline-dot.is-done {
@@ -1518,30 +1420,6 @@ textarea:focus-visible {
   box-shadow: 0 0 0 1px var(--orange);
 }
 
-.timeline .timeline-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.timeline .timeline-body strong {
-  font-size: 12.5px;
-  font-weight: 650;
-  color: var(--ink);
-}
-
-.timeline .timeline-body span {
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-.timeline .timeline-time {
-  font-size: 11px;
-  color: var(--soft);
-}
-
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1549,8 +1427,7 @@ textarea:focus-visible {
   padding: 14px 16px;
 }
 
-.icon-grid > button,
-.icon-grid > a {
+.icon-grid > button,.icon-grid > a {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1569,8 +1446,7 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
-.icon-grid > button:hover,
-.icon-grid > a:hover {
+.icon-grid > button:hover,.icon-grid > a:hover {
   border-color: #d5d3cc;
   background: #faf9f5;
 }
@@ -1815,8 +1691,7 @@ textarea:focus-visible {
    15. 其他页面（下载 / 设置 / 协作 / 规划）的骨架对齐
    --------------------------------------------------------------------------- */
 
-#view-downloads .download-hero,
-#view-settings .settings-hero {
+#view-downloads .download-hero,#view-settings .settings-hero {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -1848,13 +1723,7 @@ textarea:focus-visible {
    16. 内容区内部的通用降噪（不进入内容编辑）
    --------------------------------------------------------------------------- */
 
-#view-monitor .view-intro-row,
-#view-monitor .control-strip,
-#view-monitor .monitor-add-panel,
-#view-insights .view-intro-row,
-#view-downloads .view-intro-row,
-#view-settings .view-intro-row,
-#view-collab .view-intro-row {
+#view-monitor .view-intro-row,#view-monitor .monitor-add-panel,#view-insights .view-intro-row,#view-downloads .view-intro-row,#view-settings .view-intro-row,#view-collab .view-intro-row {
   display: none;
 }
 
@@ -1972,8 +1841,7 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1080px) {
-  #view-downloads .download-hero,
-  #view-collab .collab-grid {
+  #view-downloads .download-hero,#view-collab .collab-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -1982,19 +1850,12 @@ textarea:focus-visible {
    17. 焦点可见性
    --------------------------------------------------------------------------- */
 
-.sidebar a:focus-visible,
-.sidebar button:focus-visible,
-.topbar button:focus-visible,
-.page button:focus-visible,
-.page a:focus-visible,
-.page [tabindex]:focus-visible {
+.sidebar a:focus-visible,.sidebar button:focus-visible,.topbar button:focus-visible,.page button:focus-visible,.page a:focus-visible,.page [tabindex]:focus-visible {
   outline: none;
   box-shadow: var(--shell-focus);
 }
 
-.page input:focus-visible,
-.page select:focus-visible,
-.page textarea:focus-visible {
+.page input:focus-visible,.page select:focus-visible,.page textarea:focus-visible {
   outline: none;
 }
 
@@ -2022,8 +1883,7 @@ textarea:focus-visible {
     grid-template-columns: var(--monitor-accounts-width, 300px) var(--splitter-w) minmax(0, 1fr);
   }
 
-  #view-downloads .download-content-grid,
-  #view-settings .settings-shell {
+  #view-downloads .download-content-grid,#view-settings .settings-shell {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -2043,8 +1903,7 @@ textarea:focus-visible {
     flex-wrap: wrap;
   }
 
-  .split-cols,
-  #view-monitor .monitor-layout {
+  .split-cols,#view-monitor .monitor-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2094,19 +1953,13 @@ textarea:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .kv-grid,
-  .icon-grid {
+  .kv-grid,.icon-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav-item,
-  .nav-group-toggle,
-  .nav-chevron,
-  .action-card,
-  .drawer,
-  .drawer-backdrop {
+  .nav-item,.nav-group-toggle,.nav-chevron,.action-card,.drawer,.drawer-backdrop {
     transition: none;
   }
 }
@@ -2368,9 +2221,7 @@ body {
   font-size: 12.5px;
 }
 
-#view-insights .monitor-insights-actions .muted-text,
-#view-insights .monitor-data-panel-heading .muted-text,
-#view-insights .monitor-operations-heading .muted-text {
+#view-insights .monitor-insights-actions .muted-text,#view-insights .monitor-data-panel-heading .muted-text,#view-insights .monitor-operations-heading .muted-text {
   font-size: 11.5px;
   color: var(--soft);
 }
@@ -2386,8 +2237,7 @@ body {
 }
 
 /* 2.3 KPI：白卡为底，唯一可点击的那张用靛蓝着色（彩色 = 可操作） */
-#view-insights .monitor-insights-notice:empty,
-#view-insights .monitor-insights-notice.is-empty {
+#view-insights .monitor-insights-notice:empty,#view-insights .monitor-insights-notice.is-empty {
   display: none;
 }
 
@@ -2533,8 +2383,7 @@ body {
 }
 
 /* 2.5 数据面板：统一 V3 面板 + panel-bar */
-#view-insights .monitor-insights-columns,
-#view-insights .monitor-insights-lower {
+#view-insights .monitor-insights-columns,#view-insights .monitor-insights-lower {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--gap);
@@ -2932,8 +2781,7 @@ body {
 }
 
 /* 2.11 残留冷色清零：筛选条与平台发布摘要用的是旧蓝白底 */
-#view-monitor .work-filter-row,
-#view-monitor .monitor-filter-row {
+#view-monitor .work-filter-row,#view-monitor .monitor-filter-row {
   background: var(--tone-slate);
 }
 
@@ -2967,15 +2815,13 @@ body {
 }
 
 @media (max-width: 1080px) {
-  #view-insights .monitor-insights-columns,
-  #view-insights .monitor-insights-lower {
+  #view-insights .monitor-insights-columns,#view-insights .monitor-insights-lower {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 860px) {
-  #view-insights .monitor-kpi-grid,
-  #view-insights .monitor-operations-grid {
+  #view-insights .monitor-kpi-grid,#view-insights .monitor-operations-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2992,9 +2838,7 @@ body {
    =========================================================================== */
 
 /* ---- 共用：V3 顶头（替代 .view-intro-row 的窄条） ------------------- */
-#view-downloads .view-intro-row,
-#view-settings  .view-intro-row,
-#view-collab    .view-intro-row {
+#view-downloads .view-intro-row,#view-settings  .view-intro-row,#view-collab    .view-intro-row {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -3003,34 +2847,26 @@ body {
   margin-bottom: 20px;
   border-bottom: 1px solid var(--shell-hairline);
 }
-#view-downloads .view-intro-row > div:first-child,
-#view-settings  .view-intro-row > div:first-child,
-#view-collab    .view-intro-row > div:first-child {
+#view-downloads .view-intro-row > div:first-child,#view-settings  .view-intro-row > div:first-child,#view-collab    .view-intro-row > div:first-child {
   display: grid;
   gap: 6px;
   min-width: 0;
 }
-#view-downloads .view-context,
-#view-settings  .view-context,
-#view-collab    .view-context {
+#view-downloads .view-context,#view-settings  .view-context,#view-collab    .view-context {
   color: var(--soft);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-#view-downloads .view-intro-row p,
-#view-settings  .view-intro-row p,
-#view-collab    .view-intro-row p {
+#view-downloads .view-intro-row p,#view-settings  .view-intro-row p,#view-collab    .view-intro-row p {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
   max-width: 640px;
 }
-#view-downloads .view-intro-status,
-#view-settings  .view-intro-status,
-#view-collab    .view-intro-status {
+#view-downloads .view-intro-status,#view-settings  .view-intro-status,#view-collab    .view-intro-status {
   flex: 0 0 auto;
   padding: 6px 11px;
   border: 1px solid var(--shell-hairline);
@@ -3044,18 +2880,14 @@ body {
 }
 
 /* ---- 共用：V3 panel 卡片（覆盖 .panel 的旧背景/边框）-------------- */
-#view-downloads .panel,
-#view-settings  .panel,
-#view-collab    .panel {
+#view-downloads .panel,#view-settings  .panel,#view-collab    .panel {
   background: var(--shell-surface);
   border: 1px solid var(--shell-hairline);
   border-radius: var(--shell-radius-panel);
   box-shadow: var(--shell-shadow-panel);
   padding: 18px 20px;
 }
-#view-downloads .panel-heading,
-#view-settings  .panel-heading,
-#view-collab    .panel-heading {
+#view-downloads .panel-heading,#view-settings  .panel-heading,#view-collab    .panel-heading {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -3064,9 +2896,7 @@ body {
   margin-bottom: 14px;
   border-bottom: 1px dashed var(--shell-hairline);
 }
-#view-downloads .eyebrow,
-#view-settings  .eyebrow,
-#view-collab    .eyebrow {
+#view-downloads .eyebrow,#view-settings  .eyebrow,#view-collab    .eyebrow {
   color: var(--soft);
   font-size: 10px;
   font-weight: 700;
@@ -3074,21 +2904,14 @@ body {
   text-transform: uppercase;
   margin-bottom: 4px;
 }
-#view-downloads .panel h2,
-#view-downloads .panel h3,
-#view-settings  .panel h2,
-#view-settings  .panel h3,
-#view-collab    .panel h2,
-#view-collab    .panel h3 {
+#view-downloads .panel h2,#view-downloads .panel h3,#view-settings  .panel h2,#view-settings  .panel h3,#view-collab    .panel h2,#view-collab    .panel h3 {
   margin: 0;
   color: var(--ink);
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
-#view-downloads .panel p,
-#view-settings  .panel p,
-#view-collab    .panel p {
+#view-downloads .panel p,#view-settings  .panel p,#view-collab    .panel p {
   margin: 0 0 10px;
   color: var(--muted);
   font-size: 13px;
@@ -3367,15 +3190,13 @@ body {
 #view-planned .planned-view-grid > div > strong { color: var(--ink); font-size: 13px; font-weight: 600; }
 
 /* ---- AI / Publish 收纳卡 -------------------------------------------- */
-#view-ai .compatibility-card,
-#view-publish .compatibility-card {
+#view-ai .compatibility-card,#view-publish .compatibility-card {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
 }
-#view-ai .compatibility-icon,
-#view-publish .compatibility-icon {
+#view-ai .compatibility-icon,#view-publish .compatibility-icon {
   width: 36px; height: 36px;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 10px;
@@ -3421,151 +3242,6 @@ body {
   background: var(--tone-indigo); color: var(--blue);
   font-size: 11px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap;
 }
-#view-content .content-runtime-strip {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  background: var(--tone-indigo);
-  border: 1px solid var(--tone-indigo-strong);
-  border-radius: var(--shell-radius-control);
-  color: var(--ink);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-#view-content .content-runtime-strip::before {
-  content: "●"; color: var(--blue); font-size: 9px;
-}
-
-/* ---- 9 阶段流卡片 -------------------------------------------------- */
-#view-content .content-flow-overview {
-  background: var(--shell-surface);
-  border: 1px solid var(--shell-hairline);
-  border-radius: var(--shell-radius-panel);
-  box-shadow: var(--shell-shadow-panel);
-  padding: 20px 22px 18px;
-  margin-bottom: 18px;
-}
-#view-content .content-flow-overview .panel-heading {
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
-  padding-bottom: 12px; margin-bottom: 14px;
-  border-bottom: 1px dashed var(--shell-hairline);
-}
-#view-content .content-flow-overview .eyebrow { color: var(--soft); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-#view-content .content-flow-overview h2 { margin: 0; color: var(--ink); font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
-#view-content .content-flow-overview .panel-heading p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; max-width: 560px; }
-#view-content .content-flow-overview .phase-label {
-  padding: 4px 10px; border-radius: var(--shell-radius-pill);
-  background: var(--shell-hairline-soft); color: var(--ink);
-  font-size: 11px; font-weight: 600;
-}
-#view-content .content-flow-grid {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;
-}
-#view-content .content-flow-card {
-  display: grid; gap: 8px;
-  padding: 14px 14px 12px;
-  background: var(--shell-surface);
-  border: 1px solid var(--shell-hairline);
-  border-radius: var(--shell-radius-card);
-}
-#view-content .content-flow-card.is-ready    { background: var(--tone-mint);    border-color: var(--tone-mint-strong); }
-#view-content .content-flow-card.is-human    { background: var(--tone-amber);   border-color: var(--tone-amber-strong); }
-#view-content .content-flow-card.is-blocked  { background: var(--tone-rose);    border-color: var(--tone-rose-strong); }
-#view-content .content-flow-card-head {
-  display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: center;
-}
-#view-content .content-flow-index {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px;
-  border-radius: 6px; background: var(--paper);
-  color: var(--ink); font-size: 11px; font-weight: 700;
-  letter-spacing: 0.02em;
-}
-#view-content .content-flow-card strong { display: block; color: var(--ink); font-size: 13px; font-weight: 700; }
-#view-content .content-flow-card small  { color: var(--muted); font-size: 11px; line-height: 1.4; }
-#view-content .content-flow-status {
-  padding: 3px 9px; border-radius: var(--shell-radius-pill);
-  font-size: 10.5px; font-weight: 600; white-space: nowrap;
-  background: var(--shell-surface); border: 1px solid var(--shell-hairline); color: var(--ink);
-}
-#view-content .content-flow-status.is-ready   { background: var(--green); color: #fff; border-color: transparent; }
-#view-content .content-flow-status.is-human   { background: var(--orange); color: #fff; border-color: transparent; }
-#view-content .content-flow-status.is-blocked { background: var(--red); color: #fff; border-color: transparent; }
-#view-content .content-flow-card p { margin: 0; color: var(--ink); opacity: 0.85; font-size: 11.5px; line-height: 1.55; }
-#view-content .content-flow-footer {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
-  padding: 12px 0 2px; margin-top: 14px;
-  border-top: 1px dashed var(--shell-hairline);
-}
-#view-content .content-flow-footer-label { color: var(--soft); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-#view-content .content-flow-pill {
-  padding: 4px 10px; border-radius: var(--shell-radius-pill);
-  font-size: 11px; font-weight: 600;
-  background: var(--shell-hairline-soft); color: var(--ink);
-}
-#view-content .content-flow-pill.is-ready   { background: var(--tone-mint);  color: var(--green); }
-#view-content .content-flow-pill.is-blocked { background: var(--tone-rose);  color: var(--red); }
-#view-content .content-flow-footer .button { margin-left: auto; }
-
-/* ---- 2 栏：左表单 / 右任务列表 ------------------------------------- */
-#view-content .content-workspace-grid {
-  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 18px;
-  margin-bottom: 18px;
-}
-#view-content .content-create-card,
-#view-content .content-task-list-card {
-  background: var(--shell-surface);
-  border: 1px solid var(--shell-hairline);
-  border-radius: var(--shell-radius-panel);
-  box-shadow: var(--shell-shadow-panel);
-  padding: 18px 20px;
-}
-#view-content .content-create-card .panel-heading,
-#view-content .content-task-list-card .panel-heading {
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
-  padding-bottom: 12px; margin-bottom: 14px;
-  border-bottom: 1px dashed var(--shell-hairline);
-}
-#view-content .content-create-card .eyebrow,
-#view-content .content-task-list-card .eyebrow { color: var(--soft); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-#view-content .content-create-card h2,
-#view-content .content-task-list-card h2 { margin: 0; color: var(--ink); font-size: 18px; font-weight: 700; }
-#view-content .content-create-card .phase-label {
-  padding: 4px 10px; border-radius: var(--shell-radius-pill);
-  background: var(--tone-indigo); color: var(--blue);
-  font-size: 11px; font-weight: 600;
-}
-#view-content .content-task-list-card .count-label {
-  padding: 4px 10px; border-radius: var(--shell-radius-pill);
-  background: var(--shell-hairline-soft); color: var(--ink);
-  font-size: 11px; font-weight: 600;
-}
-#view-content .content-create-card .section-intro { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
-#view-content .content-task-form { display: grid; gap: 12px; }
-#view-content .content-task-form label { display: grid; gap: 6px; }
-#view-content .content-task-form label > span { color: var(--soft); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-#view-content .content-task-form input,
-#view-content .content-task-form textarea,
-#view-content .content-task-form select {
-  padding: 9px 12px;
-  border: 1px solid var(--shell-hairline);
-  border-radius: var(--shell-radius-control);
-  background: var(--shell-surface); color: var(--ink);
-  font: inherit; font-size: 13px; line-height: 1.45;
-}
-#view-content .content-task-form textarea { resize: vertical; min-height: 64px; }
-#view-content .content-task-form input:focus,
-#view-content .content-task-form textarea:focus,
-#view-content .content-task-form select:focus {
-  outline: 0; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft);
-}
-#view-content .content-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-#view-content .content-form-actions {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding-top: 6px;
-}
-#view-content .content-form-actions .form-message { margin: 0; color: var(--muted); font-size: 12px; }
-#view-content .content-form-actions .form-message.is-error { color: var(--red); }
 #view-content .button.button-dark {
   background: var(--ink); color: #fff; border: 0;
   border-radius: var(--shell-radius-control);
@@ -3582,9 +3258,6 @@ body {
 }
 #view-content .button.button-secondary:hover { background: var(--shell-hairline-soft); }
 #view-content .button.button-small { padding: 6px 12px; font-size: 12px; }
-
-/* ---- 任务列表 / 空状态 / 任务项 ----------------------------------- */
-#view-content .content-task-list { display: grid; gap: 8px; }
 #view-content .empty-state {
   display: flex; align-items: center; gap: 12px;
   padding: 18px;
@@ -3602,39 +3275,6 @@ body {
 }
 #view-content .empty-state p { margin: 0; font-size: 12.5px; line-height: 1.5; }
 #view-content .empty-state .button { margin-left: auto; }
-
-/* ---- 详情面板 ------------------------------------------------------ */
-#view-content .content-task-detail {
-  background: var(--shell-surface);
-  border: 1px solid var(--shell-hairline);
-  border-radius: var(--shell-radius-panel);
-  box-shadow: var(--shell-shadow-panel);
-  padding: 20px 22px;
-  display: grid; gap: 16px;
-}
-#view-content .content-task-detail .panel-heading {
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
-  padding-bottom: 10px; margin-bottom: 4px;
-  border-bottom: 1px dashed var(--shell-hairline);
-}
-
-/* ---- 窄屏回退 ------------------------------------------------------ */
-@media (max-width: 1080px) {
-  #view-content .content-flow-grid      { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #view-content .content-workspace-grid { grid-template-columns: 1fr; }
-  #view-content .content-form-row       { grid-template-columns: 1fr; }
-}
-@media (max-width: 860px) {
-  #view-content .content-flow-grid { grid-template-columns: 1fr; }
-}
-
-/* ---- 内容编辑 · 详情区冷色清零（content-batch-budget） ------------- */
-#view-content .content-batch-budget {
-  background: var(--paper) !important;
-  border: 1px solid var(--shell-hairline);
-  border-radius: var(--shell-radius-card);
-  padding: 14px 16px;
-}
 
 /* ===========================================================================
    VIS-07：内容编辑 S3 结构化（E3）
@@ -3664,75 +3304,6 @@ body {
   cursor: pointer;
 }
 #view-content .view-intro-actions .button.button-primary:hover { opacity: 0.92; }
-
-/* ---- 两栏主从：列表 340px | 详情 1fr -------------------------------- */
-#view-content .cw-main-cols {
-  display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-#view-content .cw-main-cols .content-task-list-card {
-  position: sticky;
-  top: 72px;
-  max-height: calc(100vh - 108px);
-  overflow-y: auto;
-}
-#view-content .cw-main-cols .content-task-detail { min-width: 0; }
-
-/* ---- 折叠分组的 V3 summary ------------------------------------------ */
-#view-content .cw-run-detail,
-#view-content .cw-flow-collapsible {
-  background: var(--shell-surface);
-  border: 1px solid var(--shell-hairline);
-  border-radius: var(--shell-radius-panel);
-  box-shadow: var(--shell-shadow-panel);
-  margin-bottom: 18px;
-  overflow: hidden;
-}
-#view-content .cw-run-detail > summary,
-#view-content .cw-flow-collapsible > summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-#view-content .cw-run-detail > summary::-webkit-details-marker,
-#view-content .cw-flow-collapsible > summary::-webkit-details-marker { display: none; }
-#view-content .cw-run-detail > summary:hover,
-#view-content .cw-flow-collapsible > summary:hover { background: var(--shell-hairline-soft); }
-#view-content .cw-details-title { color: var(--ink); font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
-#view-content .cw-run-detail > summary small,
-#view-content .cw-flow-collapsible > summary small { flex: 1; min-width: 0; color: var(--muted); font-size: 11.5px; }
-#view-content .cw-details-chevron { color: var(--soft); font-size: 13px; transition: transform 160ms ease; }
-#view-content .cw-run-detail[open] > summary .cw-details-chevron,
-#view-content .cw-flow-collapsible[open] > summary .cw-details-chevron { transform: rotate(180deg); }
-#view-content .cw-run-detail[open] > summary,
-#view-content .cw-flow-collapsible[open] > summary { border-bottom: 1px dashed var(--shell-hairline); }
-#view-content .cw-details-body { padding: 18px; }
-
-/* ---- 详情内部两栏在右栏窄容器下改单列 ------------------------------- */
-#view-content .content-detail-layout { grid-template-columns: minmax(0, 1fr); }
-
-/* ---- runtime strip 状态变体 ----------------------------------------- */
-#view-content .content-runtime-strip.is-ready   { background: var(--tone-mint);  border-color: var(--tone-mint-strong); }
-#view-content .content-runtime-strip.is-ready::before { color: var(--green); }
-#view-content .content-runtime-strip.is-warning { background: var(--tone-amber); border-color: var(--tone-amber-strong); }
-#view-content .content-runtime-strip.is-warning::before { color: var(--orange); }
-
-/* ---- 创建抽屉内部：表单去壳、全宽 ---------------------------------- */
-#drawer-create-content .content-create-card {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  padding: 0;
-}
-#drawer-create-content .content-task-form { display: grid; gap: 12px; }
-#drawer-create-content .content-form-row { grid-template-columns: 1fr; }
 #drawer-create-content .icon-button {
   width: 30px; height: 30px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -3743,12 +3314,6 @@ body {
   cursor: pointer;
 }
 #drawer-create-content .icon-button:hover { background: var(--shell-hairline-soft); color: var(--ink); }
-
-/* ---- 窄屏回退 ------------------------------------------------------ */
-@media (max-width: 1080px) {
-  #view-content .cw-main-cols { grid-template-columns: minmax(0, 1fr); }
-  #view-content .cw-main-cols .content-task-list-card { position: static; max-height: none; overflow-y: visible; }
-}
 
 /* ===========================================================================
    VIS-08：监控中心观感放大（用户反馈：内容太小、数据显示太少、概览/刷新
@@ -3782,8 +3347,7 @@ body {
 #view-monitor .ws-lower .kv-row > strong { font-size: 14px; font-weight: 650; }
 #view-monitor .ws-lower .callout { padding: 12px 14px; font-size: 12.5px; line-height: 1.6; }
 #view-monitor .ws-lower .icon-grid { padding: 12px 16px; }
-#view-monitor .ws-lower .icon-grid > button,
-#view-monitor .ws-lower .icon-grid > a { min-height: 60px; gap: 6px; font-size: 12.5px; }
+#view-monitor .ws-lower .icon-grid > button,#view-monitor .ws-lower .icon-grid > a { min-height: 60px; gap: 6px; font-size: 12.5px; }
 #view-monitor .ws-lower .tag-row { padding: 12px 16px; }
 
 /* ---- 账号列加宽 + 行放大 ------------------------------------------- */
@@ -3796,10 +3360,8 @@ body {
 }
 #view-monitor .monitor-account-row + .monitor-account-row { margin-top: 8px; }
 #view-monitor .monitor-account-copy strong { font-size: 14.5px; font-weight: 650; }
-#view-monitor .monitor-account-copy small,
-#view-monitor .monitor-account-subtitle { font-size: 12px; line-height: 1.5; }
-#view-monitor .monitor-account-row .select-control,
-#view-monitor .monitor-account-group-select { min-height: 26px; font-size: 12px; }
+#view-monitor .monitor-account-copy small,#view-monitor .monitor-account-subtitle { font-size: 12px; line-height: 1.5; }
+#view-monitor .monitor-account-row .select-control,#view-monitor .monitor-account-group-select { min-height: 26px; font-size: 12px; }
 #view-monitor .health-list { gap: 0; }
 
 /* ---- 作品流放大 ----------------------------------------------------- */

@@ -88,14 +88,24 @@ test('M2 exposes explicit monitor queue filtering and batch read controls', asyn
   assert.match(indexSource, /阅读状态只在你显式标记后改变/);
 });
 
-test('M3 carries a monitored work into the content task form without granting authorization', () => {
+test('M3 carries a monitored work into the digital human P02 without granting authorization', async () => {
+  const DH_SOURCE = await readFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../public/digital-human-workspace.js'),
+    'utf8',
+  );
   assert.match(APP_SOURCE, /data-create-content-work/);
   assert.match(APP_SOURCE, /content-work-prefill/);
   assert.match(APP_SOURCE, /sourceWorkFingerprint/);
   assert.match(APP_SOURCE, /未自动视为已授权素材/);
+  /* F5-C2：作品来源直接进入 AI 数字人口播生产中心 P02，不再落到旧内容编辑表单。 */
+  assert.match(APP_SOURCE, /setView\('digital-human'\)/);
   assert.match(CONTENT_SOURCE, /cloud-worker-content-prefill/);
   assert.match(CONTENT_SOURCE, /sourceWorkFingerprint/);
-  assert.match(CONTENT_SOURCE, /已带入监控作品来源；创建前请确认素材授权/);
+  assert.match(DH_SOURCE, /content-work-prefill/);
+  assert.match(DH_SOURCE, /dhWorkPrefillBlock/);
+  assert.match(DH_SOURCE, /DH_PAGE_P02/);
+  /* 带入只是参考，不得自动授予素材授权。 */
+  assert.match(DH_SOURCE, /不会自动视为已授权素材/);
 });
 
 test('M4 sends only safe view context with feedback', () => {

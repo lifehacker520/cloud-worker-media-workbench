@@ -892,6 +892,148 @@
   text-align: right;
 }
 
+/* --- F5-C2：监控中心带入的作品来源（只读展示，橙色系表示"待人工确认"，与真实数据蓝区分开） --- */
+#view-digital-human .dh-prefill {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #f0d9b5;
+  border-radius: var(--radius-panel, 14px);
+  background: var(--orange-soft);
+}
+
+#view-digital-human .dh-prefill-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#view-digital-human .dh-prefill-head strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+#view-digital-human .dh-prefill-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 0;
+}
+
+#view-digital-human .dh-prefill-meta div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+#view-digital-human .dh-prefill-meta dt {
+  color: var(--soft);
+  font-size: 10px;
+}
+
+#view-digital-human .dh-prefill-meta dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+#view-digital-human .dh-prefill-brief summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 11px;
+}
+
+#view-digital-human .dh-prefill-brief pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* ---------------------------------------------------------------------------
+   F5-C2：内容编辑云员工父级入口页（#view-content）
+   入口卡复用上方 .dh-entry 系列；以下只补父级页自己的块。
+   --------------------------------------------------------------------------- */
+
+#view-content .cw-prefill,
+#view-content .cw-status {
+  margin-bottom: 16px;
+}
+
+#view-content .cw-prefill p,
+#view-content .cw-status p {
+  margin: 6px 0 0;
+  max-width: 720px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+#view-content .cw-prefill-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#view-content .cw-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+#view-content .cw-status-grid > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--dh-hairline, #e6e6ef);
+  border-radius: var(--radius-card, 10px);
+  background: var(--white);
+}
+
+#view-content .cw-status-grid span {
+  color: var(--soft);
+  font-size: 10px;
+}
+
+#view-content .cw-status-grid strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+#view-content .cw-status-foot {
+  color: var(--soft);
+  font-size: 10.5px;
+}
+
+#view-content .cw-status .button,
+#view-content .cw-prefill .button {
+  margin-top: 12px;
+}
+
+#view-content .cw-parent-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 2px 0;
+  border-top: 1px solid var(--dh-hairline, #e6e6ef);
+  color: var(--soft);
+  font-size: 10.5px;
+}
+
 /* ---------------------------------------------------------------------------
    12. F5-02：真实数据读取与状态投影
    ---------------------------------------------------------------------------
@@ -1350,6 +1492,15 @@
 
 #view-digital-human .dh-axis-badge {
   font-size: 10px;
+  /* F5-C5：轴徽章原先继承 .dh-badge 的 white-space: nowrap，
+     在 ≤1024px 或 200% 缩放下「未选择交付」这类文案会横向溢出容器。
+     这里改为允许在徽章内断行并限制最大宽度——宽屏仍是单行，窄屏只增高、不溢出。
+     注意：不能用 word-break: keep-all，它会让 CJK 完全不换行，等于没改。
+     只改这一个类，不影响其它徽章（状态徽章文案更短，仍保持 nowrap）。 */
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 #view-digital-human .dh-item-real {

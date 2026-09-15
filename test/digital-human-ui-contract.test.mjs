@@ -34,13 +34,22 @@ test('F5-01 registers the route in app.js and keeps it under the content editor 
   assert.match(APP, /nextView === 'digital-human' && item\.dataset\.view === 'content'/);
 });
 
-test('P01 exposes the entry, the belonging context and the return action', () => {
+test('P01 exposes the entry, the belonging context and the return action', async () => {
+  /* F5-C2：入口卡已移到内容编辑父级页（content-workspace.js），
+     本模块只保留挂在 #view-content 上的 [data-dh-open] 点击委托，不再注入 DOM。 */
+  const CONTENT_UI = await readFile(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../public/content-workspace.js'),
+    'utf8',
+  );
+  assert.match(CONTENT_UI, /data-dh-open/);
   assert.match(SOURCE, /data-dh-open/);
   assert.match(SOURCE, /data-dh-back/);
-  assert.match(SOURCE, /内容编辑云员工 \/ 生产入口/);
+  assert.match(SOURCE, /内容编辑云员工/);
   assert.match(SOURCE, /返回内容编辑/);
   assert.match(SOURCE, /#view-digital-human/);
   assert.match(SOURCE, /#view-content/);
+  /* 不得再向 #view-content 注入第二张入口卡。 */
+  assert.doesNotMatch(SOURCE, /dhContentRoot\.prepend/);
 });
 
 test('P01 states it is a batch production center where 1 item means a single video', () => {

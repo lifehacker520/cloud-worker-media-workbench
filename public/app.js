@@ -24,19 +24,19 @@ const VIEW_META = {
   content: {
     eyebrow: '云员工 / 内容编辑',
     title: '内容编辑云员工',
-    description: '从目标和素材开始，形成可审核、可交付的内容任务。',
+    description: '内容编辑云员工的父级入口，进入下级 AI 数字人口播生产中心。',
   },
   /* F5-01：AI 数字人口播生产中心从属于内容编辑云员工，不是独立产品岗位。 */
   'digital-human': {
     eyebrow: '云员工 / 内容编辑 · AI 数字人口播',
     title: 'AI 数字人口播生产中心',
     description:
-      '用已确认文案、数字人资产或已有视频，批量生成并人工验收口播视频。当前为演示骨架，未接入真实模型。',
+      '用已确认文案、数字人资产或已有视频，批量生成并人工验收口播视频。页面按真实接入状态显示可用能力。',
   },
   publish: {
     eyebrow: '兼容入口',
     title: '发布准备',
-    description: '发布准备已收纳到内容编辑工作流，保留旧数据入口。',
+    description: '发布准备保留独立入口，批准与真实发布分开。',
   },
   insights: {
     eyebrow: '工具中心 / 数据看板',
@@ -1525,9 +1525,11 @@ function createContentTaskFromWork(fingerprint) {
   ].join('\n');
   const prefill = {
     title: '参考：' + (work.title || '未命名作品'),
+    workTitle: work.title || '未命名作品',
     objective: '围绕监控作品整理一条可审核的内容任务，先确认来源与授权边界。',
     platforms: platformLabel,
     sourceWorkFingerprint: work.fingerprint,
+    sourceUrl,
     sourceBrief,
   };
   try {
@@ -1535,7 +1537,10 @@ function createContentTaskFromWork(fingerprint) {
   } catch {
     // The event still carries the prefill when storage is unavailable.
   }
-  setView('content');
+  /* F5-C2：作品来源直接进入 AI 数字人口播生产中心并打开 P02，
+     不再落到已下线为父级入口页的旧内容编辑表单。
+     P02 会读取同一份 prefill，保留作品标题、平台、来源与素材引用。 */
+  setView('digital-human');
   window.dispatchEvent(new CustomEvent('content-work-prefill', { detail: prefill }));
 }
 

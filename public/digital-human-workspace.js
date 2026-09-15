@@ -50,6 +50,8 @@ const DH_SCRIPT_SETS_ENDPOINT = '/api/content/script-sets';
 
 /* 子页面：P01 生产中心 / P02 项目与文案 / P03–P05 生产资产 / P06 生产任务。 */
 const DH_PAGE_KEY = 'cloud-worker-digital-human-page';
+/* F5-C2：与 app.js / content-workspace.js 约定的监控作品带入键，三处必须一致。 */
+const DH_PREFILL_KEY = 'cloud-worker-content-prefill';
 const DH_PAGE_P01 = 'p01';
 const DH_PAGE_P02 = 'p02';
 const DH_PAGE_ASSETS = 'assets';
@@ -265,6 +267,22 @@ function dhCountTasks(tasks, statuses) {
 /* ---------------------------------------------------------------------------
    页面状态
    --------------------------------------------------------------------------- */
+
+/* F5-C2：监控中心带入的作品来源。只读展示，不创建内容任务，也不恢复旧首页表单。 */
+const dhWorkPrefill = { record: null };
+
+function dhReadWorkPrefill() {
+  try {
+    const raw = window.sessionStorage.getItem(DH_PREFILL_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 const dhState = {
   scenarioId: dhReadStoredScenario() || DH_DEFAULT_SCENARIO,
@@ -1250,36 +1268,13 @@ function dhItemCountText(task) {
 }
 
 /* ---------------------------------------------------------------------------
-   渲染：入口卡（注入到内容编辑云员工工作区顶部）
-   --------------------------------------------------------------------------- */
+   F5-C2：入口卡不再由本模块注入 #view-content。
 
-function dhRenderEntryCard() {
-  if (!dhContentRoot || dhContentRoot.querySelector('.dh-entry')) {
-    return;
-  }
-  const entry = document.createElement('section');
-  entry.className = 'dh-entry';
-  entry.setAttribute('aria-label', '内容编辑云员工 · AI 数字人口播生产中心入口');
-  entry.innerHTML =
-    '<div class="dh-entry-mark" aria-hidden="true">◉</div>' +
-    '<div class="dh-entry-body">' +
-    '<span class="dh-entry-context">内容编辑云员工 / 生产入口</span>' +
-    '<h2>AI 数字人口播生产中心</h2>' +
-    '<p>用已确认文案、数字人资产或已有视频，批量生成并人工验收口播视频。单条和批量使用同一套生产任务，数量为 1 就是单条。</p>' +
-    '<div class="dh-entry-tags">' +
-    '<span class="dh-chip">批量生产中心</span>' +
-    '<span class="dh-chip">模式 A · 文案 + 数字人</span>' +
-    '<span class="dh-chip">模式 B · 已有视频口型同步</span>' +
-    '<span class="dh-chip dh-chip-planned">模型能力待接入</span>' +
-    '</div>' +
-    '</div>' +
-    '<div class="dh-entry-actions">' +
-    '<button class="button button-dark" type="button" data-dh-open>' +
-    '打开生产中心 <span aria-hidden="true">→</span></button>' +
-    '<small>入口属于内容编辑云员工，返回后仍回到当前工作区。</small>' +
-    '</div>';
-  dhContentRoot.prepend(entry);
-}
+   内容编辑云员工已改为父级入口页（content-workspace.js），由它提供唯一入口卡；
+   本模块若继续 prepend，会出现两张重复入口卡。
+   这里只保留 dhInit 中挂在 #view-content 上的 [data-dh-open] 事件委托，
+   用于响应父级页上的「进入生产中心」按钮，模块内部仍保留自己的 P01 入口与流程导航。
+   --------------------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------------------
    渲染：P01 生产中心
@@ -2522,10 +2517,39 @@ function dhCopyRequestBlock() {
   );
 }
 
+/* F5-C2：监控中心带入的作品来源。只读展示，不自动视为已授权素材，也不创建内容任务。 */
+function dhWorkPrefillBlock() {
+  const record = dhWorkPrefill.record || dhReadWorkPrefill();
+  if (!record) {
+    return '';
+  }
+  const briefLines = String(record.sourceBrief || '').split('\n').filter(Boolean);
+  return (
+    '<section class="dh-prefill" role="status" aria-label="监控中心带入的作品来源">' +
+    '<div class="dh-prefill-head">' +
+    '<span class="dh-chip">来自监控中心</span>' +
+    '<strong>' + dhEscape(record.workTitle || record.title || '未命名作品') + '</strong>' +
+    '<button class="button button-quiet button-small" type="button" data-dh-prefill-clear>清除带入</button>' +
+    '</div>' +
+    '<dl class="dh-prefill-meta">' +
+    '<div><dt>平台</dt><dd>' + dhEscape(record.platforms || '未记录') + '</dd></div>' +
+    '<div><dt>来源标识</dt><dd>' + dhEscape(record.sourceWorkFingerprint || '未记录') + '</dd></div>' +
+    (record.sourceUrl ? '<div><dt>来源链接</dt><dd>' + dhEscape(record.sourceUrl) + '</dd></div>' : '') +
+    '</dl>' +
+    (briefLines.length
+      ? '<details class="dh-prefill-brief"><summary>素材引用与来源说明（' + briefLines.length + ' 条）</summary>' +
+        '<pre>' + dhEscape(briefLines.join('\n')) + '</pre></details>'
+      : '') +
+    '<p class="dh-gate-note">监控来源是公开平台元数据，不会自动视为已授权素材；授权与素材解析仍需人工确认。</p>' +
+    '</section>'
+  );
+}
+
 function dhRenderCopy() {
   const ready = dhCopy.status === 'ready' && dhCopy.data;
   dhRoot.innerHTML =
     dhRealBanner() +
+    dhWorkPrefillBlock() +
     '<div class="view-intro-row">' +
     '<div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
     '<p>P02 项目与文案：确认这次口播生产挂在哪个项目下，并从真实文案库里选出可进入生产的文案版本。</p></div>' +
@@ -3531,6 +3555,18 @@ function dhHandleClick(event) {
     window.location.hash = '#' + DH_VIEW;
     return;
   }
+  const prefillClear = event.target.closest('[data-dh-prefill-clear]');
+  if (prefillClear) {
+    /* F5-C2：只清除带入的监控作品参考，不影响任何生产数据。 */
+    dhWorkPrefill.record = null;
+    try {
+      window.sessionStorage.removeItem(DH_PREFILL_KEY);
+    } catch {
+      /* 存储不可用时仅清内存态。 */
+    }
+    dhRender();
+    return;
+  }
   const back = event.target.closest('[data-dh-back]');
   if (back) {
     dhGoHome();
@@ -3816,7 +3852,7 @@ function dhInit() {
   if (!dhRoot) {
     return;
   }
-  dhRenderEntryCard();
+  /* F5-C2：不再注入入口卡，入口由内容编辑父级页提供。 */
   dhRender();
 
   /* F5-02/F5-03：真实数据只在真实模式下读取；先读草稿，再读摘要（摘要用于回填内容任务下拉）。
@@ -3841,13 +3877,31 @@ function dhInit() {
     }
   }
 
-  /* 入口卡在内容编辑工作区内部，用事件委托处理，避免与 content-workspace.js 抢 DOM。 */
+  /* F5-C2：入口按钮在内容编辑父级页上，这里只处理它的点击委托，不再注入 DOM。 */
   dhContentRoot?.addEventListener('click', (event) => {
     if (event.target.closest('[data-dh-open]')) {
       event.preventDefault();
       window.location.hash = '#' + DH_VIEW;
     }
   });
+
+  /* F5-C2：接收监控中心带入的作品来源（唯一桥接的接收端）。
+     不创建内容任务，只在 P02 显示来源供人工确认授权边界。 */
+  dhWorkPrefill.record = dhReadWorkPrefill();
+  window.addEventListener('content-work-prefill', (event) => {
+    if (event.detail && typeof event.detail === 'object') {
+      dhWorkPrefill.record = event.detail;
+      try {
+        window.sessionStorage.setItem(DH_PREFILL_KEY, JSON.stringify(event.detail));
+      } catch {
+        /* 存储不可用时仅保留内存态。 */
+      }
+    } else {
+      dhWorkPrefill.record = dhReadWorkPrefill();
+    }
+    dhGoToPage(DH_PAGE_P02);
+  });
+
   dhRoot.addEventListener('click', dhHandleClick);
   dhRoot.addEventListener('input', dhHandleDraftInput);
   dhRoot.addEventListener('change', (event) => {
