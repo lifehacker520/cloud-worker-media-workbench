@@ -11,7 +11,11 @@ OUTPUTS=/root/outputs
 
 # 1) 陈旧锁回收（>45 分钟视为残留）
 if [ -d "$LOCK" ]; then
-  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then rmdir "$LOCK" 2>/dev/null || true; fi
+  if [ -z "$(pgrep -f '[r]un.py --audio_path' 2>/dev/null)" ]; then
+    rmdir "$LOCK" 2>/dev/null || true   # 无进程持有 → 残留锁，立即回收
+  elif [ -n "$(find "$LOCK" -maxdepth 0 -mmin +45 2>/dev/null)" ]; then
+    rmdir "$LOCK" 2>/dev/null || true   # 超 45 分钟 → 视为残留
+  fi
 fi
 # 2) 原子抢占互斥锁
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -26,6 +30,6 @@ cd "$HEYGEM_DIR" || { echo "HEYGEM_DIR_MISSING"; rmdir "$LOCK"; exit 10; }
 BASE="$(basename "$VIDEO")"; BASE="${BASE%.*}"
 rm -f "$OUTPUTS/${BASE}_output-r.mp4"
 date +%s > "/root/.gen-started-${OUT}"
-nohup "$PY" run.py --audio_path "$AUDIO" --video_path "$VIDEO" > "/root/gen-${OUT}.log" 2>&1 < /dev/null &
+nohup bash -c "'$PY' run.py --audio_path '$AUDIO' --video_path '$VIDEO' > '/root/gen-${OUT}.log' 2>&1; rmdir '$LOCK' 2>/dev/null" < /dev/null &
 echo "STARTED base=${BASE} out=${OUTPUTS}/${BASE}_output-r.mp4"
 exit 0
