@@ -739,6 +739,46 @@ async function dhRunRealGenerate(rowNo) {
 }
 
 
+
+/* 真实能力状态：页面必须如实反映"接了没有"，不得保留 S6 时代的静态免责声明 */
+const dhCapability = { status: 'idle', providers: [], worker: null, error: null };
+
+async function dhLoadCapability() {
+  dhCapability.status = 'loading';
+  dhRender();
+  try {
+    const payload = await dhApi('/api/content/digital-human/n18-providers');
+    dhCapability.providers = payload.providers || [];
+    dhCapability.status = 'ready';
+  } catch (error) {
+    dhCapability.providers = [];
+    dhCapability.status = 'ready';
+    dhCapability.error = error.message;
+  }
+  dhRender();
+  /* GPU Worker 探测不阻塞主渲染 */
+  try {
+    const health = await dhApi('/api/content/digital-human/heygem-health');
+    dhCapability.worker = health.worker || { ok: false };
+  } catch (error) {
+    dhCapability.worker = { ok: false, error: error.message };
+  }
+  dhRender();
+}
+
+function dhCapabilitySentence() {
+  const preferred = (dhCapability.providers || []).filter((item) => item.status === 'preferred');
+  const tts = preferred.find((item) => item.capability === 'tts');
+  const head = preferred.find((item) => item.capability === 'talking_head');
+  if (dhCapability.status === 'loading') return '正在检测已接入的真实能力…';
+  const parts = [];
+  parts.push(tts ? '声音合成 TTS 已接入（' + tts.providerKey + '）' : '声音合成 TTS 未接入');
+  parts.push(head ? '数字人视频已接入（' + head.providerKey + '）' : '数字人视频未接入');
+  const worker = dhCapability.worker;
+  const workerText = !worker ? '云 GPU Worker 状态检测中' : worker.ok ? '云 GPU Worker 在线（' + (worker.gpu || 'GPU 已就绪') + '）' : '云 GPU Worker 当前离线，需先在算力平台开机';
+  return parts.join('；') + '；' + workerText + '。';
+}
+
 /* S8-02~S8-04：第八阶段面板——批次结果逐条查看、人工验收、重试、导出内容包 */
 async function dhLoadStage8() {
   const batchId = dhDraft.record?.createdBatchId || dhDraftForm.createdBatchId || '';
@@ -1661,7 +1701,7 @@ function dhRealBanner() {
     '<div class="dh-real-banner" role="note">' +
     '<strong>真实数据</strong>' +
     '<span>当前显示的数字来自后端真实接口（生产批次、内容任务、资产目录）。' +
-    '本页仍未连接任何数字人 / TTS / 口型同步 / 视频渲染能力，因此不会有任何真实视频文件，也不存在可下载的成片。</span>' +
+    dhEscape(dhCapabilitySentence()) + '</span>' +
     '</div>'
   );
 }
@@ -3398,6 +3438,7 @@ function dhGoToPage(page) {
   }
   if (page === DH_PAGE_ASSETS && dhAssets.status !== 'ready') {
     dhLoadAssets();
+  dhLoadCapability();
   }
   if (page === DH_PAGE_TASK && dhWorkspace.status !== 'ready') {
     dhLoadWorkspace();
@@ -3415,7 +3456,7 @@ function dhRenderDemo() {
   dhRoot.innerHTML =
     '<div class="dh-demo-banner" role="note">' +
     '<strong>演示数据</strong>' +
-    '<span>本页未连接任何真实数字人 / TTS / 口型同步 / 视频渲染能力。下面所有任务、明细、进度和结果都是本地示例，不代表任何真实视频已经生成，也不能作为交付物。</span>' +
+    '<span>本页未连接任何真实数字人 / TTS / 口型同步 / 视频渲染能力，下面所有任务、明细、进度和结果都是本地示例，不代表任何真实视频已经生成，也不能作为交付物。真实能力已接入，切到「真实数据」即可查看实际状态。</span>' +
     '</div>' +
     '<div class="view-intro-row">' +
     '<div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
