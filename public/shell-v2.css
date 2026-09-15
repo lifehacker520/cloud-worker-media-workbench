@@ -3674,3 +3674,36 @@ body {
   flex: 1 1 0;
 }
 #view-monitor .work-filter-row .work-search-field input { width: 100%; }
+
+/* ---- VIS-13：修箭头两处 --------------------------------------------- */
+/* ① 「新发现」徽章在 44px 封面里被压成竖排 → 强制单行 + 收紧内距 */
+#view-monitor .work-cover-wrap > .new-badge {
+  top: 3px;
+  left: 3px;
+  padding: 2px 4px;
+  font-size: 8px;
+  line-height: 1.2;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+/* ② 折叠条一行内控件被压 → 标题弹性省略、副文案隐藏、批量控件不压缩 */
+#view-monitor .cw-lower-fold > summary {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+#view-monitor .cw-lower-fold > summary .cw-lower-title {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+#view-monitor .cw-lower-fold > summary small { display: none; }
+#view-monitor .cw-lower-batch {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-right: 0;
+}
+#view-monitor .cw-lower-batch > * { flex: 0 0 auto; white-space: nowrap; }
+#view-monitor .cw-lower-batch .button-small,
+#view-monitor .cw-lower-batch .select-control { white-space: nowrap; }
+
+#view-monitor .cw-lower-fold > summary { gap: 8px; }
+#view-monitor .cw-lower-fold > summary .cw-lower-title { overflow: hidden; text-overflow: ellipsis; }
