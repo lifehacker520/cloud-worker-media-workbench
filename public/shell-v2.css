@@ -3437,3 +3437,154 @@ body {
 
 /* page 的水平 padding 是字面值，--pad token 管不到；直接收紧 */
 .app-frame > .page { padding-left: 20px; padding-right: 20px; }
+
+/* ===========================================================================
+   VIS-11：监控中心「一屏 5 条」（用户 2026-09-15：只能看到 2 条，至少 5 条）
+   1. 作品卡压扁成行：封面 48、标题单行 14px、卡高 ≤78px
+   2. 下方面板折叠为单行摘要条（默认收起，点开展开完整面板）
+   3. 工作区高度改动态吃满：min(760px, calc(100vh - 250px))
+   =========================================================================== */
+
+/* ---- 作品卡压扁 ----------------------------------------------------- */
+#view-monitor .work-card {
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 11px;
+  padding: 8px 11px;
+}
+#view-monitor .work-cover-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+}
+#view-monitor .work-card-body { gap: 2px; }
+#view-monitor .work-card h3 {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
+  display: block;
+  -webkit-line-clamp: unset;
+}
+#view-monitor .work-topline { font-size: 11px; gap: 6px; }
+#view-monitor .work-card .work-meta,
+#view-monitor .work-card small { font-size: 11px; }
+#view-monitor .work-cover.is-placeholder span { font-size: 11px; }
+#view-monitor .work-filter-row { padding: 8px 12px; }
+#view-monitor .work-filter-row .select-control { min-height: 30px; font-size: 12.5px; }
+
+/* ---- 下方面板折叠条 ------------------------------------------------ */
+#view-monitor .cw-lower-fold {
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-hairline);
+  border-radius: var(--shell-radius-panel);
+  box-shadow: var(--shell-shadow-panel);
+  margin-top: 12px;
+  overflow: hidden;
+}
+#view-monitor .cw-lower-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+#view-monitor .cw-lower-fold > summary::-webkit-details-marker { display: none; }
+#view-monitor .cw-lower-fold > summary:hover { background: var(--shell-hairline-soft); }
+#view-monitor .cw-lower-title { color: var(--ink); font-size: 13px; font-weight: 650; }
+#view-monitor .cw-lower-fold > summary small { flex: 1; color: var(--soft); font-size: 11.5px; }
+#view-monitor .cw-details-chevron { color: var(--soft); font-size: 12px; transition: transform 160ms ease; }
+#view-monitor .cw-lower-fold[open] > summary .cw-details-chevron { transform: rotate(180deg); }
+#view-monitor .cw-lower-fold[open] > summary { border-bottom: 1px dashed var(--shell-hairline); }
+#view-monitor .cw-lower-body { padding: 12px 14px; }
+/* 折叠态下原 aside 布局规则失效，body 内三面板改横排 */
+#view-monitor .cw-lower-body .ws-inspector.ws-lower,
+#view-monitor .ws-inspector.ws-lower {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-height: none;
+  overflow-y: visible;
+  margin-top: 0;
+}
+
+/* ---- 工作区高度动态吃满 -------------------------------------------- */
+#view-monitor .monitor-layout {
+  height: min(760px, calc(100vh - 250px));
+}
+/* VIS-04 的检视器同高规则已随面板下移失效；健康列表随新高度自适应 */
+#view-monitor .ws-inspector { max-height: none; }
+
+/* ---- VIS-11b：解剖修正 --------------------------------------------- */
+/* bottomline（内嵌状态/直链/账号主页）压成一行，动作链接横向排列 */
+#view-monitor .work-bottomline {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+#view-monitor .work-bottomline > * { flex: 0 0 auto; }
+#view-monitor .work-bottomline .work-status,
+#view-monitor .work-bottomline span { overflow: hidden; text-overflow: ellipsis; }
+/* 折叠条强制单行 40px */
+#view-monitor .cw-lower-fold > summary {
+  min-height: 0;
+  height: 40px;
+  padding: 0 16px;
+}
+#view-monitor .cw-lower-title,
+#view-monitor .cw-lower-fold > summary small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* details 未展开时兜底隐藏 body（防渲染异常） */
+#view-monitor .cw-lower-fold:not([open]) .cw-lower-body { display: none; }
+/* 高度公式再激进：715 视口 → 515px 工作区 */
+#view-monitor .monitor-layout {
+  height: min(820px, calc(100vh - 200px));
+}
+/* topline 作者行压缩 */
+#view-monitor .work-topline { line-height: 1.3; }
+#view-monitor .work-topline .work-account-avatar { width: 18px; height: 18px; }
+
+/* ---- VIS-11c：作品面板 chrome 压缩（矮视口 5 条目标） -------------- */
+#view-monitor .feed-panel .panel-bar.feed-heading { padding: 6px 12px; }
+#view-monitor .feed-panel .panel-bar.feed-heading .count-label { font-size: 11.5px; }
+#view-monitor .feed-panel .panel-bar.feed-heading .link-button { font-size: 11px; }
+#view-monitor .filter-row.work-filter-row { padding: 6px 12px; gap: 8px; }
+#view-monitor .works-feed { padding: 4px 8px; }
+#view-monitor .work-card + .work-card { margin-top: 2px; }
+/* 动作条压缩 */
+#view-monitor .action-strip .action-card { padding: 10px 14px; }
+#view-monitor .action-strip .action-body strong { font-size: 22px; }
+#view-monitor .action-strip .action-icon { width: 34px; height: 34px; font-size: 16px; }
+/* 面板头压缩 */
+#view-monitor .feed-panel,
+#view-monitor .monitor-summary { border-radius: var(--shell-radius-panel); }
+#view-monitor .monitor-summary .panel-bar { padding: 8px 14px; }
+
+/* ---- VIS-11d：作品流两列网格（矮视口条数翻倍的唯一正解） ----------- */
+#view-monitor .works-feed {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  align-content: start;
+}
+#view-monitor .work-card + .work-card { margin-top: 0; }
+#view-monitor .work-card {
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 9px;
+  padding: 7px 9px;
+}
+#view-monitor .work-cover-wrap { width: 44px; height: 44px; }
+#view-monitor .work-card h3 { font-size: 13px; }
+#view-monitor .work-topline { font-size: 10.5px; gap: 5px; }
+#view-monitor .work-topline .work-account-avatar { width: 16px; height: 16px; }
+#view-monitor .work-bottomline { font-size: 10.5px; gap: 8px; }
+#view-monitor .work-card .work-meta, #view-monitor .work-card small { font-size: 10.5px; }
+/* 560 以下窄流回退单列 */
+@media (max-width: 960px) {
+  #view-monitor .works-feed { grid-template-columns: 1fr; }
+}
