@@ -89,6 +89,8 @@ export class ContentBatchRunner {
     this.workerId = text(options.workerId, 'content-batch-worker-' + randomUUID().slice(0, 8));
     this.leaseMs = Number.isInteger(options.leaseMs) && options.leaseMs > 0 ? options.leaseMs : 5 * 60 * 1000;
     this.maxConcurrency = Number.isInteger(options.maxConcurrency) && options.maxConcurrency > 0 ? options.maxConcurrency : 1;
+    /* P0-2：自动重试默认关闭；真实连接器路径显式开启，避免改变既有（模拟）契约语义 */
+    this.autoRetryOnTransient = options.autoRetryOnTransient === true;
   }
 
   async runUntilIdle(actor, batchId) {
@@ -207,7 +209,21 @@ export class ContentBatchRunner {
         return;
       }
       const itemAction = normalized.errorClass === 'worker_unavailable' ? 'block' : 'fail';
-      const next = transitionContentBatchItem(current, item.id, itemAction, actor, { error: normalized });
+      let next = transitionContentBatchItem(current, item.id, itemAction, actor, { error: normalized });
+      /* P0-2 自动重试编排：可重试错误且未达上限时立即回队列，由外层循环重新领取；不覆盖任何历史 attempt */
+      const failingItem = next.items.find((candidate) => candidate.id === item.id);
+      const attemptNow = Number(failingItem?.attempt) || 0;
+      const maxAttempts = Number(failingItem?.maxAttempts) || 3;
+      if (this.autoRetryOnTransient === true && normalized.retryable === true && attemptNow < maxAttempts) {
+        try {
+          const retried = transitionContentBatchItem(next, item.id, 'retry', actor);
+          this.store.saveBatch(actor, retried);
+          this.store.saveModelRun(actor, { ...run, status: 'failed_retry_scheduled', error: normalized, completedAt, durationMs, updatedAt: completedAt });
+          return;
+        } catch (retryError) {
+          /* 状态机拒绝自动重试时保留失败态，交由人工处理 */
+        }
+      }
       this.store.saveBatch(actor, next);
       this.store.saveModelRun(actor, { ...run, status: 'failed', error: normalized, completedAt, durationMs, updatedAt: completedAt });
     }

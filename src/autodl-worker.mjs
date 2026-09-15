@@ -78,15 +78,25 @@ export async function heygemGenerate({ config = null, audioLocal, videoLocal, ou
   await scpTo(cfg, audioLocal, remoteAudio);
   await scpTo(cfg, videoLocal, remoteVideo);
 
-  // 后台启动生成（首次加载模型较慢），轮询输出文件
-  const startCmd = `cd ${cfg.heygemDir} && rm -f ${cfg.outputsDir}/${outName}-r.mp4 && nohup ${cfg.python} run.py --audio_path ${remoteAudio} --video_path ${remoteVideo} > /root/gen-${outName}.log 2>&1 < /dev/null & echo STARTED`;
+  // 可靠性：改为远端脚本方式（复杂链式 ssh 命令曾在真实环境失败；脚本可独立测试与复用）
+  // 脚本负责：陈旧锁回收 → 原子抢锁 → 清理孤儿 run.py → 写启动时间戳 → nohup 起 run.py
+  const runnerScript = path.join('tools', 'media-model-worker', 'heygem-run.sh');
+  if (fs.existsSync(runnerScript)) {
+    await scpTo(cfg, runnerScript, '/root/heygem-run.sh');
+  }
+  const lockDir = '/root/.heygem-lock';
+  const startCmd = `chmod +x /root/heygem-run.sh && bash /root/heygem-run.sh '${remoteAudio}' '${remoteVideo}' '${outName}'`;
   try {
-    await sshRun(cfg, startCmd, 30_000);
+    await sshRun(cfg, startCmd, 60_000);
   } catch (error) {
-    // ssh 客户端会因远端后台进程持有会话而挂到超时；只要远端命令已发出（stdout 含 STARTED）即视为成功
-    if (!(error.stdout || '').includes('STARTED')) {
-      return { ok: false, error: `HeyGem 启动失败：${error.message}`, log: (error.stderr || '').slice(0, 400) };
+    const stdout = error.stdout || '';
+    if (stdout.includes('LOCKED_BY_OTHER_RUN')) {
+      return { ok: false, error: '云实例正被另一个生成任务占用（远程锁未释放），请稍后重试', locked: true, log: stdout.slice(0, 200) };
     }
+    if (!stdout.includes('STARTED')) {
+      return { ok: false, error: `HeyGem 启动失败：${error.message}`, log: (stdout + (error.stderr || '')).slice(0, 400) };
+    }
+    // 远端已 STARTED（ssh 因后台进程持有会话而挂到超时）视为启动成功
   }
 
   const deadline = Date.now() + timeoutMs;
@@ -95,19 +105,30 @@ export async function heygemGenerate({ config = null, audioLocal, videoLocal, ou
     await delay(pollIntervalMs);
     let log = '';
     try {
-      const res = await sshRun(cfg, `tail -c 2000 /root/gen-${outName}.log 2>/dev/null; echo ---; ls ${remoteOut} 2>/dev/null`);
+      const res = await sshRun(cfg, [
+        `tail -c 1200 /root/gen-${outName}.log 2>/dev/null`,
+        `echo ---STAT---`,
+        `START_TS=$(cat /root/.gen-started-${outName} 2>/dev/null || echo 0)`,
+        `if [ -f ${remoteOut} ]; then OUT_TS=$(stat -c %Y ${remoteOut} 2>/dev/null || echo 0); SIZE=$(stat -c %s ${remoteOut} 2>/dev/null || echo 0); echo "OUT=$remoteOut TS=$OUT_TS START=$START_TS SIZE=$SIZE"; else echo "OUT_MISSING START=$START_TS"; fi`,
+        `ps -ef | grep -c "[r]un.py" `,
+      ].join('; '));
       log = res.stdout;
     } catch (error) {
       lastLog = `poll error: ${error.message}`;
       continue;
     }
-    if (log.includes(remoteOut)) {
+    /* 只有「体积达标 + 新于本次启动」才算产出，避免捡到上一次的旧文件 */
+    const statMatch = log.match(/OUT=(\S+) TS=(\d+) START=(\d+) SIZE=(\d+)/);
+    const fresh = statMatch && Number(statMatch[2]) >= Number(statMatch[3]) && Number(statMatch[4]) > 100_000;
+    if (fresh && log.includes(remoteOut)) {
+      try { await sshRun(cfg, `rmdir ${lockDir} 2>/dev/null; echo released`, 15_000); } catch { /* 锁释放失败不影响产出交付 */ }
       const localFile = path.join('data', 'media-output', `${outName}.mp4`);
       await scpFrom(cfg, remoteOut, localFile);
       return { ok: true, localFile, log: log.slice(-800) };
     }
     lastLog = log.slice(-400);
   }
+  try { await sshRun(cfg, `rmdir ${lockDir} 2>/dev/null; pkill -f "run.py --audio_path" 2>/dev/null; echo cleaned`, 20_000); } catch { /* 清理失败需人工检查实例 */ }
   return { ok: false, error: `生成超时（${Math.round(timeoutMs / 60_000)} 分钟）`, log: lastLog };
 }
 

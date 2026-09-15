@@ -1689,7 +1689,9 @@ async function runContentBatch(user, batch) {
           };
         })]
       : [];
-  const runner = new ContentBatchRunner({ store: contentBatchStore, connectors, maxConcurrency: CONTENT_BATCH_MAX_CONCURRENCY });
+  /* 真实连接器（ssh-heygem）启用自动重试；模拟路径保持默认关闭，确保既有契约语义不变 */
+  const realConnectorActive = connectors.some((connector) => connector instanceof HeyGemSshConnector);
+  const runner = new ContentBatchRunner({ store: contentBatchStore, connectors, maxConcurrency: CONTENT_BATCH_MAX_CONCURRENCY, autoRetryOnTransient: realConnectorActive });
   return runner.runUntilIdle(user, batch.id);
 }
 
@@ -4954,8 +4956,25 @@ async function handleRequest(request, response) {
           /* 字幕失败不阻断交付，保留原片 */
         }
       }
-      await recordActivity(user, 'real_video_generated', '真实数字人视频生成成功：' + finalFile);
-      return sendJson(response, { ok: true, file: finalFile, audio: audioFile, n18: { schema_version: 'content-digital-human-n18-v1', mode: row.mode, script_version_id: row.scriptVersionId, speaker: voiceSource } });
+      /* P1 数据双轨合并：带 batchId+itemId 时把产出回挂到该条目（状态机 attach_output），
+         与批次 runner 共用同一条事实链（production item → output），避免两套结果来源。 */
+      let attached = null;
+      if (body.batchId && body.itemId && contentBatchStore) {
+        try {
+          const hostBatch = contentBatchStore.getBatch(user, String(body.batchId));
+          if (hostBatch) {
+            const nextBatch = transitionBatchItemForApi(hostBatch, String(body.itemId), 'attach_output', user, {
+              output: { videoRef: finalFile, audioRef: audioFile, simulated: false, provider: 'heygem-autodl-ssh', modelVersion: 'heygem-autodl-ssh', reviewRequired: true, requestId: 'single_' + task.id + '_r' + rowNo },
+            });
+            contentBatchStore.saveBatch(user, nextBatch);
+            attached = { batchId: hostBatch.id, itemId: String(body.itemId) };
+          }
+        } catch (attachError) {
+          attached = { error: safeError(attachError) };
+        }
+      }
+      await recordActivity(user, 'real_video_generated', '真实数字人视频生成成功：' + finalFile + (attached ? '（已回挂批次条目）' : ''));
+      return sendJson(response, { ok: true, file: finalFile, audio: audioFile, attached, n18: { schema_version: 'content-digital-human-n18-v1', mode: row.mode, script_version_id: row.scriptVersionId, speaker: voiceSource } });
     } catch (error) {
       return sendJson(response, { ok: false, error: safeError(error) }, 502);
     }
