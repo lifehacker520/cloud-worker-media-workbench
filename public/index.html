@@ -194,15 +194,6 @@
                     <label class="search-field work-search-field">
                       <input id="work-search" type="search" placeholder="搜索作品标题" autocomplete="off" aria-label="搜索作品标题" />
                     </label>
-                    <label class="work-read-field">
-                      <select id="work-read-filter" class="select-control select-small" aria-label="作品阅读状态">
-                        <option value="all">全部作品</option>
-                        <option value="unread">待查看</option>
-                        <option value="read">已查看</option>
-                      </select>
-                    </label>
-                    <label class="work-select-all"><input id="works-select-all" type="checkbox" /><span>全选</span></label>
-                    <button id="mark-selected-seen" class="button button-secondary button-small" type="button" disabled>标为已读</button>
                   </div>
                   <div id="works-feed" class="works-feed row-scroll"></div>
                 </section>
@@ -210,7 +201,8 @@
             </div>
 
               <aside class="ws-inspector ws-lower" aria-label="监控概览与刷新设置（下方面板区）">          <details class="cw-lower-fold">
-            <summary><span class="cw-lower-title">监控概览 · 刷新设置 · 平台分布</span><small>实时数据，点开展开完整面板</small><span class="cw-details-chevron" aria-hidden="true">⌄</span></summary>
+            <summary><span class="cw-lower-title">监控概览 · 刷新设置 · 平台分布</span><small>实时数据，点开展开完整面板</small><span class="cw-lower-batch"><label class="work-read-field">                       <select id="work-read-filter" class="select-control select-small" aria-label="作品阅读状态">                         <option value="all">全部作品</option>                         <option value="unread">待查看</option>                         <option value="read">已查看</option>                       </select>                     </label> <label class="work-select-all"><input id="works-select-all" type="checkbox" /><span>全选</span></label> <button id="mark-selected-seen" class="button button-secondary button-small" type="button" disabled>标为已读</button></span>
+            <span class="cw-details-chevron" aria-hidden="true">⌄</span></summary>
             <div class="cw-lower-body">
 <section class="panel">
                   <div class="panel-bar">
