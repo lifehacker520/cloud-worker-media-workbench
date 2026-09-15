@@ -52,6 +52,9 @@ test('monitoring insights endpoint returns period-filtered metrics and comments'
     accountId: account.id,
     platform: account.platform,
     contentId: 'video_insights_api',
+    /* 归属不变量：抖音作品必须带作者标识且与账号 userId 一致，
+       否则启动清洗会将其判定为推荐流污染并删除。 */
+    authorSecUid: 'aweme_test_user_123',
     title: '看板接口测试作品',
     publishedAt: '2026-09-01T02:00:00.000Z',
     discoveredAt: '2026-09-01T02:00:00.000Z',

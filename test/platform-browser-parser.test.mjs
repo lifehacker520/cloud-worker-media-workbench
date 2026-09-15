@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { extractPayloadData } from '../electron/platform-browser.mjs';
+import {
+  douyinSecUidFromUrl,
+  extractPayloadData,
+  filterWorksByAuthor,
+} from '../electron/platform-browser.mjs';
 
 test('browser network extraction keeps work metrics and generic comment ids', () => {
   const payloads = [
@@ -158,6 +162,56 @@ test('comments inherit source work id from the capture URL when the object lacks
   const douyin = extractPayloadData('douyin', [payloads[1]], 'https://www.douyin.com/user/demo');
   assert.equal(douyin.comments.length, 1);
   assert.equal(douyin.comments[0].workId, '7550000000000000099');
+});
+
+test('douyin works carry author id and filterWorksByAuthor keeps only target author', () => {
+  /* 回归背景：抖音主页补采曾把推荐流接口里其他账号的视频当成监控账号
+     的作品入库（截图中情感/生活类内容混进云客工作手机台账）。
+     修复：作品提取带作者标识，采集层与 server 层双重按目标账号过滤。 */
+  const target = 'MS4wLjABAAAA-demo-target';
+  const payloads = [
+    {
+      url: 'https://www.douyin.com/aweme/v1/web/aweme/post/',
+      status: 200,
+      body: {
+        aweme_list: [
+          {
+            aweme_id: '7550000000000000011',
+            desc: '账号本人的作品',
+            author: { sec_uid: target, nickname: '目标账号' },
+          },
+          {
+            aweme_id: '7550000000000000022',
+            desc: '推荐流里别人的爆款',
+            author: { sec_uid: 'MS4wLjABAAAA-other-creator', nickname: '陌生人' },
+          },
+          {
+            aweme_id: '7550000000000000033',
+            desc: '没有作者结构的数据',
+          },
+        ],
+      },
+    },
+  ];
+
+  const result = extractPayloadData('douyin', payloads, 'https://www.douyin.com/user/' + target);
+  const byId = new Map(result.works.map((work) => [work.contentId, work]));
+  assert.equal(byId.get('7550000000000000011').authorSecUid, target);
+  assert.equal(byId.get('7550000000000000022').authorSecUid, 'MS4wLjABAAAA-other-creator');
+  assert.equal(byId.get('7550000000000000033').authorSecUid, null);
+
+  const filtered = filterWorksByAuthor(result.works, [target]);
+  assert.deepEqual(
+    filtered.map((work) => work.contentId).sort(),
+    ['7550000000000000011', '7550000000000000033'],
+    '他人作品必须被丢弃；无法判定作者的保守保留',
+  );
+
+  const allKept = filterWorksByAuthor(result.works, []);
+  assert.equal(allKept.length, 3, '目标作者集合为空时不过滤');
+
+  assert.equal(douyinSecUidFromUrl('https://www.douyin.com/user/' + target + '/video'), target);
+  assert.equal(douyinSecUidFromUrl('https://www.xiaohongshu.com/user/profile/abc'), null);
 });
 
 test('browser network relevance includes comment and statistics endpoints', async () => {

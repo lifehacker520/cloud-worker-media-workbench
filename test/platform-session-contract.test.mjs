@@ -32,3 +32,11 @@ test('settings exposes safe platform session management without exposing cookie 
   assert.match(indexSource, /登录是否仍有效，以平台页面实际提示为准/);
   assert.doesNotMatch(appSource, /document\.cookie/);
 });
+
+test('browser profile collection enforces work author attribution', () => {
+  /* 归属红线：抖音主页补采不得把推荐流里其他账号的视频当成监控作品入库。 */
+  assert.match(browserSource, /export function filterWorksByAuthor/);
+  assert.match(browserSource, /export function douyinSecUidFromUrl/);
+  assert.match(browserSource, /filterWorksByAuthor\(payloadData\.works, expectedAuthorIds\)/);
+  assert.match(browserSource, /authorSecUid/);
+});

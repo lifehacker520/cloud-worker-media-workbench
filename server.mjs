@@ -421,6 +421,37 @@ async function ensureData() {
   } else {
     await backfillLegacyMonitoringEvidence(appState.accounts, appState.works);
   }
+  /* 归属不变量（抖音作品）：历史版本的主页补采会把推荐流里其他账号的视频
+     写进作品台账（无作者标识可查）。启动时删除无法确认作者归属的抖音作品
+     （demo 演示数据豁免；挂载的指标快照级联清理，评论由下方作品白名单兜底），
+     重新补采即可在带作者校验的管线上重建台账。 */
+  const removedDouyinWorkIds = [];
+  appState.works = appState.works.filter((work) => {
+    if (work.platform !== 'douyin' || String(work.accountId || '').startsWith('demo_')) {
+      return true;
+    }
+    const account = appState.accounts.find((item) => item.id === work.accountId);
+    if (work.authorSecUid && account?.userId && work.authorSecUid !== account.userId) {
+      removedDouyinWorkIds.push(work.id);
+      return false;
+    }
+    const hasAuthorProof = work.authorSecUid || work.authorVerified;
+    if (!hasAuthorProof) {
+      removedDouyinWorkIds.push(work.id);
+      return false;
+    }
+    return true;
+  });
+  if (removedDouyinWorkIds.length) {
+    workbenchStore.deleteMetricSnapshotsForWorks(removedDouyinWorkIds);
+    appState.metricSnapshots = appState.metricSnapshots.filter(
+      (snapshot) => !removedDouyinWorkIds.includes(snapshot.workId),
+    );
+    await persist();
+    console.log(
+      '已清理无法确认作者归属的抖音作品 ' + removedDouyinWorkIds.length + ' 条（归属不变量，重新补采即恢复）',
+    );
+  }
   /* 归属不变量：监控评论只允许挂在当前已监控作品下。
      历史版本可能落过无归属或外部 id 的评论，启动时按作品白名单清洗。 */
   const removedOrphanComments = workbenchStore.deleteUnlinkedMonitoringComments(
@@ -1078,6 +1109,14 @@ function mergeParsedWork(existing, parsedWork, fingerprint, accountId, platform,
   existing.id = 'work_' + fingerprint;
   existing.discoveredAt = existing.discoveredAt || discoveredAt;
   existing.extraction = parsedWork.extraction || existing.extraction;
+  /* 归属字段只增不减：新采集带作者标识或 DOM 可信标记时回填老作品，
+     让它们在启动清洗中存活。 */
+  if (parsedWork.authorSecUid && !existing.authorSecUid) {
+    existing.authorSecUid = parsedWork.authorSecUid;
+  }
+  if (parsedWork.authorVerified) {
+    existing.authorVerified = true;
+  }
 }
 
 function shouldUseBrowserSession(platform) {
@@ -1172,7 +1211,16 @@ async function refreshOne(account, options = {}) {
     const resolvedUserId = fetched.userId || fetched.secUid || parsed.userId || account.userId;
     let newWorks = 0;
 
-    for (const parsedWork of parsed.works) {
+    /* 归属第二道校验：抖音推荐流响应里的其他账号视频同样带 aweme_id 与标题。
+       作品自带作者标识且与目标账号 userId 不一致时，绝不入库。 */
+    const foreignWorks = parsed.works.filter(
+      (work) => platform === 'douyin' && work.authorSecUid && resolvedUserId && work.authorSecUid !== resolvedUserId,
+    );
+    const parsedWorks = foreignWorks.length
+      ? parsed.works.filter((work) => !foreignWorks.includes(work))
+      : parsed.works;
+
+    for (const parsedWork of parsedWorks) {
       const fingerprint =
         parsedWork.fingerprint ||
         (typeof adapter.fingerprintForWork === 'function'
@@ -1191,6 +1239,11 @@ async function refreshOne(account, options = {}) {
               noteId: parsedWork.noteId,
               coverUrl: parsedWork.coverUrl,
             }));
+      /* 批内去重兜底：同一作品可能在多个接口响应里出现。 */
+      const workId = 'work_' + fingerprint;
+      if (appState.works.some((item) => item.id === workId)) {
+        continue;
+      }
       const parsedContentId = parsedWork.contentId || parsedWork.noteId || null;
       const existing = previousWorks.find(
         (work) =>
@@ -1222,6 +1275,10 @@ async function refreshOne(account, options = {}) {
         publishedAt: parsedWork.publishedAt,
         noteId: parsedWork.noteId,
         contentId: parsedWork.contentId || parsedWork.noteId || null,
+        /* 归属字段：authorSecUid 与账号 userId 一致或 authorVerified（DOM 作品列表），
+           才能在启动清洗中存活。 */
+        authorSecUid: parsedWork.authorSecUid || null,
+        authorVerified: Boolean(parsedWork.authorVerified),
         likes: parsedWork.likes,
         metrics: parsedWork.metrics || null,
         coverUrl: parsedWork.coverUrl,
@@ -1255,6 +1312,7 @@ async function refreshOne(account, options = {}) {
       ok: true,
       parsedCount: parsed.works.length,
       newWorks,
+      skippedForeignWorks: foreignWorks.length,
       removedStaleWorks: staleDouyinSeoWorks,
       extraction: parsed.extraction,
       metricSnapshotCount: evidence.snapshots.length,

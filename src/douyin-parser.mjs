@@ -680,6 +680,10 @@ export function parseBrowserSnapshot(snapshot, canonicalUrl, secUid = null) {
             publishedAt,
             contentId,
             noteId: contentId,
+            /* 作者归属链路：authorSecUid 用于作者校验，authorVerified 标记
+               DOM 提取（主页「作品」列表）的可信归属。清洗与校验都依赖它们。 */
+            authorSecUid: work.authorSecUid || null,
+            authorVerified: Boolean(work.authorVerified),
             likes: work.likes || work.likeCount || null,
             metrics: work.metrics || metricsFromObject(work),
             coverUrl,

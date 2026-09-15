@@ -350,10 +350,26 @@ function normalizeWork(work, platform, fallbackUrl) {
           ? 'https://www.xiaohongshu.com/explore/' + contentId
           : fallbackUrl
       : fallbackUrl;
+  /* 作者标识：归属校验的判据。抖音推荐流接口返回的其他账号视频同样带
+     aweme_id 与标题，只有作者 id 才能区分它们是不是监控账号本人的作品。 */
+  const authorSecUid = textValue(
+    work.authorSecUid ||
+      work.author?.sec_uid || work.author?.secUid ||
+      work.user?.sec_uid || work.user?.secUid,
+  );
+  const authorUid = textValue(
+    work.authorUid ||
+      work.author?.uid || work.author?.uid_str ||
+      work.user?.user_id || work.user?.userId || work.user?.userid,
+  );
   return {
     title,
     contentId,
     noteId: contentId,
+    authorSecUid,
+    authorUid,
+    /* DOM 提取的作品来自主页自身的「作品」列表（有 tab 隔离），可信归属。 */
+    authorVerified: Boolean(work.authorVerified),
     publishedAt,
     likes: textValue(
       work.likes ||
@@ -370,8 +386,36 @@ function normalizeWork(work, platform, fallbackUrl) {
   };
 }
 
-function pushUniqueWork(works, work, platform, fallbackUrl) {
-  const normalized = normalizeWork(work, platform, fallbackUrl);
+/* 从抖音主页 URL 提取目标作者的 sec_uid（MS4wLjAB...）。 */
+export function douyinSecUidFromUrl(url) {
+  if (!isHttpUrl(url)) {
+    return null;
+  }
+  const match = String(url).match(/\/user\/(MS4wLjAB[A-Za-z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * 作品归属过滤：作品自带作者标识（authorSecUid/authorUid）时，只有命中
+ * 目标作者 id 才保留；无法判定作者的作品保守保留（DOM 提取自主页自身的
+ * 作品列表，多数接口作品则必带 author）。目标 id 集合为空时不过滤。
+ */
+export function filterWorksByAuthor(works, expectedAuthorIds) {
+  const expected = [...new Set((Array.isArray(expectedAuthorIds) ? expectedAuthorIds : []).filter(Boolean))];
+  if (!expected.length) {
+    return Array.isArray(works) ? [...works] : [];
+  }
+  const matches = (value) => value && expected.includes(value);
+  return (Array.isArray(works) ? works : []).filter((work) => {
+    const hasAuthorId = Boolean(work?.authorSecUid || work?.authorUid);
+    if (!hasAuthorId) {
+      return true;
+    }
+    return matches(work?.authorSecUid) || matches(work?.authorUid);
+  });
+}
+
+function pushUniqueWork(works, work, platform, fallbackUrl) {  const normalized = normalizeWork(work, platform, fallbackUrl);
   if (!normalized) {
     return;
   }
@@ -1055,20 +1099,35 @@ export class PlatformBrowserSession {
       .filter((record) => record.generation === entry.context.generation && !record.media && record.body)
       .map(({ url, status, body }) => ({ url, status, body }));
     const payloadData = extractPayloadData(platform, payloads, snapshot.currentUrl || target);
-    const works = [];
-    for (const work of payloadData.works) {
-      pushUniqueWork(works, work, platform, snapshot.currentUrl || target);
-    }
-    for (const work of snapshot.works || []) {
-      pushUniqueWork(works, work, platform, snapshot.currentUrl || target);
-    }
+    /* 目标作者 id 优先取 DOM 主页身份与主页 URL（可信）；接口 payload 的
+       profile 可能被推荐流响应里其他作者的 user 对象先写，只能垫底。 */
     const profile = {
       ...(snapshot.profile || {}),
       ...payloadData.profile,
       nickname: payloadData.profile.nickname || snapshot.profile?.nickname || null,
       avatarUrl: payloadData.profile.avatarUrl || snapshot.profile?.avatarUrl || null,
-      userId: payloadData.profile.userId || snapshot.profile?.userId || null,
+      userId:
+        snapshot.profile?.userId ||
+        douyinSecUidFromUrl(target) ||
+        douyinSecUidFromUrl(snapshot.currentUrl || '') ||
+        payloadData.profile.userId ||
+        null,
     };
+    /* 归属红线：抖音主页的推荐流/相关推荐接口会返回其他账号的视频，
+       它们同样带 aweme_id 与标题。只保留作者标识命中目标账号的作品。 */
+    const expectedAuthorIds = [
+      profile.userId,
+      douyinSecUidFromUrl(target),
+      douyinSecUidFromUrl(snapshot.currentUrl || ''),
+    ];
+    const works = [];
+    for (const work of filterWorksByAuthor(payloadData.works, expectedAuthorIds)) {
+      pushUniqueWork(works, work, platform, snapshot.currentUrl || target);
+    }
+    for (const work of snapshot.works || []) {
+      /* DOM 作品来自主页自身渲染的「作品」列表，归属可信（接口作品靠作者 id 校验）。 */
+      pushUniqueWork(works, { ...work, authorVerified: true }, platform, snapshot.currentUrl || target);
+    }
     if (!works.length && /安全限制|安全验证|验证码|服务异常|登录即可|请登录|需要登录/i.test(snapshot.bodyText || '')) {
       throw new Error(
         '平台页面需要登录或人工验证；请先在“设置 → 平台会话”打开' + this.configFor(platform).title + '并完成验证，再点击“浏览器补采”',

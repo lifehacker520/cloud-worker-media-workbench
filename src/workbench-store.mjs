@@ -573,14 +573,16 @@ export class WorkbenchStore {
     this.db.exec('BEGIN');
     try {
       this.db.exec('DELETE FROM monitoring_accounts; DELETE FROM monitoring_works; DELETE FROM monitoring_activity; DELETE FROM monitoring_feedback;');
-      const accountStatement = this.db.prepare(`INSERT INTO monitoring_accounts (id, tenant_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+      /* 全量替换语义：同批出现重复 id 时以最后一条为准（INSERT OR REPLACE 幂等），
+         避免上游数据异常让整个 persist 事务回滚。 */
+      const accountStatement = this.db.prepare(`INSERT OR REPLACE INTO monitoring_accounts (id, tenant_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
       for (const item of accounts) {
         const id = text(item?.id, 'account_' + randomUUID());
         const tenantId = text(item?.tenantId, DEFAULT_TENANT_ID);
         const createdAt = text(item?.createdAt, timestamp);
         accountStatement.run(id, tenantId, JSON.stringify({ ...item, id, tenantId }), createdAt, text(item?.updatedAt, createdAt));
       }
-      const workStatement = this.db.prepare(`INSERT INTO monitoring_works (id, tenant_id, fingerprint, account_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+      const workStatement = this.db.prepare(`INSERT OR REPLACE INTO monitoring_works (id, tenant_id, fingerprint, account_id, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
       for (const item of works) {
         const id = text(item?.id, 'work_' + randomUUID());
         const tenantId = text(item?.tenantId, DEFAULT_TENANT_ID);
@@ -785,6 +787,21 @@ export class WorkbenchStore {
     const placeholders = ids.map(() => '?').join(',');
     const result = this.db
       .prepare(`DELETE FROM monitoring_comments WHERE work_id IS NULL OR work_id NOT IN (${placeholders})`)
+      .run(...ids);
+    return result.changes || 0;
+  }
+
+  /** 删除挂在指定作品上的指标快照（作品被清理时级联使用）；返回删除条数。 */
+  deleteMetricSnapshotsForWorks(workIds = []) {
+    const ids = (Array.isArray(workIds) ? workIds : [])
+      .filter((id) => typeof id === 'string' && id.trim())
+      .slice(0, 20000);
+    if (!ids.length) {
+      return 0;
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    const result = this.db
+      .prepare(`DELETE FROM monitoring_metric_snapshots WHERE work_id IN (${placeholders})`)
       .run(...ids);
     return result.changes || 0;
   }
