@@ -43,9 +43,13 @@ export class HeyGemSshConnector {
     if (!speaker) {
       throw { errorClass: 'invalid_input', code: 'HEYGEM_SPEAKER_MISSING', message: '批次条目缺少声音版本（克隆音色 S_ ID）', retryable: false, status: 200 };
     }
-    const avatarVideo = this.resolveAvatarVideo(input);
+    let avatarVideo = this.resolveAvatarVideo(input);
     if (!avatarVideo) {
-      throw { errorClass: 'invalid_input', code: 'HEYGEM_AVATAR_VIDEO_MISSING', message: '批次条目缺少可用的形象/源视频文件', retryable: false, status: 200 };
+      /* 照片数字人：无视频素材但有标准形象图 → 生成引导视频（真实可用，同一条管线） */
+      avatarVideo = await this.resolveAvatarFromPhoto(input).catch(() => null);
+    }
+    if (!avatarVideo) {
+      throw { errorClass: 'invalid_input', code: 'HEYGEM_AVATAR_VIDEO_MISSING', message: '批次条目缺少可用的形象/源视频文件（视频数字人需视频素材，照片数字人需标准形象图）', retryable: false, status: 200 };
     }
 
     const requestId = randomUUID();
@@ -88,6 +92,7 @@ export class HeyGemSshConnector {
   resolveAvatarVideo(input = {}) {
     const candidates = [
       input.avatar?.sourceFile,
+      input.avatar?.baseVideoRef,
       input.avatar?.videoSourceFile,
       input.avatar?.canonicalVideoRef,
       input.mapping?.sourceVideoFileRef,
@@ -98,6 +103,21 @@ export class HeyGemSshConnector {
       if (fs.existsSync(resolved)) return resolved;
     }
     return null;
+  }
+
+  /** 照片数字人：仅有标准形象图时，用 FFmpeg 生成缓慢推进的引导视频，再交给同一套口型合成管线 */
+  async resolveAvatarFromPhoto(input = {}) {
+    const photo = [input.avatar?.canonicalImageRef].filter(Boolean).map((candidate) => (path.isAbsolute(candidate) ? candidate : path.join(process.cwd(), candidate))).find((candidate) => fs.existsSync(candidate));
+    if (!photo) return null;
+    const out = path.join(this.outputDir, 'photo-guide-' + String(photo).replace(/[^A-Za-z0-9.]+/g, '_').slice(-40) + '.mp4');
+    if (fs.existsSync(out) && fs.statSync(out).size > 200_000) return out;
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    await execFileAsync('ffmpeg', [
+      '-y', '-loop', '1', '-i', photo,
+      '-vf', 'scale=720:1100:force_original_aspect_ratio=increase,crop=720:1100,zoompan=z=min(zoom+0.0008\\,1.12):d=150:s=720x1100:fps=25,format=yuv420p',
+      '-t', '6', '-r', '25', '-c:v', 'libx264', '-preset', 'veryfast', out,
+    ], { timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
+    return fs.existsSync(out) ? out : null;
   }
 }
 

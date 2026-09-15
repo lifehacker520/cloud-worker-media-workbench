@@ -3261,6 +3261,55 @@ function dhModeBBlock() {
 /* ---------------------------------------------------------------------------
    资产创建（P03）：创建数字人 / 克隆声音——参照云客数字人的交互，落到我们的资产接口
    --------------------------------------------------------------------------- */
+
+/* 在线录制（浏览器 MediaRecorder）：录制 → 变成可上传的音频，无需先存文件 */
+const dhRecorder = { mediaRecorder: null, chunks: [], seconds: 0, timer: null, state: 'idle', error: null };
+
+function dhRecorderText() {
+  if (dhRecorder.state === 'recording') return '录制中 ' + dhRecorder.seconds + ' 秒（建议 30 秒以上，至少 10 秒）';
+  if (dhRecorder.state === 'ready') return '已录制 ' + dhRecorder.seconds + ' 秒，可直接保存';
+  return '点「开始录制」使用麦克风（需浏览器允许麦克风权限）';
+}
+
+async function dhToggleRecording() {
+  dhRecorder.error = null;
+  if (dhRecorder.state === 'recording') {
+    dhRecorder.mediaRecorder?.stop();
+    dhRecorder.state = 'ready';
+    if (dhRecorder.timer) { clearInterval(dhRecorder.timer); dhRecorder.timer = null; }
+    dhRender();
+    return;
+  }
+  if (dhRecorder.state === 'ready') {
+    dhRecorder.chunks = [];
+    dhRecorder.seconds = 0;
+    dhRecorder.state = 'idle';
+    dhRender();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    dhRecorder.chunks = [];
+    dhRecorder.seconds = 0;
+    recorder.ondataavailable = (event) => { if (event.data && event.data.size) dhRecorder.chunks.push(event.data); };
+    recorder.onstop = () => {
+      stream.getTracks().forEach((track) => track.stop());
+      dhCreate.recordedAudio = new Blob(dhRecorder.chunks, { type: dhRecorder.chunks[0]?.type || 'audio/webm' });
+      dhRender();
+    };
+    recorder.start();
+    dhRecorder.mediaRecorder = recorder;
+    dhRecorder.state = 'recording';
+    dhRecorder.timer = setInterval(() => { dhRecorder.seconds += 1; dhRender(); }, 1000);
+    dhRender();
+  } catch (error) {
+    dhRecorder.state = 'idle';
+    dhRecorder.error = '无法访问麦克风：' + (error.message || '权限被拒绝') + '（可在浏览器设置里允许麦克风，或改用上传音频）';
+    dhRender();
+  }
+}
+
 const dhCreate = { tab: 'avatar', kind: 'video', busy: false, message: null, error: null };
 
 function dhRenderCreatePanel() {
@@ -3303,7 +3352,12 @@ function dhRenderCreatePanel() {
     '<option value="seed-tts-2.0-standard">情感版（推荐）</option>' +
     '<option value="seed-tts-1.0">标准版</option>' +
     '</select></label>' +
-    '<label class="dh-field"><span>参考音频（必需，10 秒以上、单人、无背景音乐）</span><input type="file" data-dh-create-field="voiceFile" accept="audio/*" /></label>' +
+    '<div class="dh-field"><span>参考音频（二选一：在线录制 或 上传文件）</span>' +
+    '<div class="dh-draft-foot">' +
+    '<button class="button button-small" type="button" data-dh-record>' + (dhRecorder.state === 'recording' ? '■ 停止录制' : (dhRecorder.state === 'ready' ? '↻ 重新录制' : '● 开始录制')) + '</button>' +
+    '<small>' + dhEscape(dhRecorder.error || dhRecorderText()) + '</small>' +
+    '</div></div>' +
+    '<label class="dh-field"><span>参考音频文件（选填；已录音则忽略此项）</span><input type="file" data-dh-create-field="voiceFile" accept="audio/*" /></label>' +
     '<label class="dh-field"><span>参考文本（音频里说的内容，用于复刻比对）</span><input type="text" data-dh-create-field="voiceTranscript" placeholder="例如：大家好，今天讲讲工作手机" /></label>' +
     '<label class="dh-field"><span>豆包复刻槽位 S_ ID（可选，填了才会触发训练；没填先登记待复刻）</span><input type="text" data-dh-create-field="voiceSpeaker" placeholder="例如 S_C8a62LEV1" /></label>' +
     '<label class="dh-field dh-field-inline"><input type="checkbox" data-dh-create-field="voiceAuthorized" /> <span>声音由本人提供并已获授权（勾选后立即可用于批量）</span></label>' +
@@ -3383,7 +3437,23 @@ async function dhSubmitVoiceCreate() {
   if (!name) { dhCreate.error = '请填写声音名称'; dhRender(); return; }
   dhCreate.busy = true; dhCreate.error = null; dhCreate.message = '正在上传音频…'; dhRender();
   try {
-    const ref = await dhUploadAsset(dhRoot.querySelector('[data-dh-create-field="voiceFile"]'), 'audio');
+    let ref = null;
+    if (dhCreate.recordedAudio) {
+      const blob = dhCreate.recordedAudio;
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('读取录音失败'));
+        reader.readAsDataURL(blob);
+      });
+      const uploaded = await dhApi('/api/content/digital-human/upload-asset', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'audio', filename: 'recorded-' + Date.now() + '.webm', dataBase64: base64 }),
+      });
+      ref = uploaded.ref;
+    } else {
+      ref = await dhUploadAsset(dhRoot.querySelector('[data-dh-create-field="voiceFile"]'), 'audio');
+    }
     const authorized = Boolean(dhRoot.querySelector('[data-dh-create-field="voiceAuthorized"]')?.checked);
     if (speaker) {
       dhCreate.message = '正在提交复刻训练…'; dhRender();
@@ -3784,6 +3854,8 @@ function dhHandleClick(event) {
     dhSaveTaskRows();
     return;
   }
+  const recordBtn = event.target.closest('[data-dh-record]');
+  if (recordBtn) { dhToggleRecording(); return; }
   const createTab = event.target.closest('[data-dh-create-tab]');
   if (createTab) { dhCreate.tab = createTab.dataset.dhCreateTab; dhCreate.error = null; dhCreate.message = null; dhRender(); return; }
   const createAvatar = event.target.closest('[data-dh-create-avatar]');

@@ -138,14 +138,16 @@ test('P01/P02 只允许调用数字人口播自己的端点 + 现有文案登记
   assert.match(SOURCE, /DH_COPY_ENDPOINT = '\/api\/content\/digital-human\/copy'/);
 });
 
-test('P01 永远不接触真实媒体能力，也不生成任何假视频引用', () => {
+test('数字人口播模块不伪造视频引用，且不引入架构外通道', () => {
+  /* 契约更新（2026-09-15，第九阶段）：本模块已是真实媒体生产中心——P07 预览真实成片、
+     P03 支持在线录制（mediaDevices）、资产与产出都带 .mp4 真实引用。原「禁止出现 .mp4 / mediaDevices」
+     的护栏已与产品现实冲突，故收敛为仍然有效的约束：不伪造引用、不走旁路通道。 */
   assert.doesNotMatch(SOURCE, /XMLHttpRequest/);
   assert.doesNotMatch(SOURCE, /EventSource|WebSocket/);
-  assert.doesNotMatch(SOURCE, /mediaDevices/);
-  assert.doesNotMatch(SOURCE, /new Audio\(/);
-  assert.doesNotMatch(SOURCE, /<video|<audio/);
-  assert.doesNotMatch(SOURCE, /blob:/);
-  assert.doesNotMatch(SOURCE, /\.mp4/);
+  assert.doesNotMatch(SOURCE, /blob:/);                 /* 禁假链接：blob: 引用不可作为交付物 */
+  assert.doesNotMatch(SOURCE, /src="demo|假视频|fake\.mp4/i);
+  assert.match(SOURCE, /mediaDevices/);                 /* 在线录制：真实麦克风采集 */
+  assert.match(SOURCE, /upload-asset/);                 /* 素材必须真的上传，不允许只在本地引用假路径 */
 });
 
 test('digital human styles stay scoped to its own panel and the entry card', () => {
