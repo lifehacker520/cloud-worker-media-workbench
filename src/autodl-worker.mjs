@@ -73,7 +73,9 @@ export async function heygemGenerate({ config = null, audioLocal, videoLocal, ou
   const cfg = config || loadSshConfig();
   const remoteAudio = `${cfg.inputsDir}/${outName}.mp3`;
   const remoteVideo = `${cfg.inputsDir}/${outName}-avatar.mp4`;
-  const remoteOut = `${cfg.outputsDir}/${outName}-avatar_output-r.mp4`;
+  /* run.py 以「视频文件 basename」命名产出；outName 可能被截断，故必须按实际上传名推导，否则轮询永不匹配（G9-01 实测 Bug） */
+  const remoteVideoBase = remoteVideo.split('/').pop().replace(/\.[^./]+$/, '');
+  const remoteOut = `${cfg.outputsDir}/${remoteVideoBase}_output-r.mp4`;
 
   await scpTo(cfg, audioLocal, remoteAudio);
   await scpTo(cfg, videoLocal, remoteVideo);
