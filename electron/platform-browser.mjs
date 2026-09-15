@@ -1055,6 +1055,87 @@ export class PlatformBrowserSession {
     };
   }
 
+  /**
+   * 评论采集（VIS-14）：打开作品详情页，拦截评论接口响应并提取评论。
+   * 与 collectProfile 的差异：作品页不要求有 works，只要求有 comments；
+   * 需要滚动到评论区触发懒加载。
+   */
+  async collectWorkComments(platform, input, options = {}) {
+    const target = firstUrl(input) || String(input || '').trim();
+    if (!isHttpUrl(target)) {
+      throw new Error('评论采集需要完整的 http(s) 作品链接');
+    }
+    const limit = Number.isFinite(Number(options.limit)) && Number(options.limit) > 0
+      ? Math.min(Math.round(Number(options.limit)), 50)
+      : 20;
+    const entry = await this.ensureWindow(platform);
+    entry.context.generation += 1;
+    entry.context.responses = [];
+    entry.context.responseByRequestId.clear();
+    try {
+      await Promise.race([
+        entry.browserWindow.loadURL(target),
+        wait(NAVIGATION_TIMEOUT_MS).then(() => {
+          throw new Error('作品页加载超时');
+        }),
+      ]);
+    } catch (error) {
+      const loadedUrl = entry.browserWindow.webContents.getURL();
+      if (!/ERR_ABORTED|(-3)|加载超时/i.test(error.message || '') || !isHttpUrl(loadedUrl)) {
+        throw new Error('打开作品页失败：' + error.message);
+      }
+    }
+    await this.attachDebugger(entry);
+    await wait(WAIT_AFTER_LOAD_MS);
+    // 作品页评论区在下方，需要滚动触发评论接口加载；分两段滚动并各留出等待窗口。
+    for (const ratio of [0.6, 1.0, 1.4]) {
+      try {
+        await executeJavaScriptWithTimeout(
+          entry.browserWindow,
+          `window.scrollTo(0, Math.min(document.body?.scrollHeight || 0, window.innerHeight * ${ratio}));`,
+        );
+      } catch {
+        // 页面导航中可能短暂不可执行；忽略后继续等待下一个窗口。
+      }
+      await wait(1600);
+    }
+    let snapshot;
+    try {
+      snapshot = await executeJavaScriptWithTimeout(entry.browserWindow, DOM_SNAPSHOT_SCRIPT);
+    } catch {
+      snapshot = { currentUrl: entry.browserWindow.webContents.getURL(), bodyText: '' };
+    }
+    const currentRecords = entry.context.responses.filter(
+      (record) => record.generation === entry.context.generation,
+    );
+    await Promise.allSettled(
+      currentRecords.filter((record) => !record.media).map((record) =>
+        record.body
+          ? Promise.resolve(record.body)
+          : this.readResponseBody(entry.debuggerClient, record, entry.context),
+      ),
+    );
+    const payloads = entry.context.responses
+      .filter((record) => record.generation === entry.context.generation && !record.media && record.body)
+      .map(({ url, status, body }) => ({ url, status, body }));
+    const payloadData = extractPayloadData(platform, payloads, snapshot.currentUrl || target);
+    const comments = payloadData.comments.slice(0, limit);
+    if (!comments.length && /安全限制|安全验证|验证码|服务异常|登录即可|请登录|需要登录/i.test(snapshot.bodyText || '')) {
+      throw new Error(
+        '作品页需要登录或人工验证；请在弹出的' + this.configFor(platform).title + '窗口完成后重试',
+      );
+    }
+    return {
+      workUrl: snapshot.currentUrl || target,
+      comments,
+      source: 'browser-network',
+      diagnostics: {
+        payloadCount: payloads.length,
+        commentPayloadCount: payloads.filter((item) => /comment/i.test(item.url || '')).length,
+      },
+    };
+  }
+
   async fetchMedia(platform, input, options = {}) {
     const target = String(input || '').trim();
     if (!isHttpUrl(target)) {

@@ -207,6 +207,7 @@ const elements = {
   insightsPlatformFilter: document.querySelector('#insights-platform-filter'),
   monitorInsightsUpdated: document.querySelector('#monitor-insights-updated'),
   monitorInsightsNotice: document.querySelector('#monitor-insights-notice'),
+  collectComments: document.querySelector('#collect-monitor-comments'),
   monitorInsightsKpis: document.querySelector('#monitor-insights-kpis'),
   monitorOperations: document.querySelector('#monitor-operations-grid'),
   monitorPlatformSummary: document.querySelector('#monitor-platform-summary'),
@@ -1017,6 +1018,58 @@ function renderMonitoringComments(insights) {
     return '<article class="monitor-comment-item"><div class="monitor-comment-top"><strong>' + escapeHtml(comment.authorName || '匿名用户') + '</strong><time>' + escapeHtml(formatTime(comment.createdAt || comment.fetchedAt)) + '</time></div><p>' + escapeHtml(comment.text) + '</p><small>' + escapeHtml((work?.title || '未关联作品') + ' · ' + (comment.likeCount ?? 0) + ' 赞 · ' + (comment.replyCount ?? 0) + ' 回复') + '</small></article>';
   }).join('');
   if (elements.monitorCommentsCount) elements.monitorCommentsCount.textContent = comments.count + ' 条 · 只读';
+}
+
+function setInsightsNotice(message, tone = 'info') {
+  if (!elements.monitorInsightsNotice) return;
+  elements.monitorInsightsNotice.className =
+    'monitor-insights-notice' + (tone === 'error' ? ' is-error' : tone === 'success' ? ' is-success' : '');
+  elements.monitorInsightsNotice.textContent = message;
+}
+
+/**
+ * VIS-14 评论采集：桌面端专属（走浏览器会话拦截评论接口）。
+ * 网页模式或未登录时服务端会返回明确原因，前端原样展示，不伪造结果。
+ */
+async function collectMonitoringComments() {
+  const button = elements.collectComments;
+  if (!button) return;
+  if (!selectedAccountId) {
+    setInsightsNotice('请先在监控中心选择一个账号，再采集该账号的评论。', 'error');
+    return;
+  }
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = '采集中…';
+  setInsightsNotice('正在逐条打开作品页读取评论，作品之间会自动间隔，请稍候…');
+  try {
+    const payload = await apiRequest(
+      '/api/monitoring/accounts/' + encodeURIComponent(selectedAccountId) + '/collect-comments',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ perAccount: 3, perWorkLimit: 20 }),
+      },
+    );
+    const parts = [
+      '已采集 ' + (payload.collected || 0) + ' 条评论',
+      '作品成功 ' + (payload.worksSucceeded || 0) + '/' + (payload.worksAttempted || 0),
+    ];
+    if (payload.failures?.length) {
+      parts.push('首个失败原因：' + payload.failures[0].error);
+    }
+    setInsightsNotice(parts.join(' · '), payload.collected ? 'success' : 'error');
+    await loadMonitoringInsights();
+  } catch (error) {
+    setInsightsNotice(error.message || '评论采集失败', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
+function initCommentCollection() {
+  elements.collectComments?.addEventListener('click', collectMonitoringComments);
 }
 
 function renderMonitoringInsights() {
@@ -2591,6 +2644,7 @@ function init() {
   const savedFrequency = window.localStorage.getItem('xhs-monitor-auto-refresh');
   applyAutoRefreshFrequency(savedFrequency || '0');
   initMonitorSplitter();
+  initCommentCollection();
   window.addEventListener('resize', () => {
     if (currentView !== 'monitor') {
       return;

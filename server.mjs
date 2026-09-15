@@ -20,6 +20,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { fingerprintForWork } from './src/xhs-parser.mjs';
 import {
+  planCommentCollection,
+  normalizeBrowserComments,
+  summarizeCommentCollection,
+  COMMENT_COLLECTION_LIMITS,
+} from './src/monitoring-comments.mjs';
+import {
   adapterFor,
   normalizeSource,
   platformCatalog,
@@ -135,6 +141,8 @@ const SEED_FILE = join(CONFIG_DIR, 'accounts.seed.json');
 const DEMO_FILE = join(CONFIG_DIR, 'monitoring.demo.json');
 const SERVER_HOST = process.env.XHS_MONITOR_HOST || '127.0.0.1';
 const SERVER_PORT = Number(process.env.XHS_MONITOR_PORT || 3188);
+/* 评论采集限流：逐条作品页之间保持间隔，降低平台风控概率。 */
+const COMMENT_COLLECTION_DELAY_MS = 2500;
 const SERVER_REFRESH_MINUTES = Number(process.env.XHS_REFRESH_MINUTES || 0);
 const CONTENT_BATCH_MAX_CONCURRENCY = Number.isInteger(Number(process.env.XHS_CONTENT_BATCH_MAX_CONCURRENCY)) && Number(process.env.XHS_CONTENT_BATCH_MAX_CONCURRENCY) > 0
   ? Number(process.env.XHS_CONTENT_BATCH_MAX_CONCURRENCY)
@@ -3867,6 +3875,101 @@ async function handleRequest(request, response) {
       return null;
     } catch (error) {
       return sendJson(response, { ok: false, error: '本地下载文件不可读取：' + safeError(error) }, 404);
+    }
+  }
+
+  /* VIS-14：评论采集（桌面端专属，走浏览器会话拦截评论接口）。
+     数据真实性：抓不到就返回空并标 empty，不生成占位评论。 */
+  if (
+    requestUrl.pathname.startsWith('/api/monitoring/accounts/') &&
+    requestUrl.pathname.endsWith('/collect-comments') &&
+    request.method === 'POST'
+  ) {
+    const user = authorizedUser(request, response);
+    if (!user) {
+      return null;
+    }
+    const browserSession = desktopPlatformSession();
+    if (typeof browserSession?.collectWorkComments !== 'function') {
+      return sendJson(
+        response,
+        { ok: false, error: '评论采集仅在桌面客户端可用：请用桌面版打开并完成平台登录后重试' },
+        409,
+      );
+    }
+    const accountId = decodeURIComponent(
+      requestUrl.pathname.slice('/api/monitoring/accounts/'.length, -'/collect-comments'.length),
+    );
+    const account = accountById(accountId, user);
+    if (!account) {
+      return sendJson(response, { ok: false, error: '监控账号不存在' }, 404);
+    }
+    if (appState.commentCollectionInProgress) {
+      return sendJson(response, { ok: false, error: '评论采集进行中，请稍候' }, 409);
+    }
+    let body = {};
+    try {
+      body = await readRequestBody(request);
+    } catch {
+      body = {};
+    }
+    const perWorkLimit = Math.min(
+      Math.max(Math.round(Number(body?.perWorkLimit) || COMMENT_COLLECTION_LIMITS.defaultPerWork), 1),
+      COMMENT_COLLECTION_LIMITS.maxPerWork,
+    );
+    appState.commentCollectionInProgress = true;
+    try {
+      const accountWorks = appState.works.filter((work) => work.accountId === account.id);
+      const plan = planCommentCollection({
+        works: accountWorks,
+        perAccount: body?.perAccount || COMMENT_COLLECTION_LIMITS.defaultPerAccount,
+      });
+      if (!plan.selected.length) {
+        return sendJson(
+          response,
+          { ok: false, error: '该账号还没有可采集评论的作品（需要作品直链）', skippedMissingLink: plan.skippedMissingLink },
+          409,
+        );
+      }
+      const results = [];
+      for (const work of plan.selected) {
+        try {
+          const collected = await browserSession.collectWorkComments(
+            account.platform || 'xhs',
+            work.link,
+            { limit: perWorkLimit },
+          );
+          const normalized = normalizeBrowserComments({
+            comments: collected?.comments || [],
+            account,
+            works: accountWorks,
+            workUrl: work.link,
+            fetchedAt: nowIso(),
+          });
+          if (normalized.length) {
+            workbenchStore?.saveMonitoringComments(normalized);
+            appState.comments = mergeEvidenceItems(appState.comments, normalized);
+          }
+          results.push({ workId: work.id, workUrl: work.link, ok: true, comments: normalized });
+        } catch (error) {
+          results.push({ workId: work.id, workUrl: work.link, ok: false, error: safeError(error) });
+        }
+        await sleep(COMMENT_COLLECTION_DELAY_MS);
+      }
+      const summary = summarizeCommentCollection(results);
+      account.commentStatus = summary.collected > 0 ? 'available' : 'empty';
+      account.commentLastFetchedAt = nowIso();
+      return sendJson(response, {
+        ok: true,
+        accountId: account.id,
+        commentStatus: account.commentStatus,
+        commentLastFetchedAt: account.commentLastFetchedAt,
+        ...summary,
+      });
+    } catch (error) {
+      return sendJson(response, { ok: false, error: safeError(error) }, 409);
+    } finally {
+      appState.commentCollectionInProgress = false;
     }
   }
 

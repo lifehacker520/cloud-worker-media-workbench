@@ -3707,3 +3707,17 @@ body {
 
 #view-monitor .cw-lower-fold > summary { gap: 8px; }
 #view-monitor .cw-lower-fold > summary .cw-lower-title { overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- VIS-14：评论采集入口（数据看板 · 最新评论面板）----------------- */
+#view-insights .monitor-comments-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+#view-insights .monitor-comments-actions .button-small {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+#view-insights .monitor-insights-notice.is-success { color: var(--green); }
