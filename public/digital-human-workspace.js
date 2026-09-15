@@ -903,6 +903,70 @@ function dhRenderStage8() {
 
 const dhStage8 = { status: 'idle', data: null };
 
+
+/** 明细列在所有行取值一致时返回该值，否则返回 null（不一致时不做草稿级锁定） */
+function dhUniqueRowValue(field) {
+  const values = (dhTaskRows || []).map((row) => (row[field] || '').trim()).filter(Boolean);
+  if (!values.length) return null;
+  return values.every((value) => value === values[0]) ? values[0] : null;
+}
+
+/** 一键按当前明细锁定资产：解决 HIDDEN_CARTESIAN_RISK（多资产 + 少量明细被判隐藏全组合） */
+async function dhLockAssetsFromRows() {
+  dhSyncTaskRowsFromDom();
+  dhWorkspace.status = 'loading';
+  dhRender();
+  try {
+    await dhApi(DH_DRAFT_ENDPOINT, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        taskId: dhDraft.record?.taskId || dhDraftForm.taskId,
+        mode: dhDraftForm.mode,
+        title: dhDraftForm.title,
+        plannedItems: dhTaskRows,
+        selectedScriptVersionId: dhUniqueRowValue('scriptVersionId') || undefined,
+        selectedAvatarVersionId: dhUniqueRowValue('avatarVersionId') || undefined,
+        selectedVoiceVersionId: dhUniqueRowValue('voiceVersionId') || undefined,
+        selectedTemplateVersionId: dhUniqueRowValue('templateVersionId') || undefined,
+      }),
+    });
+    const refreshed = await dhApi(DH_WORKSPACE_ENDPOINT);
+    dhWorkspace.data = refreshed.workspace || null;
+    dhWorkspace.status = 'ready';
+    dhWorkspace.error = null;
+  } catch (error) {
+    dhWorkspace.status = 'error';
+    dhWorkspace.error = { message: '锁定资产失败：' + error.message };
+  }
+  dhRender();
+}
+
+
+/* 创建生产批次（不执行）：N15 显式明细 → 批次，随后在 P07 启动真实生成 */
+let dhBatchBusy = false;
+let dhBatchMessage = null;
+
+async function dhCreateProductionBatch() {
+  const taskId = dhDraft.record?.taskId || dhDraftForm.taskId;
+  if (!taskId) { dhBatchMessage = '请先在 P01 选择关联的内容任务。'; dhRender(); return; }
+  dhBatchBusy = true;
+  dhBatchMessage = '正在创建批次…';
+  dhRender();
+  try {
+    const payload = await dhApi(DH_BATCH_CREATE_ENDPOINT, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ taskId }),
+    });
+    dhBatchBusy = false;
+    dhBatchMessage = '批次已创建：' + payload.batch.id + '（连接器 ' + payload.batch.connectorId + '）。到 P07 结果页点「执行批次（真实）」即可生成。';
+    dhDraft.record = { ...(dhDraft.record || {}), createdBatchId: payload.batch.id };
+  } catch (error) {
+    dhBatchBusy = false;
+    dhBatchMessage = '创建批次失败：' + (error.message || '未知错误');
+  }
+  dhRender();
+}
+
 async function dhSaveTaskRows() {
   if (!dhDraftForm.taskId && !dhDraft.record?.taskId) {
     dhWorkspace.error = { message: '请先在 P01 选择关联的内容任务。' };
@@ -921,7 +985,11 @@ async function dhSaveTaskRows() {
         mode: dhDraftForm.mode,
         title: dhDraftForm.title,
         plannedItems: dhTaskRows,
-        selectedScriptVersionId: dhCopy.data?.selectedScriptVersionId || undefined,
+        selectedScriptVersionId: dhUniqueRowValue('scriptVersionId') || dhCopy.data?.selectedScriptVersionId || undefined,
+        /* 草稿级锁定：明细里所有行一致时同步选择，避免「N 个可用资产 × 1 行」被判定为隐藏全组合（N15） */
+        selectedAvatarVersionId: dhUniqueRowValue('avatarVersionId') || undefined,
+        selectedVoiceVersionId: dhUniqueRowValue('voiceVersionId') || undefined,
+        selectedTemplateVersionId: dhUniqueRowValue('templateVersionId') || undefined,
       }),
     });
     dhDraft.record = payload.draft || null;
@@ -2836,7 +2904,7 @@ function dhRenderTask() {
           '<section class="panel dh-steps-panel" aria-label="五步任务工作区">' +
           '<div class="panel-heading"><div><div class="eyebrow">五步任务工作区</div>' +
           '<h2>从选择到执行</h2>' +
-          '<p>第 5 步执行（N18）尚未接入：通过生成前检查也不会开始生成，更不会产生任何视频文件。</p></div></div>' +
+          '<p>第 5 步执行（N18）已接入：通过生成前检查后，可在 P06 创建批次并在 P07 启动真实生成。</p></div></div>' +
           '<ol class="dh-wsteps">' +
           data.steps
             .map((step) => {
@@ -2869,8 +2937,11 @@ function dhRenderTask() {
           (dhPreflight.running || !dhTaskRows.length ? ' disabled aria-disabled="true"' : '') +
           (!dhTaskRows.length ? ' title="至少要有 1 行明细才能做生成前检查"' : '') + '>' +
           (dhPreflight.running ? '正在检查…' : '运行 N17 生成前检查') + '</button>' +
-          '<small>明细保存在生产草稿里，刷新后仍在；生成前检查只判定、不执行。</small>' +
+          '<button class="button button-primary button-small" type="button" data-dh-create-batch' +
+          (dhBatchBusy ? ' disabled aria-disabled="true"' : '') + '>' + (dhBatchBusy ? '正在创建批次…' : '创建生产批次（不执行）') + '</button>' +
+          '<small>明细保存在生产草稿里，刷新后仍在；生成前检查只判定、不执行。创建批次后到 P07 结果页点「执行批次（真实）」才会真正生成。</small>' +
           '</div>' +
+          (dhBatchMessage ? '<p class="dh-draft-message" role="status">' + dhEscape(dhBatchMessage) + '</p>' : '') +
           '</section>' +
           /* N17 结果 */
           (gate
@@ -3856,6 +3927,10 @@ function dhHandleClick(event) {
   }
   const recordBtn = event.target.closest('[data-dh-record]');
   if (recordBtn) { dhToggleRecording(); return; }
+  const createBatch = event.target.closest('[data-dh-create-batch]');
+  if (createBatch) { dhCreateProductionBatch(); return; }
+  const lockAssets = event.target.closest('[data-dh-lock-assets]');
+  if (lockAssets) { dhLockAssetsFromRows(); return; }
   const createTab = event.target.closest('[data-dh-create-tab]');
   if (createTab) { dhCreate.tab = createTab.dataset.dhCreateTab; dhCreate.error = null; dhCreate.message = null; dhRender(); return; }
   const createAvatar = event.target.closest('[data-dh-create-avatar]');
