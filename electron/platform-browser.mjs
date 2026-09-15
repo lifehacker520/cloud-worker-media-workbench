@@ -205,9 +205,15 @@ function commentFromObject(platform, object) {
   if (!object || typeof object !== 'object') {
     return null;
   }
-  const commentText = scalarText(
-    object.text || object.content || object.comment_text || object.commentText || object.comment,
-  );
+  /* 小红书评论的正文在 content.message（content 是对象）；抖音等平台是字符串字段。
+     两条路径都保留，缺失时才判为无效评论。 */
+  const contentField = object.content;
+  const contentObjectText = contentField && typeof contentField === 'object'
+    ? scalarText(contentField.message || contentField.text)
+    : null;
+  const commentText = scalarText(object.text || object.comment_text || object.commentText || object.comment) ||
+    contentObjectText ||
+    scalarText(contentField);
   const externalId = scalarText(
     object.cid || object.comment_id || object.commentId || object.commentIdStr || object.id,
   );
@@ -251,8 +257,10 @@ function commentFromObject(platform, object) {
     createdAt,
     likeCount: scalarText(object.digg_count ?? object.diggCount ?? object.like_count ?? object.likeCount),
     replyCount: scalarText(
-      object.reply_comment_total ?? object.replyCount ?? object.reply_count ?? object.reply_comment_count,
+      object.reply_comment_total ?? object.replyCount ?? object.reply_count ??
+        object.reply_comment_count ?? object.sub_comment_count ?? object.subCommentCount,
     ),
+    ipLocation: scalarText(object.ip_location ?? object.ipLocation),
     metadata: {
       platform,
       sourceShape: Object.keys(object).slice(0, 30),

@@ -1058,8 +1058,10 @@ async function collectMonitoringComments() {
     if (payload.failures?.length) {
       parts.push('首个失败原因：' + payload.failures[0].error);
     }
-    setInsightsNotice(parts.join(' · '), payload.collected ? 'success' : 'error');
+    /* 先刷新看板再写提示：loadMonitoringInsights 的重渲染会用数据质量文案覆盖 notice，
+       顺序颠倒会导致采集结果（尤其是失败原因）永远不可见。 */
     await loadMonitoringInsights();
+    setInsightsNotice(parts.join(' · '), payload.collected ? 'success' : 'error');
   } catch (error) {
     setInsightsNotice(error.message || '评论采集失败', 'error');
   } finally {
