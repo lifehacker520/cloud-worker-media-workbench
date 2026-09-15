@@ -142,9 +142,9 @@ let updaterCheckTimer = null;
 let updaterVersion = '';
 let updaterAutomaticCheck = false;
 /* VIS-04：键名升级到 v3。v2 历史值可能已被“空存档被当成 0”的旧逻辑污染成最小值。 */
-const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v4';
+const MONITOR_SPLIT_STORAGE_KEY = 'cloud-worker-monitor-split-width-v5';
 const MONITOR_SPLIT_MIN = 300;
-const MONITOR_SPLIT_DEFAULT = 380;
+const MONITOR_SPLIT_DEFAULT = 330;
 const MONITOR_SPLIT_MIN_FEED = 420;
 
 const elements = {
