@@ -818,6 +818,9 @@ export class PlatformBrowserSession {
       },
     });
     const context = { responses: [], responseByRequestId: new Map(), generation: 0 };
+    /* 平台页面（抖音/小红书等）会自动播放视频；窗口隐藏后用户仍能听到声音。
+       采集只需要网络响应与 DOM，webContents 级静音跨导航保持且页面脚本无法绕过。 */
+    browserWindow.webContents.setAudioMuted(true);
     const debuggerClient = browserWindow.webContents.debugger;
     debuggerClient.on('message', (_event, method, params) => {
       if (method !== 'Network.responseReceived' || !params?.response?.url) {
@@ -910,6 +913,10 @@ export class PlatformBrowserSession {
     let entry = this.windows.get(platform);
     if (!entry || entry.browserWindow.isDestroyed()) {
       entry = this.createWindow(platform);
+    }
+    /* 兜底静音：平台页面可能重新请求音频焦点，采集窗口不允许出声。 */
+    if (!entry.browserWindow.webContents.isAudioMuted()) {
+      entry.browserWindow.webContents.setAudioMuted(true);
     }
     /* 默认静默后台运行；仅调用方显式要求（用户主动打开平台登录窗口）时才显示并聚焦。 */
     if (options.show) {

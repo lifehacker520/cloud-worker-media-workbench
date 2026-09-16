@@ -40,3 +40,10 @@ test('browser profile collection enforces work author attribution', () => {
   assert.match(browserSource, /filterWorksByAuthor\(payloadData\.works, expectedAuthorIds\)/);
   assert.match(browserSource, /authorSecUid/);
 });
+
+test('platform windows stay muted so background collection never plays sound', () => {
+  /* 平台页面会自动播放视频；窗口隐藏后声音仍会输出到用户扬声器。
+     webContents 级静音跨导航保持且页面脚本无法绕过。 */
+  assert.match(browserSource, /setAudioMuted\(true\)/);
+  assert.match(browserSource, /isAudioMuted\(\)/);
+});
