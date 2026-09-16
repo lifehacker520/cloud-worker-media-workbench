@@ -30,6 +30,8 @@ const DH_SCENARIO_KEY = 'cloud-worker-digital-human-demo-scenario';
 const DH_MODE_REAL = 'real';
 const DH_DEFAULT_SCENARIO = DH_MODE_REAL;
 
+/* V4-02b：工作台项目列表复用现有只读接口，不新建第二套项目存储。 */
+const DH_WORKBENCH_PROJECTS_ENDPOINT = '/api/workspace/projects';
 const DH_SUMMARY_ENDPOINT = '/api/content/digital-human/summary';
 const DH_DRAFT_ENDPOINT = '/api/content/digital-human/draft';
 const DH_COPY_ENDPOINT = '/api/content/digital-human/copy';
@@ -50,6 +52,19 @@ const DH_SCRIPT_SETS_ENDPOINT = '/api/content/script-sets';
 
 /* 子页面：P01 生产中心 / P02 项目与文案 / P03–P05 生产资产 / P06 生产任务。 */
 const DH_PAGE_KEY = 'cloud-worker-digital-human-page';
+const DH_COPY_TAB_KEY = 'cloud-worker-digital-human-copy-tab';
+/* V4-02b：选中的工作台项目在刷新后保持；它只影响读取作用域，不代表创建了项目。 */
+const DH_PROJECT_SCOPE_KEY = 'cloud-worker-digital-human-project-scope';
+/* V4-02：页签元数据只有一份，页签导航与「项目中心」主页入口共用，避免两处口径不一致。 */
+const DH_COPY_TAB_META = [
+  { id: 'overview', label: '项目中心', slice: '项目与文案主页：当前档案、生产准备度、真实指标与页面入口' },
+  { id: 'profile', label: '项目档案', slice: '创建与编辑项目档案，选择本次生产使用的档案版本' },
+  { id: 'request', label: '文案需求', slice: '保存批量候选的数量、方向、平台与时长' },
+  { id: 'candidates', label: '文案批次', slice: '逐条查看、确认候选并登记手动文案' },
+  { id: 'collection', label: '爆款采集', reason: '采集接口未接入' },
+  { id: 'rewrite', label: 'AI 仿写', reason: '生成流程未接入' },
+];
+const DH_COPY_TABS = DH_COPY_TAB_META.map((tab) => tab.id);
 /* F5-C2：与 app.js / content-workspace.js 约定的监控作品带入键，三处必须一致。 */
 const DH_PREFILL_KEY = 'cloud-worker-content-prefill';
 const DH_PAGE_P01 = 'p01';
@@ -219,11 +234,49 @@ function dhIsValidPage(page) {
   return ['p01','p02','assets','task','results','package'].includes(page);
 }
 
+function dhIsValidCopyTab(tab) {
+  return DH_COPY_TABS.includes(tab);
+}
+
+function dhReadStoredCopyTab() {
+  try {
+    const stored = window.sessionStorage.getItem(DH_COPY_TAB_KEY);
+    return dhIsValidCopyTab(stored) ? stored : 'overview';
+  } catch {
+    return 'overview';
+  }
+}
+
+function dhWriteStoredCopyTab(tab) {
+  try {
+    if (dhIsValidCopyTab(tab)) window.sessionStorage.setItem(DH_COPY_TAB_KEY, tab);
+  } catch {
+    // 存储不可用时只影响刷新后停留的页签，不影响功能。
+  }
+}
+
 function dhWriteStoredPage(page) {
   try {
     window.sessionStorage.setItem(DH_PAGE_KEY, page);
   } catch {
     // 存储不可用时只影响刷新后停留的子页面，不影响功能。
+  }
+}
+
+function dhReadStoredProjectScope() {
+  try {
+    return window.sessionStorage.getItem(DH_PROJECT_SCOPE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function dhWriteStoredProjectScope(projectId) {
+  try {
+    if (projectId) window.sessionStorage.setItem(DH_PROJECT_SCOPE_KEY, projectId);
+    else window.sessionStorage.removeItem(DH_PROJECT_SCOPE_KEY);
+  } catch {
+    // 存储不可用时只影响刷新后的项目保留，不影响数据读取。
   }
 }
 
@@ -289,6 +342,14 @@ const dhState = {
   filter: 'all',
   notice: null,
   page: dhReadStoredPage() || DH_PAGE_P01,
+  copyTab: dhReadStoredCopyTab(),
+  /* V4-02：项目档案下拉的待提交选择；不等于已生效，生效以服务端的 selectedContextId 为准。 */
+  contextPick: null,
+  /* V4-02b：当前选定的工作台项目 id。它只决定“读哪个项目的数据”，
+     与项目档案（project_contexts）是两个层级，也不代表新建了项目。 */
+  projectScope: dhReadStoredProjectScope(),
+  /* V4-02b：工作台项目下拉的待提交选择；不等于已切换，生效以 projectScope 为准。 */
+  projectPick: null,
 };
 
 /* F5-04：生产资产状态。 */
@@ -308,7 +369,7 @@ const dhWorkspace = {
 /* 明细行的本地编辑副本；「保存明细」才写入草稿。 */
 const dhTaskRows = [];
 const dhResults = { status: 'idle', data: null, error: null };
-const dhContexts = { status: 'idle', data: null, error: null };
+const dhContexts = { status: 'idle', data: null, error: null, requestHydrated: false };
 const dhContextForm = { contextKey: '', name: '', industry: '', product: '', audience: '', sellingPoints: '', contentGoal: '' };
 const dhCopyRequestForm = { count: 3, direction: '', platform: '抖音', durationSeconds: 45 };
 const dhPackage = { status: 'idle', data: null, error: null, lastError: null };
@@ -349,6 +410,13 @@ const dhReal = {
   error: null,
 };
 
+/* V4-02b：工作台项目列表（GET /api/workspace/projects）。与项目档案分开维护。 */
+const dhProjects = {
+  status: 'idle', /* idle | loading | ready | error */
+  list: [],
+  error: null,
+};
+
 const dhDraft = {
   status: 'idle', /* idle | loading | ready | error */
   record: null,
@@ -374,6 +442,18 @@ function dhCurrentScenario() {
    真实数据访问
    --------------------------------------------------------------------------- */
 
+/* V4-02b：一个统一的作域参数拼接器。未选定项目时不传参，保持服务端默认行为。 */
+function dhScopedEndpoint(endpoint, extraParams = {}) {
+  const params = new URLSearchParams();
+  if (dhState.projectScope) params.set('projectId', dhState.projectScope);
+  for (const [key, value] of Object.entries(extraParams)) {
+    if (value) params.set(key, String(value));
+  }
+  const query = params.toString();
+  return endpoint + (query ? (endpoint.includes('?') ? '&' : '?') + query : '');
+}
+
+/* 内容任务的归属以服务端为准：同一任务 id 不会因为前端传了另一个 projectId 而返另一项目的数据。 */
 async function dhApi(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'same-origin',
@@ -399,7 +479,7 @@ async function dhLoadSummary() {
   dhReal.error = null;
   dhRender();
   try {
-    const payload = await dhApi(DH_SUMMARY_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_SUMMARY_ENDPOINT));
     dhReal.summary = payload.summary || null;
     dhReal.status = 'ready';
     const firstTask = dhReal.summary?.contentTasks?.[0];
@@ -418,11 +498,111 @@ async function dhLoadSummary() {
   dhRender();
 }
 
+/* V4-02b：工作台项目列表。只读现有接口，失败时保留真实错误，不伪造项目。 */
+async function dhLoadProjects() {
+  dhProjects.status = 'loading';
+  dhProjects.error = null;
+  dhRender();
+  try {
+    const payload = await dhApi(DH_WORKBENCH_PROJECTS_ENDPOINT);
+    dhProjects.list = Array.isArray(payload.projects) ? payload.projects : [];
+    dhProjects.status = 'ready';
+  } catch (error) {
+    dhProjects.list = [];
+    dhProjects.status = 'error';
+    dhProjects.error = { message: error.message, httpStatus: error.httpStatus || null };
+  }
+  dhNormalizeProjectScope();
+  dhRender();
+}
+
+/* V4-02b：把刷新前恢复的项目选择归一到真实列表：
+   只有一个项目时直接锁到它；选中项目已不可访问时清空，不拿错 id 去读数据。 */
+function dhNormalizeProjectScope() {
+  if (dhProjects.status !== 'ready') {
+    return;
+  }
+  const exists = dhProjects.list.some((item) => item.id === dhState.projectScope);
+  if (dhState.projectScope && !exists) {
+    dhState.projectScope = null;
+    dhWriteStoredProjectScope(null);
+  }
+  if (!dhState.projectScope && dhProjects.list.length === 1) {
+    dhState.projectScope = dhProjects.list[0].id;
+    dhWriteStoredProjectScope(dhState.projectScope);
+  }
+  dhState.projectPick = null;
+}
+
+/* V4-02b：切换工作台项目。先清空上一个项目的全部读取态与待提交选择，
+   再按新项目重读，避免旧数据在新项目下短暂可见（跨项目串数据）。 */
+async function dhSwitchProject(projectId) {
+  /* 只接受列表里真实存在的项目，不把错的 id 当作作用域去读数据。 */
+  const next = dhProjects.list.some((item) => item.id === projectId) ? projectId : null;
+  if (next === (dhState.projectScope || null)) {
+    return;
+  }
+  dhState.projectScope = next;
+  dhWriteStoredProjectScope(next);
+  dhState.contextPick = null;
+  dhState.projectPick = null;
+  dhState.notice = null;
+  dhReal.summary = null;
+  dhReal.error = null;
+  dhReal.status = 'idle';
+  dhDraft.record = null;
+  dhDraft.status = 'idle';
+  dhDraft.error = null;
+  dhDraft.saveState = 'idle';
+  dhDraft.saveMessage = null;
+  dhDraftForm.taskId = '';
+  dhDraftForm.selectedContextId = null;
+  dhDraftForm.mode = 'A';
+  dhDraftForm.title = '';
+  dhDraftForm.note = '';
+  dhDraftForm.plannedItemCount = 1;
+  dhCopy.data = null;
+  dhCopy.status = 'idle';
+  dhCopy.error = null;
+  dhContexts.data = null;
+  dhContexts.status = 'idle';
+  dhContexts.error = null;
+  dhContexts.requestHydrated = false;
+  /* 其他页签/子页的读取态也一并失效：切页时 lazy reload 会带新项目作用域。 */
+  dhAssets.data = null;
+  dhAssets.status = 'idle';
+  dhAssets.error = null;
+  dhWorkspace.data = null;
+  dhWorkspace.status = 'idle';
+  dhWorkspace.error = null;
+  dhResults.data = null;
+  dhResults.status = 'idle';
+  dhResults.error = null;
+  dhPackage.data = null;
+  dhPackage.status = 'idle';
+  dhPackage.error = null;
+  dhTaskRows.length = 0;
+  /* 未提交的表单属于上一个项目，不带到新项目里。 */
+  Object.assign(dhContextForm, {
+    contextKey: '', name: '', industry: '', product: '', audience: '', sellingPoints: '', contentGoal: '',
+  });
+  Object.assign(dhCopyRequestForm, { count: 3, direction: '', platform: '抖音', durationSeconds: 45 });
+  dhPreflight.gate = null;
+  dhPreflight.error = null;
+  dhRender();
+  /* 工作台项目、草稿、摘要、档案与文案一起重读：主页与 P01 共用这些状态。 */
+  await Promise.all([dhLoadDraft(), dhLoadSummary(), dhLoadContexts(), dhLoadCopy()]);
+  const project = dhProjects.list.find((item) => item.id === next);
+  dhNoticeSet(project
+    ? '已切到工作台项目「' + project.name + '」，本页数据已全部重新读取。'
+    : '已改为不指定工作台项目，本页数据已重新读取。');
+}
+
 async function dhLoadDraft() {
   dhDraft.status = 'loading';
   dhDraft.error = null;
   try {
-    const payload = await dhApi(DH_DRAFT_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_DRAFT_ENDPOINT));
     dhDraft.record = payload.draft || null;
     dhDraft.status = 'ready';
     if (dhDraft.record) {
@@ -498,7 +678,7 @@ async function dhLoadCopy() {
   dhCopy.error = null;
   dhRender();
   try {
-    const payload = await dhApi(DH_COPY_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_COPY_ENDPOINT));
     dhCopy.data = payload.copy || null;
     dhCopy.status = 'ready';
   } catch (error) {
@@ -535,9 +715,9 @@ async function dhSelectCopy(scriptVersionId) {
     dhDraft.record = payload.draft || null;
     dhDraft.status = 'ready';
     dhDraft.saveState = 'saved';
-    dhDraft.saveMessage = '已把选定文案写入生产草稿（selectedScriptVersionId），返回 P01 或刷新后仍然保留。';
+    dhDraft.saveMessage = '已把选定文案写入生产草稿，返回生产中心或刷新后仍然保留。';
     if (dhCopy.data) {
-      dhCopy.data = await dhApi(DH_COPY_ENDPOINT).then((result) => result.copy);
+      dhCopy.data = await dhApi(dhScopedEndpoint(DH_COPY_ENDPOINT)).then((result) => result.copy);
     }
   } catch (error) {
     dhDraft.saveState = 'error';
@@ -584,7 +764,7 @@ async function dhRegisterCopy() {
     dhCopyForm.text = '';
     dhCopyForm.approved = false;
     dhCopyUi.registerOpen = false;
-    const payload = await dhApi(DH_COPY_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_COPY_ENDPOINT));
     dhCopy.data = payload.copy || null;
     dhCopy.status = 'ready';
     dhCopy.error = null;
@@ -661,7 +841,7 @@ async function dhLoadWorkspace() {
     }
     /* 明细行的权威来源是服务端草稿：每次进入工作区都重读，不能用页面初始化时的旧副本。 */
     await dhLoadDraft();
-    const payload = await dhApi(DH_WORKSPACE_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_WORKSPACE_ENDPOINT));
     dhWorkspace.data = payload.workspace || null;
     dhWorkspace.status = 'ready';
     dhSyncRowsFromDraft(dhDraft.record);
@@ -931,7 +1111,7 @@ async function dhLockAssetsFromRows() {
         selectedTemplateVersionId: dhUniqueRowValue('templateVersionId') || undefined,
       }),
     });
-    const refreshed = await dhApi(DH_WORKSPACE_ENDPOINT);
+    const refreshed = await dhApi(dhScopedEndpoint(DH_WORKSPACE_ENDPOINT));
     dhWorkspace.data = refreshed.workspace || null;
     dhWorkspace.status = 'ready';
     dhWorkspace.error = null;
@@ -995,7 +1175,7 @@ async function dhSaveTaskRows() {
     dhDraft.record = payload.draft || null;
     dhDraft.status = 'ready';
     dhSyncRowsFromDraft(dhDraft.record);
-    const refreshed = await dhApi(DH_WORKSPACE_ENDPOINT);
+    const refreshed = await dhApi(dhScopedEndpoint(DH_WORKSPACE_ENDPOINT));
     dhWorkspace.data = refreshed.workspace || null;
     dhWorkspace.status = 'ready';
     dhWorkspace.error = null;
@@ -1009,11 +1189,22 @@ async function dhSaveTaskRows() {
 
 async function dhLoadContexts() {
   dhContexts.status = 'loading';
+  dhContexts.error = null;
   dhRender();
   try {
-    const payload = await dhApi(DH_CONTEXTS_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_CONTEXTS_ENDPOINT));
     dhContexts.data = payload.stage || null;
     dhContexts.status = 'ready';
+    if (!dhContexts.requestHydrated) {
+      const request = dhContexts.data?.request;
+      if (request) {
+        dhCopyRequestForm.count = request.count || dhCopyRequestForm.count;
+        dhCopyRequestForm.direction = request.direction || '';
+        dhCopyRequestForm.platform = request.platform || '抖音';
+        dhCopyRequestForm.durationSeconds = request.durationSeconds || dhCopyRequestForm.durationSeconds;
+      }
+      dhContexts.requestHydrated = true;
+    }
     if (dhContexts.data?.selectedContextId) {
       dhDraftForm.selectedContextId = dhContexts.data.selectedContextId;
     }
@@ -1069,15 +1260,34 @@ async function dhSaveContext(asEdit) {
   dhRender();
 }
 
-async function dhSelectContext(contextId) {
+async function dhSwitchContext(contextId) {
+  const currentId = dhContexts.data?.selectedContextId || null;
+  if (!contextId) {
+    dhNoticeSet('先在档案下拉中选择一个项目档案。');
+    return;
+  }
+  if (contextId === currentId) {
+    dhNoticeSet('当前生产草稿已经使用这个项目档案。');
+    return;
+  }
   try {
     await dhApi(DH_DRAFT_ENDPOINT, { method: 'PUT', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ taskId: dhDraft.record?.taskId || dhDraftForm.taskId, selectedContextId: contextId }) });
-    dhNoticeSet('已选择项目上下文版本，刷新后仍保留。');
+    dhState.contextPick = null;
+    /* 文案需求与候选都挂在项目档案下，切换后一并重读，主页不会停在旧准备度。 */
+    await Promise.all([dhLoadContexts(), dhLoadCopy()]);
+    const picked = (dhContexts.data?.versions || []).find((item) => item.id === contextId);
+    dhNoticeSet(picked ? '当前项目档案已切为「' + picked.name + ' · v' + picked.version + '」，刷新后仍保留。' : '已切换项目档案，刷新后仍保留。');
   } catch (error) {
-    dhNoticeSet('选择失败：' + error.message);
+    dhNoticeSet('切换失败：' + error.message);
+    await dhLoadContexts();
   }
-  await dhLoadContexts();
+  dhRender();
+}
+
+/* 保留原有入口：从档案列表里直接选入生产草稿。 */
+async function dhSelectContext(contextId) {
+  await dhSwitchContext(contextId);
 }
 
 async function dhSaveCopyRequest() {
@@ -1093,7 +1303,7 @@ async function dhSaveCopyRequest() {
         platform: dhCopyRequestForm.platform,
         durationSeconds: Number(dhCopyRequestForm.durationSeconds) || undefined,
       }) });
-    dhNoticeSet('文案生成需求已保存（N02）。');
+    dhNoticeSet('文案生成需求已保存。');
     await dhLoadContexts();
   } catch (error) {
     dhContexts.status = 'error';
@@ -1106,7 +1316,7 @@ async function dhLoadResults() {
   dhResults.status = 'loading';
   dhRender();
   try {
-    const payload = await dhApi(DH_RESULTS_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_RESULTS_ENDPOINT));
     dhResults.data = payload.board || null;
     dhResults.status = 'ready';
   } catch (error) {
@@ -1121,7 +1331,7 @@ async function dhLoadPackage() {
   dhPackage.status = 'loading';
   dhRender();
   try {
-    const payload = await dhApi(DH_PACKAGE_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_PACKAGE_ENDPOINT));
     dhPackage.data = payload.package || null;
     dhPackage.status = 'ready';
   } catch (error) {
@@ -1178,7 +1388,7 @@ async function dhBatchExport(batchId) {
 }
 
 function dhNoticeSet(message) {
-  dhState.notice = { title: message, detail: '操作走的是真实批次接口；模拟输出不能审核通过或导出。', slice: 'F5-06/F5-07' };
+  dhState.notice = { title: message, detail: '操作走的是真实批次接口；模拟输出不能审核通过或导出。' };
 }
 
 async function dhCreateBatch() {
@@ -1228,7 +1438,7 @@ async function dhRunPreflight() {
     });
     dhPreflight.gate = payload.gate || null;
     dhPreflight.running = false;
-    const refreshed = await dhApi(DH_WORKSPACE_ENDPOINT);
+    const refreshed = await dhApi(dhScopedEndpoint(DH_WORKSPACE_ENDPOINT));
     dhWorkspace.data = refreshed.workspace || null;
     dhWorkspace.status = 'ready';
   } catch (error) {
@@ -1247,7 +1457,7 @@ async function dhLoadAssets() {
   dhAssets.error = null;
   dhRender();
   try {
-    const payload = await dhApi(DH_ASSETS_ENDPOINT);
+    const payload = await dhApi(dhScopedEndpoint(DH_ASSETS_ENDPOINT));
     dhAssets.data = payload.assets || null;
     dhAssets.status = 'ready';
     const draft = dhDraft.record;
@@ -1300,7 +1510,7 @@ async function dhSelectAsset(kind, versionId) {
     dhDraft.saveState = 'saved';
     dhDraft.saveMessage = '资产选择已写入生产草稿（' + field + '），刷新后仍然保留。';
     if (dhAssets.status === 'ready') {
-      const refreshed = await dhApi(DH_ASSETS_ENDPOINT);
+      const refreshed = await dhApi(dhScopedEndpoint(DH_ASSETS_ENDPOINT));
       dhAssets.data = refreshed.assets || null;
     }
   } catch (error) {
@@ -1392,9 +1602,7 @@ function dhNoticeBlock() {
     dhEscape(dhState.notice.title) +
     '</strong><p>' +
     dhEscape(dhState.notice.detail) +
-    '</p><small>所属切片：' +
-    dhEscape(dhState.notice.slice) +
-    ' · 现在不会产生任何真实视频文件。</small></div>' +
+    '</p><small>现在不会产生任何真实视频文件。</small></div>' +
     '<button class="button button-secondary button-small" type="button" data-dh-notice-close>关闭提示</button>' +
     '</div>'
   );
@@ -1475,10 +1683,10 @@ function dhModeCards() {
 
 function dhStartCards() {
   const steps = [
-    { index: '01', title: '项目与文案', detail: '选择行业/项目上下文，确认可以进入生产的文案。', slice: 'F5-03', tone: 'indigo', page: DH_PAGE_P02, ready: true },
-    { index: '02', title: '数字人资产', detail: '选择已启用的数字人形象和对应声音版本。', slice: 'F5-04', tone: 'amber', page: DH_PAGE_ASSETS, ready: true },
-    { index: '03', title: '视频与场景模板', detail: '模式 B 导入已有视频并校对映射，选择场景模板。', slice: 'F5-04', tone: 'mint', page: DH_PAGE_ASSETS, ready: true },
-    { index: '04', title: '内容包', detail: '只把已通过人工验收的结果打包导出。', slice: 'F5-07', tone: 'slate' },
+    { index: '01', title: '项目与文案', detail: '选择行业/项目上下文，确认可以进入生产的文案。', tone: 'indigo', page: DH_PAGE_P02, ready: true },
+    { index: '02', title: '数字人资产', detail: '选择已启用的数字人形象和对应声音版本。', tone: 'amber', page: DH_PAGE_ASSETS, ready: true },
+    { index: '03', title: '视频与场景模板', detail: '模式 B 导入已有视频并校对映射，选择场景模板。', tone: 'mint', page: DH_PAGE_ASSETS, ready: true },
+    { index: '04', title: '内容包', detail: '只把已通过人工验收的结果打包导出。', tone: 'slate' },
   ];
   return (
     '<section class="dh-start" aria-label="开始新的生产流程">' +
@@ -1491,13 +1699,13 @@ function dhStartCards() {
           '<span class="dh-start-index">' + dhEscape(step.index) + '</span>' +
           '<strong>' + dhEscape(step.title) + '</strong>' +
           '<small>' + dhEscape(step.detail) + '</small>' +
-          '<span class="dh-start-slice">' + dhEscape(step.slice) + (step.ready ? ' 已实现' : ' 待实现') + '</span>';
+          '<span class="dh-start-slice">' + (step.ready ? '已实现' : '待实现') + '</span>';
         if (step.page) {
           return '<button class="dh-start-card dh-tone-' + step.tone + '" type="button" data-dh-page="' + step.page + '">' + inner + '</button>';
         }
         return (
-          '<button class="dh-start-card dh-tone-' + step.tone + '" type="button" data-dh-notice="' + step.slice +
-          '" data-dh-notice-title="' + dhEscape(step.title) + '">' + inner + '</button>'
+          '<button class="dh-start-card dh-tone-' + step.tone + '" type="button" data-dh-notice="' +
+          dhEscape(step.title) + '">' + inner + '</button>'
         );
       })
       .join('') +
@@ -1619,7 +1827,7 @@ function dhTaskCard(task) {
     dhEscape(task.id) +
     '">查看详情</button>' +
     '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled aria-disabled="true" ' +
-    'title="下载视频属于 F5-06/F5-07，本切片未实现，也不会生成真实视频文件">下载视频（未实现）</button>' +
+    'title="下载视频需要的能力还没接入，也不会生成真实视频文件">下载视频（未实现）</button>' +
     '</footer>' +
     '</article>'
   );
@@ -1632,8 +1840,8 @@ function dhTaskList(scenario) {
       '<span aria-hidden="true">◌</span>' +
       '<strong>还没有任何生产任务</strong>' +
       '<p>生产中心会按“一条明细对应一个输出”的方式管理单条和批量任务。先准备项目与文案、数字人资产和场景模板，再创建第一个生产任务。</p>' +
-      '<button class="button button-dark button-small" type="button" data-dh-notice="F5-05" ' +
-      'data-dh-notice-title="新建生产任务">新建生产任务（F5-05 待实现）</button>' +
+      '<button class="button button-dark button-small" type="button" data-dh-notice="新建生产任务">' +
+      '新建生产任务（待实现）</button>' +
       '</div>'
     );
   }
@@ -1705,17 +1913,23 @@ const DH_REVIEW_SUMMARY_LABELS = {
 };
 
 const DH_ACTION_LABELS = {
-  configure_items: { label: '继续配置明细', slice: 'F5-05' },
-  fix_blockers: { label: '修复阻塞项', slice: 'F5-05' },
-  retry_item: { label: '重试本条', slice: 'F5-06' },
-  regenerate_item: { label: '修改输入后重新生成', slice: 'F5-06' },
-  review_item: { label: '进行人工验收', slice: 'F5-06' },
-  request_changes: { label: '退回修改', slice: 'F5-06' },
-  select_for_package: { label: '加入内容包', slice: 'F5-07' },
-  export_approved: { label: '导出已通过结果', slice: 'F5-07' },
+  create_context: { label: '创建项目档案' },
+  select_context: { label: '选择本次生产使用的项目档案' },
+  configure_copy_request: { label: '设置文案生成需求' },
+  configure_items: { label: '继续配置明细' },
+  fix_blockers: { label: '修复阻塞项' },
+  retry_item: { label: '重试本条' },
+  regenerate_item: { label: '修改输入后重新生成' },
+  review_item: { label: '进行人工验收' },
+  request_changes: { label: '退回修改' },
+  select_for_package: { label: '加入内容包' },
+  export_approved: { label: '导出已通过结果' },
 };
 
 const DH_NEXT_ACTION_LABELS = {
+  create_context: '先创建项目档案',
+  select_context: '先选择项目档案',
+  configure_copy_request: '先补齐文案生成需求',
   configure_items: '继续配置明细',
   fix_blockers: '修复阻塞项',
   retry_failed_items: '重试失败明细',
@@ -1746,6 +1960,12 @@ function dhAxisBadge(axis, status) {
 
 function dhNextActionText(code) {
   return DH_NEXT_ACTION_LABELS[code] || code || '暂无待处理项';
+}
+
+/* 服务端阻塞原因里带的内部编号（如「（N02）」）属于开发坐标，
+   面向用户只保留真实原因本身；只删后缀编号，不改写阻塞结论。 */
+function dhUserFacingReason(text) {
+  return String(text || '').replace(/\s*[（(](?:N|F5|S\d)[A-Za-z0-9-]*[）)]/g, '').trim();
 }
 
 function dhFormatTime(value) {
@@ -1836,7 +2056,7 @@ function dhAssetReadiness() {
     '<section class="panel dh-ready" aria-label="资产就绪度">' +
     '<div class="panel-heading"><div><div class="eyebrow">资产就绪度</div>' +
     '<h2>生产前还缺什么</h2>' +
-    '<p>这些数字直接来自资产目录接口，不是页面推断。缺项的对应页面在 F5-03 / F5-04 实现。</p></div></div>' +
+    '<p>这些数字直接来自资产目录接口，不是页面推断。缺项可以在生产资产页补齐。</p></div></div>' +
     '<ul class="dh-ready-list">' +
     rows
       .map((row) => {
@@ -1863,22 +2083,22 @@ function dhGateBlock() {
   const actions = Array.isArray(summary.allowedActions) ? summary.allowedActions : [];
   const nextAction = summary.nextAction || 'nothing_pending';
   return (
-    '<section class="panel dh-gate" aria-label="状态闸门">' +
-    '<div class="panel-heading"><div><div class="eyebrow">状态闸门</div>' +
+    '<section class="panel dh-gate" aria-label="进入生产的条件">' +
+    '<div class="panel-heading"><div><div class="eyebrow">进入生产的条件</div>' +
     '<h2>阻塞项与下一步</h2>' +
-    '<p>下一步来自服务端返回的 allowed_actions 和 next_action，页面不根据按钮是否报错猜测状态。' +
-    '本切片只实现读取与草稿，动作本身在标注的切片里实现。</p></div>' +
-    '<span class="phase-label">next_action：' + dhEscape(dhNextActionText(nextAction)) + '</span></div>' +
+    '<p>下一步来自服务端的判定结果，页面不根据按钮是否报错猜测状态。' +
+    '本页只做数据读取与任务草稿，没接入的动作会直接标成未接入。</p></div>' +
+    '<span class="phase-label">下一步：' + dhEscape(dhNextActionText(nextAction)) + '</span></div>' +
     '<div class="dh-gate-grid">' +
     '<div class="dh-gate-col">' +
-    '<h3>blocking_issues（' + issues.length + '）</h3>' +
+    '<h3>阻塞项（' + issues.length + '）</h3>' +
     (issues.length
       ? '<ul class="dh-gate-issues">' +
         issues
           .map(
             (item) =>
               '<li><code>' + dhEscape(item.code) + '</code>' +
-              '<span>' + dhEscape(DH_GAP_LABELS[item.code] || item.message || '') + '</span>' +
+              '<span>' + dhEscape(dhUserFacingReason(DH_GAP_LABELS[item.code] || item.message || '')) + '</span>' +
               (item.field ? '<small>字段：' + dhEscape(item.field) + '</small>' : '') +
               '</li>',
           )
@@ -1887,27 +2107,27 @@ function dhGateBlock() {
       : '<p class="dh-gate-empty">当前没有阻塞项。</p>') +
     '</div>' +
     '<div class="dh-gate-col">' +
-    '<h3>allowed_actions（' + actions.length + '）</h3>' +
+    '<h3>现在可以做的事（' + actions.length + '）</h3>' +
     (actions.length
       ? '<div class="dh-gate-actions">' +
         actions
           .map((action) => {
-            const meta = DH_ACTION_LABELS[action] || { label: action, slice: '后续切片' };
+            const meta = DH_ACTION_LABELS[action] || { label: action };
             return (
               '<button class="button button-secondary button-small dh-is-disabled" type="button"' +
               ' disabled aria-disabled="true"' +
-              ' title="' + dhEscape(meta.label + '属于 ' + meta.slice + '，本切片（F5-02）只做数据读取和草稿，未实现该动作') + '">' +
-              dhEscape(meta.label) + '<small>（' + dhEscape(meta.slice) + ' 待实现）</small></button>'
+              ' title="' + dhEscape(meta.label + '需要的能力尚未接入，本阶段只做数据读取与草稿，不做假提交') + '">' +
+              dhEscape(meta.label) + '<small>（未接入）</small></button>'
             );
           })
           .join('') +
         '</div>' +
-        '<p class="dh-gate-note">未实现的动作以 disabled 显示，并把所属切片写在按钮上，不会出现点了没反应的假按钮。</p>'
+        '<p class="dh-gate-note">未实现的动作以 disabled 显示，不会出现点了没反应的假按钮。</p>'
       : '<p class="dh-gate-empty">当前没有可执行动作。</p>') +
     '</div>' +
     '</div>' +
     '<p class="dh-axis-note">交付轴（未选择 / 已选择 / 已导出）在现有数据里还没有事实来源，' +
-    '因此明细统一显示“未选择交付”，接入点在 F5-07 的内容包。</p>' +
+    '因此明细统一显示“未选择交付”，接入点在后一阶段的内容包导出。</p>' +
     '</section>'
   );
 }
@@ -1925,9 +2145,9 @@ function dhRealItemRow(item) {
     (item.allowedActions.length
       ? item.allowedActions
           .map((action) => {
-            const meta = DH_ACTION_LABELS[action] || { label: action, slice: '后续切片' };
+            const meta = DH_ACTION_LABELS[action] || { label: action };
             return '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled' +
-              ' aria-disabled="true" title="' + dhEscape(meta.label + '属于 ' + meta.slice + '，本切片未实现') + '">' +
+              ' aria-disabled="true" title="' + dhEscape(meta.label + '需要的能力尚未接入，本阶段不做假提交') + '">' +
               dhEscape(meta.label) + '</button>';
           })
           .join('')
@@ -1962,7 +2182,7 @@ function dhRealTaskCard(task) {
     ((task.axes.generation.failed || 0) + (task.axes.generation.blocked || 0)) + ' · 待处理 ' +
     ((task.axes.generation.planned || 0) + (task.axes.generation.queued || 0)) + '</dd></div>' +
     '<div><dt>审核轴</dt><dd>' + dhEscape(DH_REVIEW_SUMMARY_LABELS[task.reviewSummary] || task.reviewSummary) + '</dd></div>' +
-    '<div><dt>交付轴</dt><dd>未接入（F5-07）</dd></div>' +
+    '<div><dt>交付轴</dt><dd>未接入</dd></div>' +
     '<div><dt>当前下一步</dt><dd>' + dhEscape(dhNextActionText(task.nextAction)) + '</dd></div>' +
     '<div><dt>最近更新</dt><dd>' + dhEscape(dhFormatTime(task.updatedAt)) + '</dd></div>' +
     '</dl>' +
@@ -1975,10 +2195,10 @@ function dhRealTaskCard(task) {
     '<footer class="dh-task-foot">' +
     task.allowedActions
       .map((action) => {
-        const meta = DH_ACTION_LABELS[action] || { label: action, slice: '后续切片' };
+        const meta = DH_ACTION_LABELS[action] || { label: action };
         return '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled' +
-          ' aria-disabled="true" title="' + dhEscape(meta.label + '属于 ' + meta.slice + '，本切片未实现') + '">' +
-          dhEscape(meta.label) + '（' + dhEscape(meta.slice) + ' 待实现）</button>';
+          ' aria-disabled="true" title="' + dhEscape(meta.label + '需要的能力尚未接入，本阶段不做假提交') + '">' +
+          dhEscape(meta.label) + '（未接入）</button>';
       })
       .join('') +
     '<span class="dh-task-foot-note">本页不提供任何成片下载：还没有真实视频，也不会生成假的下载链接。</span>' +
@@ -1995,7 +2215,7 @@ function dhRealTaskList() {
       '<span aria-hidden="true">◌</span>' +
       '<strong>真实数据里还没有生产任务</strong>' +
       '<p>这不是加载失败：后端生产批次接口当前返回 0 条批次，所以摘要里的计数全部为 0。' +
-      '生产任务会在 F5-05 由“项目与文案 + 数字人资产 + 场景模板”组合出来。</p>' +
+      '生产任务由“项目与文案 + 数字人资产 + 场景模板”组合出来，该能力尚未接入。</p>' +
       '</div>'
     );
   }
@@ -2029,7 +2249,7 @@ function dhContentTaskContext() {
   );
 }
 
-/* 最小任务草稿：F5-02 唯一的写入动作，落在 digital_human_drafts 表。 */
+/* 最小任务草稿：本页唯一的写入动作，落在 digital_human_drafts 表。 */
 function dhDraftCard() {
   const tasks = dhReal.summary?.contentTasks || [];
   const record = dhDraft.record;
@@ -2039,8 +2259,8 @@ function dhDraftCard() {
     '<div class="panel-heading"><div><div class="eyebrow">最小任务草稿</div>' +
     '<h2>先保存这次生产想做什么</h2>' +
     '<p>草稿只保存意图，不产生明细、不进入状态机、不会生成视频。' +
-    '真正的批次仍然由 F5-05 的 preflight + 批次计划产生。</p></div>' +
-    '<span class="phase-label">F5-02（本切片唯一写入）</span></div>' +
+    '真正的批次仍然由生成前检查与批次计划产生。</p></div>' +
+    '<span class="phase-label">只写入草稿</span></div>' +
     '<div class="dh-draft-form">' +
     '<label class="dh-field"><span>关联内容任务</span>' +
     '<select data-dh-draft-field="taskId">' +
@@ -2120,7 +2340,7 @@ function dhRenderReal() {
     '<div class="view-intro-row">' +
     '<div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
     '<p>用已确认文案、员工数字人或已有视频，生成并人工验收口播视频。这是内容编辑云员工下面的批量生产中心，不是独立产品。</p></div>' +
-    '<span class="view-intro-status">P01 · 生产中心</span>' +
+    '<span class="view-intro-status">生产中心</span>' +
     '</div>' +
     dhRenderCreatePanel() +
     '<div class="dh-toolbar">' +
@@ -2154,7 +2374,7 @@ function dhRenderReal() {
           '</section>' +
           dhContentTaskContext() +
           dhDraftCard(),
-          /* 侧栏：参考信息（资产就绪度 / 数据源 / 状态闸门 / 演示与说明） */
+          /* 侧栏：参考信息（资产就绪度 / 数据源 / 进入生产的条件 / 演示与说明） */
           dhAssetReadiness() +
           dhSourceBar() +
           dhGateBlock() +
@@ -2166,8 +2386,8 @@ function dhRenderReal() {
         )
       : dhModeSwitcher()) +
     '<footer class="dh-footnote">' +
-    '<span>当前切片：F5-04 生产资产（P03/P04/P05）</span>' +
-    '<span>后续：F5-05 P06 生产任务 → F5-06 P07 人工验收 → F5-07 P08 内容包</span>' +
+    '<span>当前步骤：00 生产中心总览</span>' +
+    '<span>流程：01 项目与文案 → 02 生产资产 → 03 生产任务 → 04 人工验收 → 05 内容包</span>' +
     '</footer>';
 }
 
@@ -2247,7 +2467,7 @@ function dhFlowSteps() {
 
 function dhFlowBar() {
   const steps = dhFlowSteps();
-  const current = steps.find((step) => step.status !== 'done') || steps[steps.length - 1];
+  const current = steps.find((step) => step.page === dhState.page) || steps.find((step) => step.status !== 'done') || steps[steps.length - 1];
   return (
     '<nav class="dh-flow" aria-label="口播生产流程位置">' +
     '<div class="dh-flow-head">' +
@@ -2264,7 +2484,7 @@ function dhFlowBar() {
           '<span class="dh-flow-label">' + dhEscape(step.label) + '</span>' +
           '<small class="dh-flow-metric">' + dhEscape(step.metric) + '</small>' +
           '<span class="dh-flow-state">' +
-          (step.wired ? '' : '<small class="dh-flow-unwired">' + dhEscape(step.slice) + ' 待接入</small>') +
+          (step.wired ? '' : '<small class="dh-flow-unwired">待接入</small>') +
           dhStatusBadge(meta, 'dh-flow-badge') +
           '</span>';
         return (
@@ -2273,7 +2493,7 @@ function dhFlowBar() {
             ? '<button type="button" class="dh-flow-step-btn" data-dh-page="' + dhEscape(step.page) + '"' +
               ' title="进入' + dhEscape(step.label) + '">' + inner + '</button>'
             : '<div class="dh-flow-step-btn" role="presentation"' +
-              (step.wired ? '' : ' title="' + dhEscape((step.slice || '') + ' 尚未接入，当前切片未实现') + '"') + '>' + inner + '</div>') +
+              (step.wired ? '' : ' title="' + dhEscape(step.label + '需要的能力尚未接入') + '"') + '>' + inner + '</div>') +
           '</li>'
         );
       })
@@ -2293,7 +2513,7 @@ function dhLayout(mainHtml, sideHtml) {
   );
 }
 
-/* P01 的“下一步”行动卡：整页唯一的主行动，来自服务端 next_action + 阻塞项。 */
+/* P01 的“下一步”行动卡：整页唯一的主行动，来自服务端判定结果与阻塞项。 */
 function dhNextActionCard() {
   const summary = dhReal.summary || {};
   const nextAction = summary.nextAction || 'nothing_pending';
@@ -2327,7 +2547,7 @@ function dhNextActionCard() {
   };
   const resolved = map[nextAction] || {
     title: dhNextActionText(nextAction),
-    detail: '下一步由服务端状态闸门给出。',
+    detail: '下一步由服务端的状态判定给出。',
     action: null,
   };
   return (
@@ -2344,7 +2564,7 @@ function dhNextActionCard() {
       ? '<button class="button button-dark" type="button" data-dh-page="' + dhEscape(resolved.action.page) + '">' +
         dhEscape(resolved.action.label) + ' →</button>'
       : '<button class="button button-dark dh-is-disabled" type="button" disabled aria-disabled="true"' +
-        ' title="该动作属于后续切片，本切片未实现">处理入口待接入（F5-06）</button>') +
+        ' title="该动作需要的能力尚未接入，本页不提供假入口">处理入口待接入</button>') +
     '</section>'
   );
 }
@@ -2352,7 +2572,7 @@ function dhNextActionCard() {
 
 
 /* ---------------------------------------------------------------------------
-   F5-03：P02 项目与文案（本模块内部子页面）
+   P02：项目与文案（本模块内部子页面）
    --------------------------------------------------------------------------- */
 
 const DH_COPY_STATUS_LABELS = {
@@ -2386,35 +2606,35 @@ function dhCopyGate() {
   const issues = Array.isArray(data.blockingIssues) ? data.blockingIssues : [];
   const actions = Array.isArray(data.allowedActions) ? data.allowedActions : [];
   return (
-    '<section class="panel dh-gate" aria-label="文案状态闸门">' +
-    '<div class="panel-heading"><div><div class="eyebrow">状态闸门</div>' +
+    '<section class="panel dh-gate" aria-label="文案进入生产的条件">' +
+    '<div class="panel-heading"><div><div class="eyebrow">进入生产的条件</div>' +
     '<h2>文案能不能进入生产任务</h2>' +
-    '<p>只有 confirmed（已确认且有正文）的文案版本可以被生产任务引用。' +
-    '这一条由服务端投影判定，页面只负责显示。</p></div>' +
-    '<span class="phase-label">next_action：' + dhEscape(dhNextActionText(data.nextAction)) + '</span></div>' +
+    '<p>只有已确认且有正文的文案版本可以被生产任务引用。' +
+    '这一条由服务端判定，页面只负责显示真实结论。</p></div>' +
+    '<span class="phase-label">下一步：' + dhEscape(dhNextActionText(data.nextAction)) + '</span></div>' +
     '<div class="dh-gate-grid">' +
     '<div class="dh-gate-col">' +
-    '<h3>blocking_issues（' + issues.length + '）</h3>' +
+    '<h3>阻塞项（' + issues.length + '）</h3>' +
     (issues.length
       ? '<ul class="dh-gate-issues">' +
         issues
           .map((item) => '<li><code>' + dhEscape(item.code) + '</code><span>' +
-            dhEscape(DH_GAP_LABELS[item.code] || item.message || '') + '</span></li>')
+            dhEscape(dhUserFacingReason(DH_GAP_LABELS[item.code] || item.message || '')) + '</span></li>')
           .join('') + '</ul>'
       : '<p class="dh-gate-empty">当前没有阻塞项。</p>') +
     '</div>' +
     '<div class="dh-gate-col">' +
-    '<h3>allowed_actions（' + actions.length + '）</h3>' +
+    '<h3>现在可以做的事（' + actions.length + '）</h3>' +
     '<div class="dh-gate-actions">' +
     actions
       .map((action) => {
         if (action === 'select_copy') {
           return '<button class="button button-secondary button-small" type="button" data-dh-copy-focus-select>在下方候选中选择一条已确认文案</button>';
         }
-        const meta = DH_ACTION_LABELS[action] || { label: action, slice: '后续切片' };
+        const meta = DH_ACTION_LABELS[action] || { label: action, slice: '后续能力' };
         return '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled aria-disabled="true"' +
-          ' title="' + dhEscape(meta.label + '属于 ' + meta.slice + '，本切片未实现') + '">' +
-          dhEscape(meta.label) + '<small>（' + dhEscape(meta.slice) + ' 待实现）</small></button>';
+          ' title="' + dhEscape(meta.label + '需要的能力尚未接入，本阶段不做假提交、不写入演示数据') + '">' +
+          dhEscape(meta.label) + '<small>（未接入）</small></button>';
       })
       .join('') +
     '</div>' +
@@ -2509,7 +2729,7 @@ function dhContextBlock() {
   const selectedId = stage?.selectedContextId;
   return (
     '<section class="panel dh-queue" aria-label="项目上下文">' +
-    '<div class="panel-heading"><div><div class="eyebrow">项目上下文 · N01</div>' +
+    '<div class="panel-heading"><div><div class="eyebrow">项目上下文</div>' +
     '<h2>这次文案为哪个行业、哪类受众服务</h2>' +
     '<p>行业、产品、受众、卖点和内容目标决定文案方向。编辑会产生新版本，旧版本永远可以回溯。</p></div>' +
     '<button class="button button-secondary button-small" type="button" data-dh-contexts-reload>重新读取</button></div>' +
@@ -2532,7 +2752,7 @@ function dhContextBlock() {
             '</footer></li>').join('') +
         '</ul>'
       : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span><strong>还没有项目上下文</strong>' +
-        '<p>行业、产品、受众、卖点、内容目标是文案和生产的前提（N01）。在下方创建第一个档案。</p></div>') +
+        '<p>行业、产品、受众、卖点、内容目标是文案和生产的前提。在下方创建第一个档案。</p></div>') +
     '</section>'
   );
 }
@@ -2540,7 +2760,7 @@ function dhContextBlock() {
 function dhContextFormBlock() {
   return (
     '<section class="panel dh-draft" aria-label="项目上下文表单">' +
-    '<div class="panel-heading"><div><div class="eyebrow">项目上下文表单 · N01</div>' +
+    '<div class="panel-heading"><div><div class="eyebrow">项目上下文表单</div>' +
     '<h2>新建档案，或编辑已选档案（产生新版本）</h2>' +
     '<p>编辑不会改写旧版本：旧生产任务引用的上下文永远可以回溯。</p></div></div>' +
     '<div class="dh-draft-form">' +
@@ -2565,9 +2785,10 @@ function dhCopyRequestBlock() {
   const issues = stage?.requestIssues || [];
   return (
     '<section class="panel dh-draft" aria-label="文案生成需求">' +
-    '<div class="panel-heading"><div><div class="eyebrow">文案生成需求 · N02</div>' +
+    '<div class="panel-heading"><div><div class="eyebrow">文案生成需求</div>' +
     '<h2>批量候选要多少、往哪个方向、发在哪</h2>' +
-    '<p>N03 AI 批量生成的模型提供方尚未配置——本阶段先保存需求并用手动登记候选占位，生成按钮只会明确阻塞。</p></div></div>' +
+    '<p>AI 批量生成需要的模型提供方尚未配置——本阶段先保存需求，并用手动登记候选补位，生成按钮只会明确阻塞。</p>' +
+    '<p class="dh-copy-request-note">再次保存会更新该项目最近一条活动需求；此处不展示需求历史或生成批次。</p></div></div>' +
     '<div class="dh-draft-form">' +
     '<label class="dh-field"><span>数量（1–50）</span><input type="number" min="1" max="50" data-dh-ctx-field="count" value="' + dhEscape(String(dhCopyRequestForm.count || 3)) + '" /></label>' +
     '<label class="dh-field"><span>方向</span><input type="text" data-dh-ctx-field="direction" value="' + dhEscape(dhCopyRequestForm.direction) + '" placeholder="例如：破除「发手机是福利」的误解" /></label>' +
@@ -2578,12 +2799,376 @@ function dhCopyRequestBlock() {
     '</div>' +
     '<div class="dh-draft-foot">' +
     '<button class="button button-dark button-small" type="button" data-dh-req-save>保存需求</button>' +
-    '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled aria-disabled="true" title="N03 模型提供方未配置：本阶段不接真实生成">AI 批量生成（未配置）</button>' +
+    '<button class="button button-secondary button-small dh-is-disabled" type="button" disabled aria-disabled="true" title="模型提供方未配置：本阶段不接真实生成，页面不做假提交">AI 批量生成（未接入）</button>' +
     '<small>' + (request ? '当前需求已保存：' + (request.count || '—') + ' 条 · ' + dhEscape(request.direction || '—') + ' · ' + dhEscape(request.platform || '—') : '尚未保存需求') + '</small>' +
     '</div>' +
-    (issues.length ? '<ul class="dh-gate-issues">' + issues.map((issue) => '<li><code>' + dhEscape(issue.code) + '</code><span>' + dhEscape(issue.message) + '</span></li>').join('') + '</ul>' : '') +
+    (issues.length ? '<ul class="dh-gate-issues">' + issues.map((issue) => '<li><code>' + dhEscape(issue.code) + '</code><span>' + dhEscape(dhUserFacingReason(issue.message)) + '</span></li>').join('') + '</ul>' : '') +
     '</section>'
   );
+}
+
+function dhCopyContextsFeedback() {
+  if (dhContexts.status === 'error') {
+    return (
+      '<section class="dh-error" role="alert"><span class="dh-error-mark" aria-hidden="true">!</span>' +
+      '<div><strong>项目档案与文案需求读取失败</strong>' +
+      '<p>' + dhEscape(dhContexts.error?.message || '未知错误') + '</p></div>' +
+      '<button class="button button-secondary button-small" type="button" data-dh-contexts-reload>重新读取</button></section>'
+    );
+  }
+  return (
+    '<section class="dh-loading" role="status"><span aria-hidden="true">◌</span>' +
+    '<div><strong>正在读取项目档案与文案需求</strong>' +
+    '<p>数据来自现有项目上下文接口；不会用演示内容替代真实记录。</p></div></section>'
+  );
+}
+
+/* 项目切换的读写：当前值来自草稿接口的 selectedContextId（服务端持久化），
+   下拉只负责提交选择，未保存前不会假装已切换。 */
+function dhContextReadiness(stage, copy, assets) {
+  const versions = stage?.versions || [];
+  const selected = versions.find((item) => item.id === stage?.selectedContextId) || null;
+  const requestIssues = stage?.requestIssues || [];
+  const request = stage?.request || null;
+  return [
+    {
+      key: 'profile',
+      label: '项目档案',
+      done: Boolean(selected),
+      detail: selected
+        ? selected.name + ' · v' + selected.version
+        : versions.length ? '已有 ' + versions.length + ' 个档案，但本次生产还没选定' : '还没有项目档案',
+      tab: 'profile',
+      cta: versions.length ? '选择项目档案' : '创建项目档案',
+    },
+    {
+      key: 'request',
+      label: '文案需求',
+      done: Boolean(request) && !requestIssues.length,
+      detail: request
+        ? (requestIssues.length
+          ? dhUserFacingReason(requestIssues[0].message)
+          : request.count + ' 条 · ' + (request.direction || '未填方向') + ' · ' + (request.platform || '未填平台'))
+        : '还没有保存文案生成需求',
+      tab: 'request',
+      cta: request ? '调整文案需求' : '设置文案需求',
+    },
+    {
+      key: 'candidates',
+      label: '可生产文案',
+      done: Number(copy.confirmedCount || 0) > 0,
+      detail: (copy.total || 0) + ' 条候选，其中已确认 ' + (copy.confirmedCount || 0) + ' 条',
+      tab: 'candidates',
+      cta: '查看文案候选',
+    },
+    {
+      key: 'draft',
+      label: '已选入生产草稿',
+      done: Boolean(copy.selectedScriptVersionId),
+      detail: copy.selectedScriptVersionId ? '生产任务已引用一条已确认文案' : '还没有把已确认文案选入生产草稿',
+      tab: 'candidates',
+      cta: '去选一条文案',
+    },
+    {
+      key: 'assets',
+      label: '生产资产',
+      done: Number(assets.avatars || 0) > 0 && Number(assets.voices || 0) > 0 && Number(assets.templates || 0) > 0,
+      detail: '形象 ' + (assets.avatars || 0) + ' · 声音 ' + (assets.voices || 0) + ' · 模板 ' + (assets.templates || 0),
+      page: DH_PAGE_ASSETS,
+      cta: '进入 02 生产资产',
+    },
+  ];
+}
+
+/* 切换控件的提示文案：只描述真实可执行情形，不提前写成功。 */
+function dhContextSwitchHint(hasVersions, canSubmit, hasPendingChange, failed, hasSelection) {
+  if (failed) return '项目档案读取失败，暂时无法切换';
+  if (!hasVersions) return '先创建一个项目档案，才能切换当前档案';
+  if (!hasSelection) return '还没有选定当前档案：在下拉里选一个，再点「切换档案」写入生产草稿';
+  if (!canSubmit) return '当前还没有可关联的内容任务，无法保存选择';
+  if (hasPendingChange) return '尚未保存：确认后写入生产草稿，刷新与切换页签后仍保持一致';
+  return '当前档案已写入生产草稿，刷新与切换页签后仍保持一致';
+}
+
+/* 工作台项目切换提示：只描述真实可执行情形，不把待提交选择写成已切换。 */
+function dhProjectSwitchHint(status, count, canSwitch, hasPendingChange, error) {
+  if (status === 'loading') return '正在读取当前用户可访问的工作台项目…';
+  if (status === 'error') return '工作台项目读取失败：' + (error || '未知错误');
+  if (!count) return '当前账号还没有可访问的工作台项目，因此暂时无法按项目隔离数据';
+  if (count === 1) return '只有一个可访问项目，因此切换保持禁用（新建项目不在这个页面负责）';
+  if (hasPendingChange) return canSwitch
+    ? '尚未切换：确认后重新拉取该项目的档案、文案与任务'
+    : '项目数据读取中，完成后可切换';
+  return '已按当前项目隔离读取；项目档案与工作台项目是两个层级';
+}
+
+/* V4-02b：工作台项目（/api/workspace/projects）与下面的项目档案（contexts）分开展示、分别选择。 */
+function dhWorkbenchProjectBlock() {
+  const list = dhProjects.list;
+  const currentId = dhState.projectScope;
+  const current = list.find((item) => item.id === currentId) || null;
+  const pendingId = list.some((item) => item.id === dhState.projectPick) ? dhState.projectPick : currentId;
+  const canSwitch = dhProjects.status === 'ready' && list.length > 1;
+  const projectName = current?.name
+    || (dhReal.summary?.project?.id === currentId ? dhReal.summary?.project?.name : null)
+    || (dhProjects.status === 'loading' ? '读取中'
+      : dhProjects.status === 'error' ? '读取失败'
+        : list.length ? '未选择项目' : '暂无可访问项目');
+  return (
+    '<div class="dh-home-scope">' +
+    '<div class="dh-home-scope-main">' +
+    '<small>工作台项目</small>' +
+    '<strong>' + dhEscape(projectName) + '</strong>' +
+    (current
+      ? '<p>' + dhEscape([current.slug, current.status].filter(Boolean).join(' · ')) + '</p>' +
+        '<p class="dh-home-facts"><strong>说明：</strong>' + dhEscape(current.description || '未填写') +
+        '　<strong>更新于：</strong>' + dhEscape(dhFormatTime(current.updatedAt)) + '</p>'
+      : '<p>' + (dhProjects.status === 'error'
+        ? dhEscape(dhProjects.error?.message || '未知错误')
+        : '工作台项目决定本页读取哪个项目的档案、文案与生产任务。') + '</p>') +
+    '</div>' +
+    '<div class="dh-scope-switch">' +
+    '<label class="dh-field"><span>切换工作台项目</span>' +
+    (list.length
+      ? '<select data-dh-project-pick' + (canSwitch ? '' : ' disabled aria-disabled="true"') + '>' +
+        list.map((item) =>
+          '<option value="' + dhEscape(item.id) + '"' + (item.id === pendingId ? ' selected' : '') + '>' +
+          dhEscape(item.name) + '</option>').join('') + '</select>'
+      : '<select data-dh-project-pick disabled aria-disabled="true"><option value="">暂无可访问项目</option></select>') +
+    '</label>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-project-pick-save' +
+    (canSwitch && pendingId && pendingId !== currentId ? '' : ' disabled aria-disabled="true"') +
+    (canSwitch
+      ? (pendingId && pendingId !== currentId ? '' : ' title="先在上方下拉里选择另一个工作台项目"')
+      : ' title="' + dhEscape(list.length > 1 ? '项目列表还在读取' : '只有一个项目时无需切换') + '"') +
+    '>切换项目</button>' +
+    '<small>' + dhEscape(dhProjectSwitchHint(
+      dhProjects.status,
+      list.length,
+      canSwitch,
+      Boolean(pendingId) && pendingId !== currentId,
+      dhProjects.error?.message,
+    )) + '</small>' +
+    '</div></div>'
+  );
+}
+
+/* V4-02b：最近文案预览。只展示接口真实返回的候选与确认状态，不把它们当成生成批次。 */
+function dhRecentCopyBlock() {
+  const copy = dhCopy.data || {};
+  const candidates = [...(copy.candidates || [])]
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+    .slice(0, 3);
+  return (
+    '<section class="dh-home-recent" aria-label="最近文案预览">' +
+    '<div class="dh-home-recent-head">' +
+    '<div><small>最近文案</small><strong>' + dhEscape(String(copy.total ?? 0)) + ' 条候选 · 已确认 ' +
+    dhEscape(String(copy.confirmedCount ?? 0)) + ' 条</strong></div>' +
+    '<button class="button-link" type="button" data-dh-copy-tab="candidates">查看全部文案批次</button>' +
+    '</div>' +
+    (dhCopy.status === 'error'
+      ? '<p class="dh-gate-note">文案读取失败，因此这里不展示任何候选：' +
+        dhEscape(dhCopy.error?.message || '未知错误') + '</p>'
+      : candidates.length
+        ? '<ul class="dh-home-recent-list">' + candidates.map((item) =>
+          '<li><div><strong>' + dhEscape(item.title) + '</strong>' +
+          '<small>更新于 ' + dhEscape(dhFormatTime(item.updatedAt)) +
+          ' · v' + dhEscape(String(item.version ?? '—')) + '</small></div>' +
+          '<span class="dh-chip ' + (item.confirmed ? 'dh-chip-real' : '') + '">' +
+          dhEscape(item.confirmed ? '已确认' : '未确认') +
+          (copy.selectedScriptVersionId === item.id ? ' · 已选入草稿' : '') + '</span></li>').join('') + '</ul>'
+        : '<p class="dh-gate-empty">这个项目下还没有真实文案候选。</p>') +
+    '<p class="dh-gate-note">以上是现有接口返回的文案候选（script_versions）按更新时间的预览；'
+    + '当前接口没有真实的文案生成批次列表，因此这里不代表批次，批次管理仍待后续文案批次切片接入。</p>' +
+    '</section>'
+  );
+}
+
+function dhProjectCenterBlock() {
+  const project = dhReal.summary?.project;
+  const stage = dhContexts.data;
+  const copy = dhCopy.data || {};
+  const assets = dhReal.summary?.assets || {};
+  const versions = stage?.versions || [];
+  const selected = versions.find((item) => item.id === stage?.selectedContextId) || null;
+  const checks = dhContextReadiness(stage, copy, assets);
+  const readyCount = checks.filter((item) => item.done).length;
+  const nextAction = stage?.nextAction || 'nothing_pending';
+  const blocking = stage?.blockingIssues || [];
+  const currentContextId = stage?.selectedContextId || null;
+  /* 下拉只展示待提交的选择；未确认前不假装已切换。 */
+  const pendingContextId = versions.some((item) => item.id === dhState.contextPick)
+    ? dhState.contextPick
+    : currentContextId;
+  const canSwitchContext = versions.length > 0 && Boolean(dhDraft.record?.taskId || dhDraftForm.taskId);
+  return (
+    '<section class="panel dh-home" aria-label="项目与文案中心">' +
+    '<div class="panel-heading"><div><div class="eyebrow">项目与文案中心</div>' +
+    '<h2>' + dhEscape(dhProjects.list.find((item) => item.id === dhState.projectScope)?.name
+      || (project?.id && project?.id === dhState.projectScope ? project.name : null)
+      || (dhProjects.status === 'loading' ? '正在读取工作台项目'
+        : dhProjects.status === 'error' ? '工作台项目读取失败'
+          : dhProjects.list.length ? '未选择工作台项目' : '暂无可访问项目')) + '</h2>' +
+    '<p>本页分两层：工作台项目决定读哪个项目的数据；项目档案决定这项目的行业、产品、受众与卖点。</p></div>' +
+    '<div class="dh-home-head-actions">' +
+    '<span class="dh-home-readiness">准备度 ' + readyCount + ' / ' + checks.length + '</span>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-refresh' +
+    (dhReal.status === 'loading' ? ' disabled aria-disabled="true"' : '') + '>重新读取</button>' +
+    '</div></div>' +
+
+    dhWorkbenchProjectBlock() +
+
+    '<div class="dh-home-current">' +
+    '<div class="dh-home-current-main">' +
+    '<small>当前项目档案</small>' +
+    (selected
+      ? '<strong>' + dhEscape(selected.name) + ' · v' + selected.version + '</strong>' +
+        '<p>' + dhEscape([selected.industry, selected.product, selected.audience].filter(Boolean).join(' · ') || '未填写行业 / 产品 / 受众') + '</p>' +
+        '<p class="dh-home-facts"><strong>卖点：</strong>' + dhEscape((selected.sellingPoints || []).join('；') || '—') +
+        '　<strong>内容目标：</strong>' + dhEscape(selected.contentGoal || '—') + '</p>'
+      : '<strong>未选择项目档案</strong>' +
+        '<p>' + (versions.length
+          ? '已有 ' + versions.length + ' 个可用档案，选定后文案与生产任务才会挂到它下面。'
+          : '项目档案决定行业、产品、受众与卖点，是文案与生产的前提；先创建第一个档案。') + '</p>') +
+    '</div>' +
+    '<div class="dh-ctx-switch">' +
+    '<label class="dh-field"><span>切换当前项目档案</span>' +
+    (versions.length
+      ? '<select data-dh-ctx-pick>' +
+        /* 没选定当前档案时给一个真实存在的空选项，避免浏览器默认选中第一项造成「已切换」假象。 */
+        (currentContextId ? '' : '<option value=""' + (pendingContextId ? '' : ' selected') + '>未选择当前档案</option>') +
+        versions.map((item) =>
+          '<option value="' + dhEscape(item.id) + '"' + (item.id === pendingContextId ? ' selected' : '') + '>' +
+          dhEscape(item.name + ' · v' + item.version) + '</option>').join('') + '</select>'
+      : '<select data-dh-ctx-pick disabled aria-disabled="true"><option value="">暂无可切换档案</option></select>') +
+    '</label>' +
+    '<button class="button button-dark button-small" type="button" data-dh-ctx-pick-save' +
+    (canSwitchContext && pendingContextId ? '' : ' disabled aria-disabled="true"') +
+    (canSwitchContext
+      ? (pendingContextId ? '' : ' title="先在上方下拉里选择一个项目档案"')
+      : ' title="' + dhEscape(versions.length ? '还需要一个内容任务来承载选择' : '先创建一个项目档案') + '"') +
+    '>切换档案</button>' +
+    '<small>' + dhEscape(dhContextSwitchHint(
+      versions.length,
+      canSwitchContext,
+      Boolean(pendingContextId) && pendingContextId !== currentContextId,
+      dhContexts.status === 'error',
+      Boolean(pendingContextId),
+    )) + '</small>' +
+    '</div></div>' +
+
+    '<div class="dh-home-metrics" role="list">' +
+    checks.map((item) =>
+      '<div class="dh-home-metric' + (item.done ? ' is-done' : '') + '" role="listitem">' +
+      '<span class="dh-home-metric-state" aria-hidden="true">' + (item.done ? '✓' : '○') + '</span>' +
+      '<div><strong>' + dhEscape(item.label) + '</strong><small>' + dhEscape(item.detail) + '</small>' +
+      /* 每张卡都带一个可执行的去处：页签内动作走页签切换，资产页走页面导航，复用既有事件委托。 */
+      '<button class="dh-home-metric-cta" type="button"' +
+      (item.page
+        ? ' data-dh-page="' + dhEscape(item.page) + '"'
+        : ' data-dh-copy-tab="' + dhEscape(item.tab) + '"') + '>' +
+      dhEscape(item.cta) + '</button></div></div>').join('') +
+    '</div>' +
+
+    dhRecentCopyBlock() +
+
+    '<div class="dh-home-next">' +
+    '<div><small>下一步</small><strong>' + dhEscape(dhNextActionText(nextAction)) + '</strong></div>' +
+    (blocking.length
+      ? '<ul class="dh-gate-issues">' + blocking.map((item) =>
+        '<li><span>' + dhEscape(dhUserFacingReason(item.message)) + '</span></li>').join('') + '</ul>'
+      : '<p class="dh-gate-empty">当前没有阻塞项。</p>') +
+    '</div>' +
+
+    (dhReal.status === 'error'
+      ? '<p class="dh-gate-note">项目状态读取失败：' + dhEscape(dhReal.error?.message || '未知错误') + '</p>'
+      : '') +
+    (dhCopy.status === 'error'
+      ? '<p class="dh-gate-note">文案数据读取失败：' + dhEscape(dhCopy.error?.message || '未知错误') + '</p>'
+      : '') +
+    (dhContexts.status === 'error'
+      ? '<p class="dh-gate-note">项目档案读取失败：' + dhEscape(dhContexts.error?.message || '未知错误') + '</p>'
+      : '') +
+
+    '<div class="dh-home-entries" aria-label="项目与文案页面入口">' +
+    DH_COPY_TAB_META.map((tab) => {
+      const disabled = Boolean(tab.reason);
+      return '<button class="dh-home-entry' + (disabled ? ' is-disabled' : '') + '" type="button"' +
+        (disabled
+          ? ' disabled aria-disabled="true" title="' + dhEscape(tab.reason) + '"'
+          : ' data-dh-copy-tab="' + tab.id + '"') + '>' +
+        '<strong>' + dhEscape(tab.label) + '</strong>' +
+        '<small>' + dhEscape(disabled ? '待接入 · ' + tab.reason : tab.slice) + '</small></button>';
+    }).join('') +
+    '</div>' +
+
+    '<p class="dh-home-source">本页数据来自 /api/workspace/projects（工作台项目）、/api/content/digital-human/summary、/api/content/digital-human/contexts 与 /api/content/digital-human/copy；未接入的能力保持禁用，不注入示例数据。</p>' +
+    '</section>'
+  );
+}
+
+function dhCopyTabNav() {
+  return (
+    '<nav class="dh-copy-tabs" aria-label="项目与文案页面">' +
+    DH_COPY_TAB_META.map((tab) => {
+      const disabled = Boolean(tab.reason);
+      const active = dhState.copyTab === tab.id;
+      return (
+        '<button class="dh-copy-tab' + (active ? ' is-active' : '') + (disabled ? ' is-disabled' : '') + '" type="button"' +
+        (disabled
+          ? ' disabled aria-disabled="true" title="' + dhEscape(tab.reason) + '"'
+          : ' data-dh-copy-tab="' + tab.id + '"' + (active ? ' aria-current="page"' : '')) + '>' +
+        '<span>' + dhEscape(tab.label) + '</span>' +
+        (disabled ? '<small>待接入 · ' + dhEscape(tab.reason) + '</small>' : '') +
+        '</button>'
+      );
+    }).join('') +
+    '</nav>'
+  );
+}
+
+function dhCopyCandidatesBlock() {
+  if (dhCopy.status === 'loading' || dhCopy.status === 'idle') {
+    return (
+      '<section class="dh-loading" role="status"><span aria-hidden="true">◌</span>' +
+      '<div><strong>正在读取真实文案</strong><p>候选与确认状态来自现有文案接口。</p></div></section>'
+    );
+  }
+  if (dhCopy.status === 'error') {
+    return (
+      '<section class="dh-error" role="alert"><span class="dh-error-mark" aria-hidden="true">!</span>' +
+      '<div><strong>文案数据读取失败，因此这里不显示任何候选</strong>' +
+      '<p>' + dhEscape(dhCopy.error?.message || '未知错误') + '</p>' +
+      '<small>页面不会用示例文案冒充真实文案库。</small></div>' +
+      '<button class="button button-secondary button-small" type="button" data-dh-copy-reload>重新读取</button></section>'
+    );
+  }
+  const candidates = dhCopy.data?.candidates || [];
+  return (
+    '<section class="panel dh-queue" aria-label="文案候选列表">' +
+    '<div class="panel-heading"><div><div class="eyebrow">文案候选</div>' +
+    '<h2>选择或登记可用于生产的文案</h2>' +
+    '<p>当前接口提供文案候选及确认状态，没有批次列表；此处不代表批量生成结果。</p></div>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-copy-reload>重新读取文案</button></div>' +
+    (candidates.length
+      ? '<div class="dh-copy-list">' + candidates.map(dhCopyCard).join('') + '</div>'
+      : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span>' +
+        '<strong>真实文案库里还没有任何候选</strong>' +
+        '<p>在下方登记第一条文案，或回到内容编辑工作流里生成文案。</p></div>') +
+    '</section>' + dhCopyRegisterForm() + dhCopyGate() + dhCopySourceBar()
+  );
+}
+
+function dhCopyTabContent() {
+  if (dhState.copyTab === 'overview') {
+    if (dhContexts.status === 'loading' || dhContexts.status === 'idle') return dhCopyContextsFeedback();
+    return dhProjectCenterBlock();
+  }
+  if (dhState.copyTab === 'candidates') return dhCopyCandidatesBlock();
+  if (dhContexts.status !== 'ready') return dhCopyContextsFeedback();
+  if (dhState.copyTab === 'profile') return dhContextBlock() + dhContextFormBlock();
+  if (dhState.copyTab === 'request') return dhCopyRequestBlock();
+  return dhProjectCenterBlock();
 }
 
 /* F5-C2：监控中心带入的作品来源。只读展示，不自动视为已授权素材，也不创建内容任务。 */
@@ -2615,69 +3200,55 @@ function dhWorkPrefillBlock() {
 }
 
 function dhRenderCopy() {
-  const ready = dhCopy.status === 'ready' && dhCopy.data;
+  /* V4-02b：工具条展示工作台项目名；项目档案在页内单独展示，不与项目混为一个字段。 */
+  const projectName = dhProjects.list.find((item) => item.id === dhState.projectScope)?.name
+    || dhReal.summary?.project?.name
+    || (
+      dhProjects.status === 'loading' || dhReal.status === 'loading'
+        ? '读取中'
+        : dhProjects.status === 'error' || dhReal.status === 'error' ? '读取失败' : '未关联项目'
+    );
+  const candidates = dhCopy.status === 'ready' && dhCopy.data
+    ? String(dhCopy.data.total ?? dhCopy.data.candidates?.length ?? 0) + ' 条'
+    : dhCopy.status === 'error' ? '读取失败' : '读取中';
+  const confirmed = dhCopy.status === 'ready' && dhCopy.data
+    ? String(dhCopy.data.confirmedCount ?? 0) + ' 条'
+    : dhCopy.status === 'error' ? '读取失败' : '读取中';
   dhRoot.innerHTML =
-    dhRealBanner() +
+    '<div class="dh-real-banner" role="note"><strong>真实数据</strong>' +
+    '<span>项目概览、项目档案、文案需求和候选均读取现有服务端数据；没有的能力会保持未接入状态。</span></div>' +
     dhWorkPrefillBlock() +
     '<div class="view-intro-row">' +
     '<div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
-    '<p>P02 项目与文案：确认这次口播生产挂在哪个项目下，并从真实文案库里选出可进入生产的文案版本。</p></div>' +
-    '<span class="view-intro-status">P02 · 项目与文案</span>' +
+    '<p>项目与文案：确认这次口播生产挂在哪个项目下，并从真实文案库里选出可进入生产的文案版本。</p></div>' +
+    '<span class="view-intro-status">第 01 步 · 项目与文案</span>' +
     '</div>' +
     '<div class="dh-toolbar">' +
     '<div class="dh-context" aria-label="当前项目上下文">' +
-    '<span><small>项目</small><strong>' + dhEscape(dhReal.summary?.project?.name || '（读取中）') + '</strong></span>' +
-    '<span><small>候选</small><strong>' + Number(dhCopy.data?.total || 0) + ' 条</strong></span>' +
-    '<span><small>已确认</small><strong>' + Number(dhCopy.data?.confirmedCount || 0) + ' 条</strong></span>' +
+    '<span><small>工作台项目</small><strong>' + dhEscape(projectName) + '</strong></span>' +
+    '<span><small>候选</small><strong>' + dhEscape(candidates) + '</strong></span>' +
+    '<span><small>已确认</small><strong>' + dhEscape(confirmed) + '</strong></span>' +
     '</div>' +
     '<div class="dh-toolbar-actions">' +
-    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01 生产中心</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回生产中心</button>' +
     '<button class="button button-secondary button-small" type="button" data-dh-copy-reload>重新读取文案</button>' +
     '</div>' +
     '</div>' +
     dhNoticeBlock() +
-    (dhCopy.status === 'loading'
-      ? dhLoadingBlock()
-      : dhCopy.status === 'error'
-        ? '<section class="dh-error" role="alert"><span class="dh-error-mark" aria-hidden="true">!</span>' +
-          '<div><strong>文案数据读取失败，因此这里不显示任何候选</strong>' +
-          '<p>' + dhEscape(dhCopy.error?.message || '未知错误') + '</p>' +
-          '<small>页面不会用示例文案冒充真实文案库。</small></div>' +
-          '<button class="button button-secondary button-small" type="button" data-dh-copy-reload>重新读取</button></section>'
-        : '') +
-    (ready
-      ? dhLayout(
-          dhFlowBar() +
-          dhContextBlock() +
-          dhCopyRequestBlock() +
-          '<section class="panel dh-queue" aria-label="文案候选列表">' +
-          '<div class="panel-heading"><div><div class="eyebrow">文案候选</div>' +
-          '<h2>从真实文案库中选择</h2>' +
-          '<p>长文本默认只显示摘要，展开后才加载全文；未确认的候选永远不能进入生产。</p></div></div>' +
-          (dhCopy.data.candidates.length
-            ? '<div class="dh-copy-list">' + dhCopy.data.candidates.map(dhCopyCard).join('') + '</div>'
-            : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span>' +
-              '<strong>真实文案库里还没有任何候选</strong>' +
-              '<p>在下方登记第一条文案，或回到内容编辑工作流里生成文案。</p></div>') +
-          '</section>' +
-          dhCopyRegisterForm(),
-          dhCopyGate() +
-          dhCopySourceBar() +
-          (dhCopy.data.selectedScriptVersionId
-            ? '<section class="panel dh-side-block"><div class="panel-heading"><div><div class="eyebrow">已选文案</div>' +
-              '<h2>' + dhEscape((dhCopy.data.candidates.find((c) => c.id === dhCopy.data.selectedScriptVersionId)?.title) || '已选文案') + '</h2>' +
-              '<p>已写入生产草稿，返回 P01 或刷新后仍然保留。</p></div></div></section>'
-            : ''),
-        )
-      : '') +
+    '<div class="dh-copy-shell">' +
+    dhFlowBar() +
+    dhCopyTabNav() +
+    '<section class="dh-copy-tab-panel" id="dh-copy-panel" aria-label="项目与文案内容">' +
+    dhCopyTabContent() +
+    '</section></div>' +
     '<footer class="dh-footnote">' +
-    '<span>当前切片：F5-03 P02 项目与文案最小闭环</span>' +
-    '<span>后续：F5-04 P03/P04/P05 资产 → F5-05 P06 生产任务 → F5-06 P07 人工验收 → F5-07 P08 内容包</span>' +
+    '<span>当前步骤：01 项目与文案</span>' +
+    '<span>流程：02 生产资产 → 03 生产任务 → 04 人工验收 → 05 内容包</span>' +
     '</footer>';
 }
 
 /* ---------------------------------------------------------------------------
-   F5-06：P07 结果与人工验收（本模块内部子页面）
+   第 04 步：结果与人工验收（本模块内部子页面）
    --------------------------------------------------------------------------- */
 
 function dhResultCard(task, item) {
@@ -2711,14 +3282,14 @@ function dhRenderResults() {
   dhRoot.innerHTML =
     dhRealBanner() +
     '<div class="view-intro-row"><div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
-    '<p>P07 结果与人工验收：每条结果独立显示生成/审核/交付三轴；没有真实文件就如实显示没有。</p></div>' +
-    '<span class="view-intro-status">P07 · 结果与人工验收</span></div>' +
+    '<p>人工验收：每条结果独立显示生成/审核/交付三轴；没有真实文件就如实显示没有。</p></div>' +
+    '<span class="view-intro-status">第 04 步 · 人工验收</span></div>' +
     '<div class="dh-toolbar"><div class="dh-context">' +
     '<span><small>批次</small><strong>' + Number(data?.batchCount || 0) + '</strong></span>' +
     '<span><small>结果</small><strong>' + Number(data?.itemCount || 0) + '</strong></span>' +
     '<span><small>待验收</small><strong>' + Number(data?.counts?.waitingReview || 0) + '</strong></span>' +
     '</div><div class="dh-toolbar-actions">' +
-    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回生产中心</button>' +
     '<button class="button button-secondary button-small" type="button" data-dh-results-reload>重新读取</button>' +
     '</div></div>' +
     dhNoticeBlock() +
@@ -2736,7 +3307,7 @@ function dhRenderResults() {
               '</div>' +
               '<div class="dh-asset-list">' + task.items.map((item) => dhResultCard(task, item)).join('') + '</div>' +
               '</section>').join('')
-            : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span><strong>真实数据里还没有生产批次</strong><p>先到 P06 创建生产批次，再回来验收结果。</p></div>') +
+            : '<div class="dh-empty" role="status"><span aria-hidden="true">◌</span><strong>真实数据里还没有生产批次</strong><p>先到第 03 步生产任务创建批次，再回来验收结果。</p></div>') +
           '<p class="dh-axis-note">领域规则：模拟输出只能用于验证队列和状态，不能审核通过或作为生产内容交付——「通过」按钮会因此被禁用。</p>',
           '<section class="panel dh-side-block"><div class="panel-heading"><div><div class="eyebrow">结果统计</div><h2>当前真实结果</h2></div></div>' +
           '<dl class="dh-source-list">' +
@@ -2750,11 +3321,11 @@ function dhRenderResults() {
         )
       : '') +
     dhRenderStage8() +
-    '<footer class="dh-footnote"><span>当前切片：S8-02~04 P07 结果 · 人工验收 · 版本重做</span><span>内容包见 P08</span></footer>';
+    '<footer class="dh-footnote"><span>当前步骤：04 人工验收</span><span>流程：05 内容包</span></footer>';
 }
 
 /* ---------------------------------------------------------------------------
-   F5-07：P08 内容包（本模块内部子页面）
+   第 05 步：内容包（本模块内部子页面）
    --------------------------------------------------------------------------- */
 
 function dhRenderPackage() {
@@ -2763,14 +3334,14 @@ function dhRenderPackage() {
   dhRoot.innerHTML =
     dhRealBanner() +
     '<div class="view-intro-row"><div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
-    '<p>P08 内容包：只允许导出「生成成功 + 文件 verified + 人工通过」的结果。模拟输出永远不能导出。</p></div>' +
-    '<span class="view-intro-status">P08 · 内容包</span></div>' +
+    '<p>内容包：只允许导出「生成成功 + 文件已校验 + 人工通过」的结果。模拟输出永远不能导出。</p></div>' +
+    '<span class="view-intro-status">第 05 步 · 内容包</span></div>' +
     '<div class="dh-toolbar"><div class="dh-context">' +
     '<span><small>批次</small><strong>' + Number(data?.batchCount || 0) + '</strong></span>' +
     '<span><small>可导出结果</small><strong>' + Number(data?.exportableCount || 0) + '</strong></span>' +
     '<span><small>下一步</small><strong>' + dhEscape(dhNextActionText(data?.nextAction)) + '</strong></span>' +
     '</div><div class="dh-toolbar-actions">' +
-    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回生产中心</button>' +
     '<button class="button button-secondary button-small" type="button" data-dh-package-reload>重新读取</button>' +
     '</div></div>' +
     dhNoticeBlock() +
@@ -2851,7 +3422,7 @@ function dhTaskRowEditor(row, index, workspace) {
     '<select data-dh-row-field="voiceVersionId">' + options(voices, row.voiceVersionId, '（选择声音）') + '</select></label>' +
     '<label class="dh-field"><span>场景模板版本</span>' +
     '<select data-dh-row-field="templateVersionId">' + options(templates, row.templateVersionId, '（选择模板）') + '</select></label>' +
-    '<label class="dh-field"><span>输出文件名（不含扩展名，N16 要求任务内唯一）</span>' +
+    '<label class="dh-field"><span>输出文件名（不含扩展名，同一个任务里不能重复）</span>' +
     '<input type="text" data-dh-row-field="outputName" value="' + dhEscape(row.outputName) + '" placeholder="例如 row-01" /></label>' +
     '<label class="dh-field"><span>输出子目录（留空用任务默认）</span>' +
     '<input type="text" data-dh-row-field="outputSubdirectory" value="' + dhEscape(row.outputSubdirectory) + '" placeholder="' + dhEscape(workspace?.outputPolicy?.subdirectory || '') + '" /></label>' +
@@ -2874,7 +3445,7 @@ function dhRenderTask() {
     '<div class="view-intro-row">' +
     '<div><span class="view-context">云员工 / 内容编辑 · AI 数字人口播</span>' +
     '<p>P06 生产任务：把前面选好的文案和资产，显式逐行组成生产明细。一行对应一个输出，1 行就是单条生产。</p></div>' +
-    '<span class="view-intro-status">P06 · 生产任务与显式明细</span>' +
+    '<span class="view-intro-status">第 03 步 · 生产任务</span>' +
     '</div>' +
     '<div class="dh-toolbar">' +
     '<div class="dh-context" aria-label="当前任务上下文">' +
@@ -2883,7 +3454,7 @@ function dhRenderTask() {
     '<span><small>检查</small><strong>' + dhEscape(gate ? (gate.success ? '已通过' : '被阻塞') : '未检查') + '</strong></span>' +
     '</div>' +
     '<div class="dh-toolbar-actions">' +
-    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01 生产中心</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回生产中心</button>' +
     '<button class="button button-secondary button-small" type="button" data-dh-workspace-reload>重新读取</button>' +
     '</div>' +
     '</div>' +
@@ -2904,7 +3475,7 @@ function dhRenderTask() {
           '<section class="panel dh-steps-panel" aria-label="五步任务工作区">' +
           '<div class="panel-heading"><div><div class="eyebrow">五步任务工作区</div>' +
           '<h2>从选择到执行</h2>' +
-          '<p>第 5 步执行（N18）已接入：通过生成前检查后，可在 P06 创建批次并在 P07 启动真实生成。</p></div></div>' +
+          '<p>执行环节已接入：通过生成前检查后，可在本页创建批次，并在人工验收页启动真实生成。</p></div></div>' +
           '<ol class="dh-wsteps">' +
           data.steps
             .map((step) => {
@@ -2920,7 +3491,7 @@ function dhRenderTask() {
           '</section>' +
           /* 明细配置 */
           '<section class="panel dh-queue" aria-label="显式明细配置">' +
-          '<div class="panel-heading"><div><div class="eyebrow">明细配置 · N15</div>' +
+          '<div class="panel-heading"><div><div class="eyebrow">明细配置</div>' +
           '<h2>显式逐行添加，禁止隐式全组合</h2>' +
           '<p>一行对应一个输出；想要几条就加几行，系统不会把多个形象和多个文案自动相乘。</p></div>' +
           '<button class="button button-dark button-small" type="button" data-dh-row-add>+ 添加一行明细</button>' +
@@ -2936,20 +3507,20 @@ function dhRenderTask() {
           '<button class="button button-secondary button-small" type="button" data-dh-preflight-run' +
           (dhPreflight.running || !dhTaskRows.length ? ' disabled aria-disabled="true"' : '') +
           (!dhTaskRows.length ? ' title="至少要有 1 行明细才能做生成前检查"' : '') + '>' +
-          (dhPreflight.running ? '正在检查…' : '运行 N17 生成前检查') + '</button>' +
+          (dhPreflight.running ? '正在检查…' : '运行生成前检查') + '</button>' +
           '<button class="button button-primary button-small" type="button" data-dh-create-batch' +
           (dhBatchBusy ? ' disabled aria-disabled="true"' : '') + '>' + (dhBatchBusy ? '正在创建批次…' : '创建生产批次（不执行）') + '</button>' +
           '<small>明细保存在生产草稿里，刷新后仍在；生成前检查只判定、不执行。创建批次后到 P07 结果页点「执行批次（真实）」才会真正生成。</small>' +
           '</div>' +
           (dhBatchMessage ? '<p class="dh-draft-message" role="status">' + dhEscape(dhBatchMessage) + '</p>' : '') +
           '</section>' +
-          /* N17 结果 */
+          /* 生成前检查结果 */
           (gate
-            ? '<section class="panel ' + (gate.success ? 'dh-gate' : 'dh-gate') + '" aria-label="N17 生成前检查结果">' +
-              '<div class="panel-heading"><div><div class="eyebrow">N17 生成前检查</div>' +
+            ? '<section class="panel ' + (gate.success ? 'dh-gate' : 'dh-gate') + '" aria-label="生成前检查结果">' +
+              '<div class="panel-heading"><div><div class="eyebrow">生成前检查</div>' +
               '<h2>' + (gate.success ? '通过：允许进入执行' : '被阻塞：还不能执行') + '</h2>' +
-              '<p>判定来自服务端闸门，格式为 allowed_actions / blocking_issues / next_action。</p></div>' +
-              '<span class="phase-label">next_action：' + dhEscape(dhNextActionText(gate.next_action)) + '</span></div>' +
+              '<p>判定来自服务端，页面不自己猜结论。</p></div>' +
+              '<span class="phase-label">下一步：' + dhEscape(dhNextActionText(gate.next_action)) + '</span></div>' +
               (gate.blocking_issues?.length
                 ? '<ul class="dh-gate-issues">' +
                   gate.blocking_issues.map((item) => '<li><code>' + dhEscape(item.code) + '</code><span>' + dhEscape(item.message) + '</span></li>').join('') +
@@ -2959,7 +3530,7 @@ function dhRenderTask() {
                   '<button class="button button-dark button-small" type="button" data-dh-batch-create' +
                   (dhPreflight.running ? ' disabled aria-disabled="true"' : '') + '>' +
                   (dhPreflight.running ? '正在创建…' : '按显式明细创建生产批次') + '</button>' +
-                  '<small>批次创建后处于 waiting_approval；生成执行（N18）尚未接入，不会开始生成，也不会产生任何视频文件。</small>' +
+                  '<small>批次创建后处于「待批准」，不会自动开始生成，也不会产生任何视频文件。</small>' +
                   '</div>') +
               (dhPreflight.createdBatch
                 ? '<dl class="dh-source-list">' +
@@ -2977,15 +3548,15 @@ function dhRenderTask() {
         )
       : '') +
     '<footer class="dh-footnote">' +
-    '<span>当前切片：F5-05 P06 生产任务与显式明细</span>' +
-    '<span>后续：F5-06 P07 结果与人工验收 → F5-07 P08 内容包</span>' +
+    '<span>当前步骤：03 生产任务</span>' +
+    '<span>流程：04 人工验收 → 05 内容包</span>' +
     '</footer>';
 }
 
 function dhOutputPolicyCard(data) {
   return (
     '<section class="panel dh-side-block" aria-label="输出设置">' +
-    '<div class="panel-heading"><div><div class="eyebrow">输出设置 · N16</div>' +
+    '<div class="panel-heading"><div><div class="eyebrow">输出设置</div>' +
     '<h2>目录与命名规则</h2>' +
     '<p>生成出来的视频保存位置由用户设置；这里显示当前任务的目录策略和每行输出路径预览。</p></div></div>' +
     '<dl class="dh-source-list">' +
@@ -3026,8 +3597,8 @@ function dhTaskSidePanel(data) {
   const issues = Array.isArray(data.blockingIssues) ? data.blockingIssues : [];
   return (
     dhAssetSelectionSummary() +
-    '<section class="panel dh-gate" aria-label="任务状态闸门">' +
-    '<div class="panel-heading"><div><div class="eyebrow">状态闸门</div>' +
+    '<section class="panel dh-gate" aria-label="任务进入生产的条件">' +
+    '<div class="panel-heading"><div><div class="eyebrow">进入生产的条件</div>' +
     '<h2>阻塞项与下一步</h2>' +
     '<p>来自服务端对显式明细的判定：引用可用、命名唯一、至少 1 行。</p></div>' +
     '<span class="phase-label">next_action：' + dhEscape(dhNextActionText(data.nextAction)) + '</span></div>' +
@@ -3040,7 +3611,7 @@ function dhTaskSidePanel(data) {
       : '<p class="dh-gate-empty">当前没有阻塞项。</p>') +
     '</div>' +
     '<p class="dh-axis-note">明细由用户显式逐行添加，系统不提供「全组合一键生成」：' +
-    '那是规范明令禁止的隐式 Cartesian（N15）。</p>' +
+    '那是规则明令禁止的隐式全组合。</p>' +
     '</section>' +
     '<section class="dh-source" aria-label="工作区数据来源">' +
     '<div class="dh-source-head"><div><span class="dh-source-tag">数据源</span>' +
@@ -3578,7 +4149,7 @@ function dhRenderAssets() {
     '<span><small>模式 B</small><strong>未接入</strong></span>' +
     '</div>' +
     '<div class="dh-toolbar-actions">' +
-    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回 P01 生产中心</button>' +
+    '<button class="button button-secondary button-small" type="button" data-dh-page="' + DH_PAGE_P01 + '">← 返回生产中心</button>' +
     '<button class="button button-secondary button-small" type="button" data-dh-assets-reload' +
     (dhAssets.status === 'loading' ? ' disabled aria-disabled="true"' : '') + '>重新读取资产</button>' +
     '</div>' +
@@ -3755,6 +4326,10 @@ function dhGoToPage(page) {
   if (!dhIsValidPage(page)) {
     return;
   }
+  if (dhState.page === DH_PAGE_P02 && page !== DH_PAGE_P02) {
+    dhSyncContextFormsFromDom();
+    dhSyncCopyFormFromDom();
+  }
   dhState.page = page;
   dhWriteStoredPage(page);
   dhState.notice = null;
@@ -3762,8 +4337,10 @@ function dhGoToPage(page) {
   if (!dhIsRealMode()) {
     return;
   }
-  if (page === DH_PAGE_P02 && dhCopy.status !== 'ready') {
-    dhLoadCopy();
+  if (page === DH_PAGE_P02) {
+    if (dhProjects.status === 'idle') dhLoadProjects();
+    if (dhCopy.status !== 'ready') dhLoadCopy();
+    if (dhContexts.status !== 'ready') dhLoadContexts();
   }
   if (page === DH_PAGE_ASSETS && dhAssets.status !== 'ready') {
     dhLoadAssets();
@@ -3877,6 +4454,21 @@ function dhHandleClick(event) {
     dhGoHome();
     return;
   }
+  const copyTab = event.target.closest('[data-dh-copy-tab]');
+  if (copyTab) {
+    const tab = copyTab.dataset.dhCopyTab;
+    if (dhIsValidCopyTab(tab)) {
+      dhSyncContextFormsFromDom();
+      dhSyncCopyFormFromDom();
+      dhState.copyTab = tab;
+      dhWriteStoredCopyTab(tab);
+      dhRender();
+      if ((tab === 'profile' || tab === 'request') && ['idle', 'error'].includes(dhContexts.status)) {
+        dhLoadContexts();
+      }
+    }
+    return;
+  }
   const pageButton = event.target.closest('[data-dh-page]');
   if (pageButton) {
     dhGoToPage(pageButton.dataset.dhPage);
@@ -3897,6 +4489,7 @@ function dhHandleClick(event) {
   }
   const copyReload = event.target.closest('[data-dh-copy-reload]');
   if (copyReload) {
+    dhSyncCopyFormFromDom();
     dhLoadCopy();
     return;
   }
@@ -3996,6 +4589,7 @@ function dhHandleClick(event) {
   }
   const contextsReload = event.target.closest('[data-dh-contexts-reload]');
   if (contextsReload) {
+    dhSyncContextFormsFromDom();
     dhLoadContexts();
     return;
   }
@@ -4086,7 +4680,24 @@ function dhHandleClick(event) {
   }
   const refresh = event.target.closest('[data-dh-refresh]');
   if (refresh) {
+    dhLoadProjects();
     dhLoadSummary();
+    /* 项目中心主页汇总三个接口，重新读取必须一起刷新，否则准备度会停在旧值。 */
+    if (dhState.page === DH_PAGE_P02) {
+      dhLoadContexts();
+      dhLoadCopy();
+    }
+    return;
+  }
+  const projectPickSave = event.target.closest('[data-dh-project-pick-save]');
+  if (projectPickSave) {
+    /* 只接受下拉里真实存在的项目；空选择不触发切换。 */
+    if (dhState.projectPick) dhSwitchProject(dhState.projectPick);
+    return;
+  }
+  const ctxPickSave = event.target.closest('[data-dh-ctx-pick-save]');
+  if (ctxPickSave) {
+    dhSwitchContext(dhState.contextPick || dhContexts.data?.selectedContextId || null);
     return;
   }
   const saveDraft = event.target.closest('[data-dh-save-draft]');
@@ -4167,6 +4778,30 @@ function dhHandleDraftInput(event) {
    初始化
    --------------------------------------------------------------------------- */
 
+/* V4-02b：真实数据的引导顺序。项目列表必须第一批完成，
+   因为它会归一 projectScope（单项目锁定 / 失效 id 清洗），后面的读取都带这个作用域。 */
+async function dhBootRealData() {
+  await dhLoadProjects();
+  dhLoadSummary();
+  dhLoadDraft();
+  if (dhState.page === DH_PAGE_P02) {
+    dhLoadCopy();
+    dhLoadContexts();
+  }
+  if (dhState.page === DH_PAGE_ASSETS) {
+    dhLoadAssets();
+  }
+  if (dhState.page === DH_PAGE_TASK) {
+    dhLoadWorkspace();
+  }
+  if (dhState.page === DH_PAGE_RESULTS) {
+    dhLoadResults();
+  }
+  if (dhState.page === DH_PAGE_PACKAGE) {
+    dhLoadPackage();
+  }
+}
+
 function dhInit() {
   if (!dhRoot) {
     return;
@@ -4174,26 +4809,11 @@ function dhInit() {
   /* F5-C2：不再注入入口卡，入口由内容编辑父级页提供。 */
   dhRender();
 
-  /* F5-02/F5-03：真实数据只在真实模式下读取；先读草稿，再读摘要（摘要用于回填内容任务下拉）。
-     如果刷新后直接落在 P02，必须同时加载文案候选，否则 P02 会一直空着。 */
+  /* F5-02/F5-03：真实数据只在真实模式下读取。
+     V4-02b：先读工作台项目并归一作用域，再按作用域读其余数据；
+     否则单项目锁定或失效 id 清洗会让第一批请求带错（或空）projectId。 */
   if (dhIsRealMode()) {
-    dhLoadSummary();
-    dhLoadDraft();
-    if (dhState.page === DH_PAGE_P02) {
-      dhLoadCopy();
-    }
-    if (dhState.page === DH_PAGE_ASSETS) {
-      dhLoadAssets();
-    }
-    if (dhState.page === DH_PAGE_TASK) {
-      dhLoadWorkspace();
-    }
-    if (dhState.page === DH_PAGE_RESULTS) {
-      dhLoadResults();
-    }
-    if (dhState.page === DH_PAGE_PACKAGE) {
-      dhLoadPackage();
-    }
+    dhBootRealData();
   }
 
   /* F5-C2：入口按钮在内容编辑父级页上，这里只处理它的点击委托，不再注入 DOM。 */
@@ -4233,6 +4853,18 @@ function dhInit() {
     }
     if (event.target.closest('[data-dh-ctx-field]')) {
       dhSyncContextFormsFromDom();
+    }
+    const ctxPick = event.target.closest('[data-dh-ctx-pick]');
+    if (ctxPick) {
+      /* 只暂存待提交选择，页面不提前把它当成已生效的当前档案。 */
+      dhState.contextPick = ctxPick.value || null;
+      dhRender();
+    }
+    const projectPick = event.target.closest('[data-dh-project-pick]');
+    if (projectPick) {
+      /* 工作台项目同理：选择只暂存，点「切换项目」后才重新拉取该项目的数据。 */
+      dhState.projectPick = projectPick.value || null;
+      dhRender();
     }
     if (event.target.closest('[data-dh-profile-field]') || event.target.closest('[data-dh-video-field]') || event.target.closest('[data-dh-map-field]')) {
       dhSyncAssetFormsFromDom();

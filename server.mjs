@@ -4608,11 +4608,16 @@ async function handleRequest(request, response) {
       const batches = contentBatchStore
         ? contentBatchStore.listBatches(user, projectId, scopedTaskId).map((batch) => contentBatchResponse(batch, user))
         : [];
-      const tasks = visibleContentTasks(user).map(contentTaskSummary);
       const catalog = contentBatchCatalogFor(user, projectId, scopedTaskId);
+      /* V4-02b：一屏只属于一个项目。未传 projectId 时 catalog 会落到默认项目，
+         因此按解析出的项目过滤内容任务，避免把其他项目的任务算进「当前项目」。 */
+      const scopedProjectId = catalog.project?.id || projectId || null;
+      const tasks = visibleContentTasks(user)
+        .filter((item) => !scopedProjectId || item.projectId === scopedProjectId)
+        .map(contentTaskSummary);
       return sendJson(response, {
         ok: true,
-        summary: projectCenterSummary({ batches, tasks, catalog, readAt: nowIso() }),
+        summary: projectCenterSummary({ batches, tasks, catalog, projectId: scopedProjectId, readAt: nowIso() }),
       });
     } catch (error) {
       return sendJson(response, { ok: false, error: safeError(error) }, 409);

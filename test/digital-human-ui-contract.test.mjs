@@ -95,6 +95,83 @@ test('P01 refreshes and keeps page context across a reload', () => {
   assert.match(SOURCE, /DH_SCENARIO_KEY/);
 });
 
+test('V4-01 keeps the p02 route and builds a validated P02 shell without fake batch data', () => {
+  const COPY_RENDER = SOURCE.slice(SOURCE.indexOf('function dhRenderCopy'), SOURCE.indexOf('function dhResultCard'));
+  assert.match(SOURCE, /const DH_PAGE_KEY = 'cloud-worker-digital-human-page'/);
+  assert.match(SOURCE, /const DH_COPY_TAB_KEY = 'cloud-worker-digital-human-copy-tab'/);
+  assert.match(SOURCE, /function dhIsValidPage\(page\)[\s\S]*?\['p01','p02','assets'/);
+  assert.match(SOURCE, /function dhIsValidCopyTab\(tab\)[\s\S]*?DH_COPY_TABS\.includes\(tab\)/);
+  assert.match(COPY_RENDER, /dhFlowBar\(\)/);
+  assert.match(COPY_RENDER, /dhCopyTabNav\(\)/);
+  assert.doesNotMatch(COPY_RENDER, /dhLayout\(/);
+  for (const label of ['项目中心', '项目档案', '文案需求', '文案批次', '爆款采集', 'AI 仿写']) {
+    assert.ok(SOURCE.includes("label: '" + label + "'"), '缺少 P02 页签：' + label);
+  }
+  assert.match(SOURCE, /采集接口未接入/);
+  assert.match(SOURCE, /生成流程未接入/);
+  assert.match(SOURCE, /当前接口提供文案候选及确认状态，没有批次列表/);
+  assert.match(SOURCE, /再次保存会更新该项目最近一条活动需求/);
+});
+
+test('V4-02 project center tab renders the real home page from live endpoints', () => {
+  const HOME = SOURCE.slice(SOURCE.indexOf('function dhContextSwitchHint'), SOURCE.indexOf('function dhCopyTabNav'));
+  assert.ok(HOME.length > 2000, '项目中心主页区切片为空，测不到东西');
+  /* 主页必须有：当前档案概览、准备度、下一步与阻塞、六页入口、数据源说明。 */
+  for (const marker of ['项目与文案中心', 'dh-home-current', 'dh-home-readiness', 'dh-home-metrics', 'dh-home-next', 'dh-home-entries', 'dh-home-source']) {
+    assert.ok(HOME.includes(marker), '项目中心主页缺少：' + marker);
+  }
+  assert.match(HOME, /DH_COPY_TAB_META\.map/);
+  assert.match(HOME, /dhNextActionText\(nextAction\)/);
+  assert.match(HOME, /dhUserFacingReason\(item\.message\)/);
+  /* 只有一个真实工作台项目时：禁用切换并说明原因，不得声称能在本页新建项目。 */
+  assert.match(HOME, /新建项目不在这个页面负责/);
+  assert.doesNotMatch(HOME, /projects\?|\/api\/content\/projects/);
+  /* 未接入入口保持禁用，不注入示例数据。 */
+  assert.match(HOME, /disabled aria-disabled="true"/);
+  assert.match(HOME, /不注入示例数据/);
+  /* 准备度卡片必须把 cta 渲染成可用动作，并复用既有导航委托，不能只算不用。 */
+  assert.match(HOME, /dh-home-metric-cta/);
+  assert.match(HOME, /data-dh-copy-tab="' \+ dhEscape\(item\.tab\)/);
+  assert.match(HOME, /data-dh-page="' \+ dhEscape\(item\.page\)/);
+});
+
+test('V4-02 project context switching reuses existing endpoints and keeps pending state honest', () => {
+  /* 切换状态只走已有的 draft / contexts 接口，不新建第二套存储。 */
+  assert.match(SOURCE, /const DH_CONTEXTS_ENDPOINT = '\/api\/content\/digital-human\/contexts'/);
+  assert.match(SOURCE, /DH_DRAFT_ENDPOINT, \{ method: 'PUT'[\s\S]{0,200}?selectedContextId/);
+  assert.doesNotMatch(SOURCE, /\/api\/content\/digital-human\/(projects|current-project|context-select)/);
+  /* 下拉选择先进入待提交态，确认后才写服务端；失败不伪装成功。 */
+  assert.match(SOURCE, /dhState\.contextPick = ctxPick\.value \|\| null/);
+  assert.match(SOURCE, /dhSwitchContext\(dhState\.contextPick \|\| dhContexts\.data\?\.selectedContextId \|\| null\)/);
+  assert.match(SOURCE, /await Promise\.all\(\[dhLoadContexts\(\), dhLoadCopy\(\)\]\)/);
+  assert.match(SOURCE, /尚未保存：确认后写入生产草稿/);
+  assert.match(SOURCE, /切换失败：/);
+  assert.match(SOURCE, /当前生产草稿已经使用这个项目档案/);
+  /* 还没有选定当前档案时，下拉不得默认选中第一项、按钮不得可点，提示也不得写成已保存。 */
+  assert.match(SOURCE, /未选择当前档案/);
+  assert.match(SOURCE, /还没有选定当前档案/);
+  assert.match(SOURCE, /canSwitchContext && pendingContextId \? '' : ' disabled aria-disabled="true"'/);
+  /* 刷新按钮在 P02 同时重读三个数据源，避免准备度停在旧值。 */
+  const refreshHandler = SOURCE.slice(SOURCE.indexOf("const refresh = event.target.closest('[data-dh-refresh]')"), SOURCE.indexOf("const ctxPickSave"));
+  assert.match(refreshHandler, /dhLoadSummary\(\)/);
+  assert.match(refreshHandler, /dhLoadContexts\(\)/);
+  assert.match(refreshHandler, /dhLoadCopy\(\)/);
+});
+
+test('V4-01 P02 content area shows real blocking reasons without developer slice codes', () => {
+  /* P02 从数据源栏到渲染入口的整个内容区不得出现切片/需求编号这类开发坐标；
+     阻塞结论本身（未接入、不做假提交）仍必须在页面上可读。 */
+  const P02 = SOURCE.slice(SOURCE.indexOf('function dhCopySourceBar'), SOURCE.indexOf('function dhResultCard'));
+  assert.ok(P02.length > 2000, 'P02 渲染区切片为空，测不到东西');
+  const codeComments = P02.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(codeComments, /F5-\d\d/, 'P02 可见代码不应再引用切片编号');
+  assert.doesNotMatch(codeComments, /·\s*N\d\d|（N\d\d）/, 'P02 可见代码不应再引用 N0x 需求编号');
+  assert.doesNotMatch(codeComments, /P02 · |next_action：|blocking_issues（|allowed_actions（/);
+  assert.match(codeComments, /阻塞项（/);
+  assert.match(codeComments, /现在可以做的事（/);
+  assert.match(codeComments, /不做假提交/);
+});
+
 test('P01/P02 只允许调用数字人口播自己的端点 + 现有文案登记接口', () => {
   // F5-02 起 P01 可以读后端；F5-03 增加 P02 文案读取，并复用现有 /api/content/script-sets 登记候选。
   // 不允许直接改动批次（POST/PUT/DELETE /api/content/batches）。
@@ -129,6 +206,8 @@ test('P01/P02 只允许调用数字人口播自己的端点 + 现有文案登记
     '/api/content/digital-human/heygem-health',
     '/api/content/batches/',
     '/api/content/script-sets',
+    /* V4-02b：工作台项目只读现有项目列表接口，用于把本页数据按项目隔离。 */
+    '/api/workspace/projects',
   ]);
   for (const endpoint of endpoints) {
     assert.ok(allowed.has(endpoint), '数字人口播页面不允许调用未授权端点：' + endpoint);

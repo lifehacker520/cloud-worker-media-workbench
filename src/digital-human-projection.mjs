@@ -1275,7 +1275,7 @@ export function projectCenterSummary(input = {}) {
       real: input.real !== false,
     },
     project: {
-      id: text(catalog.project?.id) || null,
+      id: text(catalog.project?.id) || text(input.projectId) || null,
       name: text(catalog.project?.name) || null,
       status: text(catalog.project?.status) || null,
     },
